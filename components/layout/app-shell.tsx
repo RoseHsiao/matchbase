@@ -15,7 +15,7 @@ export function AppShell({ children, defaultOpen = true }: AppShellProps) {
     <TooltipProvider>
       <SidebarProvider defaultOpen={defaultOpen}>
         <AppSidebar />
-        <SidebarInset>
+        <SidebarInset className="min-w-0">
           <AppHeader />
           <div className="flex flex-1 flex-col gap-6 p-4 pb-24 md:p-6">
             {children}
