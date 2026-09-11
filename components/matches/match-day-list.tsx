@@ -1,6 +1,7 @@
 import { MatchList } from "@/components/matches/match-list"
 import { Card, CardContent } from "@/components/ui/card"
 import { dayDifference, formatDayLabel, formatLongDate } from "@/lib/format"
+import type { MatchView } from "@/lib/data/types"
 import type { MatchDayGroup } from "@/lib/schedule"
 
 type MatchDayListProps = {
@@ -8,10 +9,16 @@ type MatchDayListProps = {
   /** Reference time for "Today" / "Tomorrow" headings. */
   now: Date
   showLeague?: boolean
+  renderAction?: (match: MatchView) => React.ReactNode
 }
 
 /** Matches grouped under one heading per calendar day. */
-export function MatchDayList({ groups, now, showLeague = true }: MatchDayListProps) {
+export function MatchDayList({
+  groups,
+  now,
+  showLeague = true,
+  renderAction,
+}: MatchDayListProps) {
   return (
     <div className="grid gap-6">
       {groups.map((group) => {
@@ -37,6 +44,7 @@ export function MatchDayList({ groups, now, showLeague = true }: MatchDayListPro
                   now={now}
                   showDay={false}
                   showLeague={showLeague}
+                  renderAction={renderAction}
                 />
               </CardContent>
             </Card>

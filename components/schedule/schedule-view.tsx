@@ -8,6 +8,7 @@ import { MatchDayList } from "@/components/matches/match-day-list"
 import { DateStrip, type DateStripDay } from "@/components/schedule/date-strip"
 import { ScheduleFilters } from "@/components/schedule/schedule-filters"
 import { Button } from "@/components/ui/button"
+import { WatchlistToggle } from "@/components/watchlist/watchlist-toggle"
 import type { League, MatchView, Team } from "@/lib/data/types"
 import { addDays, dayKey, formatDayLabel, startOfDay } from "@/lib/format"
 import {
@@ -99,7 +100,11 @@ export function ScheduleView({
       </p>
 
       {groups.length > 0 ? (
-        <MatchDayList groups={groups} now={now} />
+        <MatchDayList
+          groups={groups}
+          now={now}
+          renderAction={(match) => <WatchlistToggle matchId={match.id} />}
+        />
       ) : activeFilters > 0 ? (
         <EmptyState
           icon={SearchXIcon}

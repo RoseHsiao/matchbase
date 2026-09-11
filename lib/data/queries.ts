@@ -103,14 +103,14 @@ export async function getFollowedTeams(now = new Date()): Promise<TeamView[]> {
   return toTeamViews(list, now)
 }
 
-/** Watchlisted matches, live first, then soonest. */
-export async function getWatchlistMatches(limit?: number): Promise<MatchView[]> {
-  const ids = new Set(currentUserFollows.watchlistMatchIds)
-  const list = matches
-    .filter((match) => ids.has(match.id))
-    .sort(byStatusThenStart)
-    .map(toMatchView)
-  return limit ? list.slice(0, limit) : list
+/** Ids the user has saved. Seeds the client watchlist store. */
+export async function getWatchlistIds(): Promise<string[]> {
+  return [...currentUserFollows.watchlistMatchIds]
+}
+
+/** Every known match in start order. Client views filter this by saved ids. */
+export async function getMatches(): Promise<MatchView[]> {
+  return [...matches].sort(byStartTime).map(toMatchView)
 }
 
 /** Every match from the start of today through the next `days` days, in start order. */
@@ -139,9 +139,6 @@ export async function getTeams(): Promise<Team[]> {
 
 export async function getQuickStats(now = new Date()): Promise<QuickStats> {
   const follows = currentUserFollows
-  const watchlist = matches.filter((match) =>
-    follows.watchlistMatchIds.includes(match.id)
-  )
   const teamsPlayingToday = follows.teamIds.filter((teamId) =>
     matches.some(
       (match) =>
@@ -154,9 +151,7 @@ export async function getQuickStats(now = new Date()): Promise<QuickStats> {
     followedTeams: follows.teamIds.length,
     followedPlayers: follows.playerIds.length,
     followedLeagues: follows.leagueIds.length,
-    watchlistMatches: watchlist.length,
     teamsPlayingToday,
-    watchlistLive: watchlist.filter((match) => match.status === "live").length,
     followedSports: [
       ...new Set(
         follows.leagueIds.map(
@@ -211,10 +206,6 @@ export async function getTeamPlayers(teamId: string): Promise<Player[]> {
 
 export async function isTeamFollowed(teamId: string): Promise<boolean> {
   return currentUserFollows.teamIds.includes(teamId)
-}
-
-export async function isMatchWatchlisted(matchId: string): Promise<boolean> {
-  return currentUserFollows.watchlistMatchIds.includes(matchId)
 }
 
 function toTeamViews(list: Team[], now = new Date()): TeamView[] {

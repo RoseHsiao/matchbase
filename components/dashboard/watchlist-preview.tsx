@@ -1,6 +1,6 @@
 import { SectionCard } from "@/components/layout/section-card"
-import { MatchList } from "@/components/matches/match-list"
-import { getWatchlistMatches } from "@/lib/data/queries"
+import { WatchlistMatches } from "@/components/watchlist/watchlist-matches"
+import { getMatches } from "@/lib/data/queries"
 
 export async function WatchlistPreview({
   now,
@@ -9,7 +9,7 @@ export async function WatchlistPreview({
   now: Date
   limit?: number
 }) {
-  const matches = await getWatchlistMatches(limit)
+  const matches = await getMatches()
 
   return (
     <SectionCard
@@ -17,12 +17,11 @@ export async function WatchlistPreview({
       description="Matches you've saved to watch"
       href="/watchlist"
     >
-      <MatchList
+      <WatchlistMatches
         matches={matches}
-        now={now}
+        now={now.toISOString()}
+        limit={limit}
         compact
-        emptyTitle="Your watchlist is empty"
-        emptyDescription="Add matches from the schedule to keep track of them here."
       />
     </SectionCard>
   )

@@ -15,6 +15,8 @@ type MatchRowProps = {
   showDay?: boolean
   /** Use the league's short name, for narrow columns. */
   compact?: boolean
+  /** Control rendered beside the row, outside the link (e.g. a watchlist star). */
+  action?: React.ReactNode
   className?: string
 }
 
@@ -25,6 +27,7 @@ export function MatchRow({
   showLeague = true,
   showDay = true,
   compact = false,
+  action,
   className,
 }: MatchRowProps) {
   const finished = match.status === "finished"
@@ -32,7 +35,7 @@ export function MatchRow({
   const homeWon = finished && !!score && score.home > score.away
   const awayWon = finished && !!score && score.away > score.home
 
-  return (
+  const row = (
     <ListRowLink href={`/matches/${match.id}`} className={className}>
       <time
         dateTime={match.startsAt}
@@ -73,6 +76,15 @@ export function MatchRow({
         ) : null}
       </div>
     </ListRowLink>
+  )
+
+  if (!action) return row
+
+  return (
+    <div className="flex items-center gap-1 pr-2">
+      <div className="min-w-0 flex-1">{row}</div>
+      {action}
+    </div>
   )
 }
 

@@ -9,6 +9,8 @@ type RowOptions = {
   showLeague?: boolean
   showDay?: boolean
   compact?: boolean
+  /** Per-row control rendered beside the link, e.g. a watchlist toggle. */
+  renderAction?: (match: MatchView) => React.ReactNode
 }
 
 type MatchListProps = RowOptions & {
@@ -75,12 +77,16 @@ export function MatchList({
   )
 }
 
-function Rows({ matches, ...rowOptions }: RowOptions & { matches: MatchView[] }) {
+function Rows({
+  matches,
+  renderAction,
+  ...rowOptions
+}: RowOptions & { matches: MatchView[] }) {
   return (
     <ul className="grid gap-0.5">
       {matches.map((match) => (
         <li key={match.id} className="min-w-0">
-          <MatchRow match={match} {...rowOptions} />
+          <MatchRow match={match} action={renderAction?.(match)} {...rowOptions} />
         </li>
       ))}
     </ul>

@@ -1,11 +1,12 @@
-import { StarIcon, TrophyIcon, UserRoundIcon, UsersIcon } from "lucide-react"
+import { TrophyIcon, UserRoundIcon, UsersIcon } from "lucide-react"
 
 import { StatCard } from "@/components/dashboard/stat-card"
-import { getQuickStats } from "@/lib/data/queries"
+import { WatchlistStatCard } from "@/components/watchlist/watchlist-stat-card"
+import { getMatches, getQuickStats } from "@/lib/data/queries"
 import { sportLabel } from "@/lib/sports"
 
 export async function QuickStats({ now }: { now: Date }) {
-  const stats = await getQuickStats(now)
+  const [stats, matches] = await Promise.all([getQuickStats(now), getMatches()])
 
   const items = [
     {
@@ -32,16 +33,6 @@ export async function QuickStats({ now }: { now: Date }) {
       icon: TrophyIcon,
       href: "/schedule",
     },
-    {
-      label: "Watchlist matches",
-      value: stats.watchlistMatches,
-      hint:
-        stats.watchlistLive > 0
-          ? `${stats.watchlistLive} live right now`
-          : "None live right now",
-      icon: StarIcon,
-      href: "/watchlist",
-    },
   ]
 
   return (
@@ -49,6 +40,7 @@ export async function QuickStats({ now }: { now: Date }) {
       {items.map((item) => (
         <StatCard key={item.label} {...item} />
       ))}
+      <WatchlistStatCard matches={matches} />
     </div>
   )
 }

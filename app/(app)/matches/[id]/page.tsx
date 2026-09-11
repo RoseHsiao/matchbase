@@ -9,13 +9,9 @@ import { SectionCard } from "@/components/layout/section-card";
 import { MatchList } from "@/components/matches/match-list";
 import { MatchScoreboard } from "@/components/matches/match-scoreboard";
 import { MatchStatusBadge } from "@/components/matches/match-status-badge";
-import { WatchlistButton } from "@/components/matches/watchlist-button";
+import { WatchlistButton } from "@/components/watchlist/watchlist-button";
 import { buttonVariants } from "@/components/ui/button";
-import {
-  getMatchById,
-  getRelatedMatches,
-  isMatchWatchlisted,
-} from "@/lib/data/queries";
+import { getMatchById, getRelatedMatches } from "@/lib/data/queries";
 import { formatKickoff, formatLongDate, formatTime } from "@/lib/format";
 import { sportLabel } from "@/lib/sports";
 
@@ -44,10 +40,7 @@ export default async function MatchPage({ params }: MatchPageProps) {
   if (!match) notFound();
 
   const now = new Date();
-  const [watchlisted, related] = await Promise.all([
-    isMatchWatchlisted(match.id),
-    getRelatedMatches(match, 4, now),
-  ]);
+  const related = await getRelatedMatches(match, 4, now);
 
   const { league } = match;
   const statusLabel =
@@ -80,11 +73,7 @@ export default async function MatchPage({ params }: MatchPageProps) {
             formatKickoff(match.startsAt, now),
           ].join(" · ")}
           actions={
-            <WatchlistButton
-              matchId={match.id}
-              initialWatchlisted={watchlisted}
-              status={match.status}
-            />
+            <WatchlistButton matchId={match.id} status={match.status} />
           }
         />
       </div>

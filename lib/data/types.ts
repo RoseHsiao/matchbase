@@ -76,11 +76,8 @@ export type QuickStats = {
   followedTeams: number
   followedPlayers: number
   followedLeagues: number
-  watchlistMatches: number
   /** How many followed teams play today, shown as a hint. */
   teamsPlayingToday: number
-  /** How many watchlisted matches are live right now. */
-  watchlistLive: number
   /** Distinct sports across followed leagues, for display hints. */
   followedSports: Sport[]
 }
