@@ -7,12 +7,12 @@ import type { League, Match, Player, Team, UserFollows } from "@/lib/data/types"
  */
 
 export const leagues: League[] = [
-  { id: "epl", name: "Premier League", shortName: "EPL", sport: "football", region: "England" },
-  { id: "ucl", name: "UEFA Champions League", shortName: "UCL", sport: "football", region: "Europe" },
-  { id: "nba", name: "NBA", shortName: "NBA", sport: "basketball", region: "North America" },
-  { id: "lec", name: "LoL EMEA Championship", shortName: "LEC", sport: "lol", region: "Europe" },
-  { id: "vct", name: "VCT Champions", shortName: "VCT", sport: "valorant", region: "International" },
-  { id: "esl", name: "ESL Pro League", shortName: "ESL", sport: "cs2", region: "International" },
+  { id: "epl", name: "Premier League", shortName: "EPL", sport: "football", region: "England", season: "2026/27" },
+  { id: "ucl", name: "UEFA Champions League", shortName: "UCL", sport: "football", region: "Europe", season: "2026/27" },
+  { id: "nba", name: "NBA", shortName: "NBA", sport: "basketball", region: "North America", season: "2026-27" },
+  { id: "lec", name: "LoL EMEA Championship", shortName: "LEC", sport: "lol", region: "Europe", season: "Summer 2026" },
+  { id: "vct", name: "VCT Champions", shortName: "VCT", sport: "valorant", region: "International", season: "Champions 2026" },
+  { id: "esl", name: "ESL Pro League", shortName: "ESL", sport: "cs2", region: "International", season: "Season 22" },
 ]
 
 export const teams: Team[] = [
@@ -81,6 +81,7 @@ export const matches: Match[] = [
     startsAt: fromNow(-240),
     status: "finished",
     stage: "Playoffs · Upper final",
+    venue: "LEC Studio, Berlin",
     score: { home: 3, away: 1 },
   },
   {
@@ -91,6 +92,7 @@ export const matches: Match[] = [
     startsAt: fromNow(-180),
     status: "finished",
     stage: "Group A · Round 3",
+    venue: "ESL Studios, Stockholm",
     score: { home: 2, away: 0 },
   },
   // Today: live
@@ -114,6 +116,7 @@ export const matches: Match[] = [
     startsAt: fromNow(-45),
     status: "live",
     stage: "Quarterfinal",
+    venue: "Accor Arena, Paris",
     score: { home: 1, away: 1 },
     liveDetail: "Map 3",
   },
@@ -136,6 +139,7 @@ export const matches: Match[] = [
     startsAt: fromNow(210),
     status: "upcoming",
     stage: "Group B · Round 3",
+    venue: "ESL Studios, Stockholm",
   },
   {
     id: "m-nba-lal-bos",
@@ -166,6 +170,7 @@ export const matches: Match[] = [
     startsAt: at(1, 18, 0),
     status: "upcoming",
     stage: "Playoffs · Lower final",
+    venue: "LEC Studio, Berlin",
   },
   {
     id: "m-nba-gsw-den",
@@ -186,6 +191,7 @@ export const matches: Match[] = [
     startsAt: at(2, 17, 0),
     status: "upcoming",
     stage: "Quarterfinal",
+    venue: "Accor Arena, Paris",
   },
   {
     id: "m-epl-tot-ars",
@@ -205,6 +211,7 @@ export const matches: Match[] = [
     startsAt: at(4, 20, 0),
     status: "upcoming",
     stage: "Playoffs · Quarterfinal",
+    venue: "ESL Studios, Stockholm",
   },
   {
     id: "m-lec-g2-kc",
@@ -214,6 +221,7 @@ export const matches: Match[] = [
     startsAt: at(6, 17, 0),
     status: "upcoming",
     stage: "Playoffs · Grand final",
+    venue: "Uber Arena, Berlin",
   },
   // Recent history
   {

@@ -8,6 +8,8 @@ export type League = {
   shortName: string
   sport: Sport
   region: string
+  /** Current season label, e.g. "2026/27" or "Summer 2026". */
+  season: string
 }
 
 export type Team = {

@@ -172,6 +172,25 @@ export async function getMatchById(id: string): Promise<MatchView | undefined> {
   return match ? toMatchView(match) : undefined
 }
 
+/** Other upcoming matches in the same league, soonest first. */
+export async function getRelatedMatches(
+  match: Match,
+  limit = 4,
+  now = new Date()
+): Promise<MatchView[]> {
+  return matches
+    .filter(
+      (entry) =>
+        entry.id !== match.id &&
+        entry.leagueId === match.leagueId &&
+        entry.status === "upcoming" &&
+        new Date(entry.startsAt) > now
+    )
+    .sort(byStartTime)
+    .slice(0, limit)
+    .map(toMatchView)
+}
+
 export async function getTeamById(id: string): Promise<TeamView | undefined> {
   const team = teamById.get(id)
   if (!team) return undefined
