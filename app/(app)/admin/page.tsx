@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 
-import { getNavItem } from "@/lib/navigation";
-import { PlaceholderPage } from "@/components/layout/placeholder-page";
+import { AdminDashboardView } from "@/components/admin/views/admin-dashboard-view";
+import { getAdminNavItem } from "@/lib/admin/navigation";
 
-const nav = getNavItem("/admin");
+const nav = getAdminNavItem("/admin");
 
 export const metadata: Metadata = {
-  title: nav.title,
+  title: "Admin",
   description: nav.description,
 };
 
 export default function AdminPage() {
-  return <PlaceholderPage href={nav.href} />;
+  return <AdminDashboardView />;
 }

@@ -1,11 +1,17 @@
 import {
+  adminActivity,
   currentUserFollows,
+  dataSources,
   leagues,
   matches,
   players,
+  seasons,
+  syncLogs,
   teams,
+  venues,
 } from "@/lib/data/mock"
 import type {
+  AdminData,
   League,
   Match,
   MatchStatus,
@@ -17,6 +23,7 @@ import type {
   TeamView,
 } from "@/lib/data/types"
 import { addDays, isSameDay, startOfDay } from "@/lib/format"
+import { sports } from "@/lib/sports"
 
 /**
  * Read-side data access. Every function is async so the mock store can be
@@ -267,4 +274,20 @@ function toTeamViews(list: Team[], now = new Date()): TeamView[] {
       .sort(byStartTime)
       .map(toMatchView)[0],
   }))
+}
+
+/** Everything the admin area manages, as plain records. Seeds the admin client store. */
+export async function getAdminData(): Promise<AdminData> {
+  return {
+    sports: sports.map((id) => ({ id, status: "active" })),
+    leagues: [...leagues],
+    seasons: [...seasons],
+    teams: [...teams],
+    players: [...players],
+    matches: [...matches],
+    venues: [...venues],
+    dataSources: [...dataSources],
+    syncLogs: [...syncLogs],
+    activity: [...adminActivity],
+  }
 }

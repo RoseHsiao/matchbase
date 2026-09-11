@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
+import { ADMIN_ROOT, findAdminNavItem, isAdminPath } from "@/lib/admin/navigation"
 import { findNavItem } from "@/lib/navigation"
 import { ThemeToggle } from "@/components/theme/theme-toggle"
 import {
@@ -19,6 +20,8 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 export function AppHeader({ children }: { children?: React.ReactNode }) {
   const pathname = usePathname()
   const current = findNavItem(pathname)
+  const adminItem = isAdminPath(pathname) ? findAdminNavItem(pathname) : undefined
+  const adminSub = adminItem && adminItem.href !== ADMIN_ROOT ? adminItem : undefined
 
   return (
     <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-backdrop-filter:bg-background/80">
@@ -38,7 +41,21 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
             <>
               <BreadcrumbSeparator className="hidden sm:block" />
               <BreadcrumbItem>
-                <BreadcrumbPage>{current.title}</BreadcrumbPage>
+                {adminSub ? (
+                  <BreadcrumbLink render={<Link href={ADMIN_ROOT} />}>
+                    {current.title}
+                  </BreadcrumbLink>
+                ) : (
+                  <BreadcrumbPage>{current.title}</BreadcrumbPage>
+                )}
+              </BreadcrumbItem>
+            </>
+          ) : null}
+          {adminSub ? (
+            <>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>{adminSub.title}</BreadcrumbPage>
               </BreadcrumbItem>
             </>
           ) : null}

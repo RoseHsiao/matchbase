@@ -74,14 +74,17 @@ export function NavUser({ name, email, avatarUrl }: NavUserProps) {
             align="end"
             sideOffset={4}
           >
-            <DropdownMenuLabel className="font-normal">
-              <div className="grid text-left text-sm leading-tight">
-                <span className="truncate font-medium">{name}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {email}
-                </span>
-              </div>
-            </DropdownMenuLabel>
+            {/* Base UI requires a group around a menu label. */}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="font-normal">
+                <div className="grid text-left text-sm leading-tight">
+                  <span className="truncate font-medium">{name}</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {email}
+                  </span>
+                </div>
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem>

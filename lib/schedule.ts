@@ -66,7 +66,7 @@ export function sportsForCategory(category: Category | typeof ALL): Sport[] {
 }
 
 export function leaguesForFilters(
-  leagues: League[],
+  leagues: readonly League[],
   filters: HierarchyFilters
 ): League[] {
   return leagues.filter(
@@ -78,8 +78,8 @@ export function leaguesForFilters(
 }
 
 export function teamsForFilters(
-  teams: Team[],
-  leagues: League[],
+  teams: readonly Team[],
+  leagues: readonly League[],
   filters: HierarchyFilters & { leagueId: string }
 ): Team[] {
   const allowedLeagues = new Set(
@@ -97,7 +97,7 @@ export function teamsForFilters(
  */
 export function reconcileHierarchy<
   T extends HierarchyFilters & { leagueId: string; teamId?: string },
->(next: T, leagues: League[], teams?: Team[]): T {
+>(next: T, leagues: readonly League[], teams?: readonly Team[]): T {
   const result = { ...next }
   if (result.sport !== ALL && !sportsForCategory(result.category).includes(result.sport)) {
     result.sport = ALL
@@ -121,8 +121,8 @@ export function reconcileHierarchy<
 
 export function reconcileFilters(
   next: ScheduleFilterState,
-  leagues: League[],
-  teams: Team[]
+  leagues: readonly League[],
+  teams: readonly Team[]
 ): ScheduleFilterState {
   return reconcileHierarchy(next, leagues, teams)
 }

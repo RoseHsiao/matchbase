@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { TrophyIcon } from "lucide-react"
 
+import { adminNavItems, isAdminNavItemActive, isAdminPath } from "@/lib/admin/navigation"
 import { isNavItemActive, navSections } from "@/lib/navigation"
 import { NavUser } from "@/components/layout/nav-user"
 import {
@@ -24,6 +25,7 @@ import {
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
   const { isMobile, setOpenMobile } = useSidebar()
+  const inAdmin = isAdminPath(pathname)
 
   // Close the mobile sheet after navigating so the new page is visible.
   function handleNavigate() {
@@ -75,6 +77,27 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             </SidebarGroupContent>
           </SidebarGroup>
         ))}
+        {inAdmin ? (
+          <SidebarGroup>
+            <SidebarGroupLabel>Manage</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminNavItems.map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      isActive={isAdminNavItemActive(pathname, item)}
+                      tooltip={item.title}
+                      render={<Link href={item.href} onClick={handleNavigate} />}
+                    >
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
       </SidebarContent>
 
       <SidebarFooter>

@@ -62,8 +62,8 @@ export function filterPlayers(
 /** Drop selections that no longer fit the broader filters. */
 export function reconcilePlayerFilters(
   next: PlayerFilterState,
-  leagues: League[],
-  teams: Team[]
+  leagues: readonly League[],
+  teams: readonly Team[]
 ): PlayerFilterState {
   return reconcileHierarchy(next, leagues, teams)
 }

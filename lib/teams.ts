@@ -50,7 +50,7 @@ export function filterTeams(teams: TeamView[], filters: TeamFilterState): TeamVi
 /** Drop selections that no longer fit the broader filters. */
 export function reconcileTeamFilters(
   next: TeamFilterState,
-  leagues: League[]
+  leagues: readonly League[]
 ): TeamFilterState {
   return reconcileHierarchy(next, leagues)
 }

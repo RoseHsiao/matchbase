@@ -1,4 +1,15 @@
-import type { League, Match, Player, Team, UserFollows } from "@/lib/data/types"
+import type {
+  AdminActivity,
+  DataSource,
+  League,
+  Match,
+  Player,
+  Season,
+  SyncLog,
+  Team,
+  UserFollows,
+  Venue,
+} from "@/lib/data/types"
 
 /**
  * Mock data for development. Match times are generated relative to "now" so
@@ -325,3 +336,65 @@ export const currentUserFollows: UserFollows = {
     "m-esl-faze-vit",
   ],
 }
+
+export const seasons: Season[] = [
+  { id: "s-epl-2627", leagueId: "epl", name: "2026/27", startsAt: "2026-08-15", endsAt: "2027-05-23", status: "current" },
+  { id: "s-epl-2526", leagueId: "epl", name: "2025/26", startsAt: "2025-08-16", endsAt: "2026-05-24", status: "completed" },
+  { id: "s-ucl-2627", leagueId: "ucl", name: "2026/27", startsAt: "2026-09-15", endsAt: "2027-05-29", status: "current" },
+  { id: "s-nba-2627", leagueId: "nba", name: "2026-27", startsAt: "2026-10-20", endsAt: "2027-06-20", status: "current" },
+  { id: "s-nba-2526", leagueId: "nba", name: "2025-26", startsAt: "2025-10-21", endsAt: "2026-06-19", status: "completed" },
+  { id: "s-lec-summer26", leagueId: "lec", name: "Summer 2026", startsAt: "2026-06-06", endsAt: "2026-09-20", status: "current" },
+  { id: "s-lck-2026", leagueId: "lck", name: "2026 Season", startsAt: "2026-01-14", endsAt: "2026-09-27", status: "current" },
+  { id: "s-lck-2027", leagueId: "lck", name: "2027 Season", startsAt: "2027-01-13", endsAt: "2027-09-26", status: "upcoming" },
+  { id: "s-vct-champ26", leagueId: "vct", name: "Champions 2026", startsAt: "2026-08-28", endsAt: "2026-09-20", status: "current" },
+  { id: "s-esl-22", leagueId: "esl", name: "Season 22", startsAt: "2026-09-01", endsAt: "2026-09-27", status: "current" },
+]
+
+/** Venues are matched to `Match.venue` by name until matches carry a venue id. */
+export const venues: Venue[] = [
+  { id: "v-emirates", name: "Emirates Stadium", city: "London", country: "England", capacity: 60704, status: "active" },
+  { id: "v-anfield", name: "Anfield", city: "Liverpool", country: "England", capacity: 61276, status: "active" },
+  { id: "v-tottenham", name: "Tottenham Hotspur Stadium", city: "London", country: "England", capacity: 62850, status: "active" },
+  { id: "v-bernabeu", name: "Santiago Bernabéu", city: "Madrid", country: "Spain", capacity: 83186, status: "active" },
+  { id: "v-crypto", name: "Crypto.com Arena", city: "Los Angeles", country: "United States", capacity: 19079, status: "active" },
+  { id: "v-chase", name: "Chase Center", city: "San Francisco", country: "United States", capacity: 18064, status: "active" },
+  { id: "v-lolpark", name: "LoL Park, Seoul", city: "Seoul", country: "South Korea", capacity: 400, status: "active" },
+  { id: "v-lecstudio", name: "LEC Studio, Berlin", city: "Berlin", country: "Germany", capacity: 300, status: "active" },
+  { id: "v-uber", name: "Uber Arena, Berlin", city: "Berlin", country: "Germany", capacity: 17000, status: "active" },
+  { id: "v-accor", name: "Accor Arena, Paris", city: "Paris", country: "France", capacity: 20300, status: "active" },
+  { id: "v-esl", name: "ESL Studios, Stockholm", city: "Stockholm", country: "Sweden", capacity: 200, status: "active" },
+  { id: "v-oldtrafford", name: "Old Trafford", city: "Manchester", country: "England", capacity: 74310, status: "inactive" },
+]
+
+export const dataSources: DataSource[] = [
+  { id: "ds-nba", name: "NBA Data API", sport: "basketball", status: "connected", lastSyncedAt: fromNow(-12) },
+  { id: "ds-lck", name: "LCK Data API", sport: "lol", status: "connected", lastSyncedAt: fromNow(-25) },
+  { id: "ds-epl", name: "Premier League Feed", sport: "football", status: "attention", lastSyncedAt: fromNow(-190) },
+  { id: "ds-vct", name: "VCT Data API", sport: "valorant", status: "disconnected", lastSyncedAt: fromNow(-60 * 30) },
+  { id: "ds-esl", name: "ESL Pro League Feed", sport: "cs2", status: "connected", lastSyncedAt: fromNow(-45) },
+  { id: "ds-manual", name: "Manual Import", status: "connected", lastSyncedAt: fromNow(-60 * 26) },
+]
+
+export const syncLogs: SyncLog[] = [
+  { id: "sl-01", dataSourceId: "ds-nba", entity: "matches", records: 12, status: "success", durationMs: 840, at: fromNow(-12) },
+  { id: "sl-02", dataSourceId: "ds-lck", entity: "matches", records: 24, status: "success", durationMs: 1320, at: fromNow(-25) },
+  { id: "sl-03", dataSourceId: "ds-esl", entity: "players", records: 60, status: "success", durationMs: 2100, at: fromNow(-45) },
+  { id: "sl-04", dataSourceId: "ds-nba", entity: "teams", records: 30, status: "success", durationMs: 610, at: fromNow(-72) },
+  { id: "sl-05", dataSourceId: "ds-epl", entity: "matches", records: 7, status: "partial", durationMs: 4900, at: fromNow(-190) },
+  { id: "sl-06", dataSourceId: "ds-lck", entity: "players", records: 50, status: "success", durationMs: 1750, at: fromNow(-60 * 5) },
+  { id: "sl-07", dataSourceId: "ds-epl", entity: "teams", records: 0, status: "failed", durationMs: 30000, at: fromNow(-60 * 7) },
+  { id: "sl-08", dataSourceId: "ds-nba", entity: "players", records: 450, status: "success", durationMs: 6200, at: fromNow(-60 * 9) },
+  { id: "sl-09", dataSourceId: "ds-lck", entity: "leagues", records: 1, status: "success", durationMs: 200, at: fromNow(-60 * 20) },
+  { id: "sl-10", dataSourceId: "ds-manual", entity: "matches", records: 4, status: "success", durationMs: 90, at: fromNow(-60 * 26) },
+  { id: "sl-11", dataSourceId: "ds-vct", entity: "matches", records: 0, status: "failed", durationMs: 30000, at: fromNow(-60 * 30) },
+  { id: "sl-12", dataSourceId: "ds-esl", entity: "matches", records: 18, status: "success", durationMs: 980, at: fromNow(-60 * 33) },
+]
+
+export const adminActivity: AdminActivity[] = [
+  { id: "act-1", at: fromNow(-8), action: "Match updated", entity: "Arsenal vs Chelsea", actor: "Rose" },
+  { id: "act-2", at: fromNow(-35), action: "Team added", entity: "Dplus KIA", actor: "Rose" },
+  { id: "act-3", at: fromNow(-60 * 2), action: "Player updated", entity: "Faker", actor: "Sync · LCK Data API" },
+  { id: "act-4", at: fromNow(-60 * 5), action: "League created", entity: "LCK", actor: "Rose" },
+  { id: "act-5", at: fromNow(-60 * 9), action: "Season updated", entity: "NBA 2026-27", actor: "Sync · NBA Data API" },
+  { id: "act-6", at: fromNow(-60 * 26), action: "Venue added", entity: "LoL Park, Seoul", actor: "Rose" },
+]

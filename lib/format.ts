@@ -1,4 +1,5 @@
-const LOCALE = "en-US"
+/** Single locale for every date and number label, so UI language stays consistent. */
+export const LOCALE = "en-US"
 
 const timeFormatter = new Intl.DateTimeFormat(LOCALE, {
   hour: "numeric",
@@ -15,6 +16,12 @@ const longDateFormatter = new Intl.DateTimeFormat(LOCALE, {
   weekday: "long",
   month: "long",
   day: "numeric",
+})
+
+const dateFormatter = new Intl.DateTimeFormat(LOCALE, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
 })
 
 const shortDateFormatter = new Intl.DateTimeFormat(LOCALE, {
@@ -83,6 +90,67 @@ export function formatKickoff(
   now: Date = new Date()
 ): string {
   return `${formatDayLabel(value, now)} · ${formatTime(value)}`
+}
+
+const monthYearFormatter = new Intl.DateTimeFormat(LOCALE, {
+  month: "long",
+  year: "numeric",
+})
+
+/** "September 2026" */
+export function formatMonthYear(value: Date | string): string {
+  return monthYearFormatter.format(toDate(value))
+}
+
+/** Short weekday labels, Sunday first, in the app locale. */
+export function weekdayLabels(): string[] {
+  const sunday = new Date(2023, 0, 1) // a known Sunday
+  return Array.from({ length: 7 }, (_, i) => weekdayOnlyFormatter.format(addDays(sunday, i)))
+}
+
+/** Parse "YYYY-MM-DD" or "YYYY-MM-DDTHH:mm" as local time. Undefined when invalid. */
+export function parseLocalDate(value: string): Date | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/.exec(value)
+  if (!match) return undefined
+  const [, y, m, d, hh = "0", mm = "0"] = match
+  const date = new Date(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm))
+  return Number.isNaN(date.getTime()) ? undefined : date
+}
+
+/** "Sep 12, 2026" */
+export function formatDate(value: Date | string): string {
+  return dateFormatter.format(toDate(value))
+}
+
+/** "Sep 12, 2026 · 7:30 PM" */
+export function formatDateTime(value: Date | string): string {
+  return `${formatDate(value)} · ${formatTime(value)}`
+}
+
+/** "just now", "12 min ago", "3 h ago", "2 d ago" */
+export function formatRelativeTime(value: Date | string, now: Date = new Date()): string {
+  const minutes = Math.round((now.getTime() - toDate(value).getTime()) / 60_000)
+  if (minutes < 1) return "just now"
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours} h ago`
+  return `${Math.round(hours / 24)} d ago`
+}
+
+/** "840 ms", "1.3 s", "2 m 10 s" */
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms} ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`
+  const minutes = Math.floor(ms / 60_000)
+  const seconds = Math.round((ms % 60_000) / 1000)
+  return `${minutes} m ${seconds} s`
+}
+
+/** Value for an <input type="datetime-local">, in local time. */
+export function toDateTimeLocal(value: Date | string): string {
+  const date = toDate(value)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 /** "Sep 12" */
