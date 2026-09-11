@@ -6,6 +6,7 @@ import {
   teams,
 } from "@/lib/data/mock"
 import type {
+  League,
   Match,
   MatchStatus,
   MatchView,
@@ -14,7 +15,7 @@ import type {
   Team,
   TeamView,
 } from "@/lib/data/types"
-import { isSameDay } from "@/lib/format"
+import { addDays, isSameDay, startOfDay } from "@/lib/format"
 
 /**
  * Read-side data access. Every function is async so the mock store can be
@@ -110,6 +111,30 @@ export async function getWatchlistMatches(limit?: number): Promise<MatchView[]> 
     .sort(byStatusThenStart)
     .map(toMatchView)
   return limit ? list.slice(0, limit) : list
+}
+
+/** Every match from the start of today through the next `days` days, in start order. */
+export async function getScheduleMatches(
+  days = 7,
+  now = new Date()
+): Promise<MatchView[]> {
+  const from = startOfDay(now)
+  const to = addDays(from, days)
+  return matches
+    .filter((match) => {
+      const startsAt = new Date(match.startsAt)
+      return startsAt >= from && startsAt < to
+    })
+    .sort(byStartTime)
+    .map(toMatchView)
+}
+
+export async function getLeagues(): Promise<League[]> {
+  return leagues
+}
+
+export async function getTeams(): Promise<Team[]> {
+  return [...teams].sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export async function getQuickStats(now = new Date()): Promise<QuickStats> {

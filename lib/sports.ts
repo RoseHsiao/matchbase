@@ -8,6 +8,9 @@ const sportLabels: Record<Sport, string> = {
   cs2: "Counter-Strike 2",
 }
 
+/** Every sport in display order. */
+export const sports: Sport[] = ["football", "basketball", "lol", "valorant", "cs2"]
+
 export function sportLabel(sport: Sport): string {
   return sportLabels[sport]
 }

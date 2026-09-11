@@ -17,6 +17,15 @@ const longDateFormatter = new Intl.DateTimeFormat(LOCALE, {
   day: "numeric",
 })
 
+const shortDateFormatter = new Intl.DateTimeFormat(LOCALE, {
+  month: "short",
+  day: "numeric",
+})
+
+const weekdayOnlyFormatter = new Intl.DateTimeFormat(LOCALE, {
+  weekday: "short",
+})
+
 function toDate(value: Date | string): Date {
   return typeof value === "string" ? new Date(value) : value
 }
@@ -25,6 +34,20 @@ export function startOfDay(value: Date | string): Date {
   const date = new Date(toDate(value))
   date.setHours(0, 0, 0, 0)
   return date
+}
+
+export function addDays(value: Date | string, days: number): Date {
+  const date = new Date(toDate(value))
+  date.setDate(date.getDate() + days)
+  return date
+}
+
+/** Local calendar day key such as "2026-09-10", for grouping and lookups. */
+export function dayKey(value: Date | string): string {
+  const date = toDate(value)
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${date.getFullYear()}-${month}-${day}`
 }
 
 export function isSameDay(a: Date | string, b: Date | string): boolean {
@@ -60,6 +83,16 @@ export function formatKickoff(
   now: Date = new Date()
 ): string {
   return `${formatDayLabel(value, now)} · ${formatTime(value)}`
+}
+
+/** "Sep 12" */
+export function formatShortDate(value: Date | string): string {
+  return shortDateFormatter.format(toDate(value))
+}
+
+/** "Thu" */
+export function formatWeekday(value: Date | string): string {
+  return weekdayOnlyFormatter.format(toDate(value))
 }
 
 /** "Thursday, September 10" */
