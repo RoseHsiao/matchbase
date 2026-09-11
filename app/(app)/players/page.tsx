@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 
+import { PageHeader } from "@/components/layout/page-header";
+import { PlayersView } from "@/components/players/players-view";
+import { getLeagues, getPlayerViews, getTeams } from "@/lib/data/queries";
 import { getNavItem } from "@/lib/navigation";
-import { PlaceholderPage } from "@/components/layout/placeholder-page";
 
 const nav = getNavItem("/players");
 
@@ -10,6 +12,20 @@ export const metadata: Metadata = {
   description: nav.description,
 };
 
-export default function PlayersPage() {
-  return <PlaceholderPage href={nav.href} />;
+export default async function PlayersPage() {
+  const [players, leagues, teams] = await Promise.all([
+    getPlayerViews(),
+    getLeagues(),
+    getTeams(),
+  ]);
+
+  return (
+    <>
+      <PageHeader
+        title="Players"
+        description="Browse players across football, basketball, and esports, and follow the ones you want to keep up with."
+      />
+      <PlayersView players={players} leagues={leagues} teams={teams} />
+    </>
+  );
 }

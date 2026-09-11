@@ -11,6 +11,7 @@ import type {
   MatchStatus,
   MatchView,
   Player,
+  PlayerView,
   QuickStats,
   Team,
   TeamView,
@@ -100,6 +101,32 @@ export async function getFollowedTeamIds(): Promise<string[]> {
   return [...currentUserFollows.teamIds]
 }
 
+/** Ids of players the user follows. Seeds the client player-follows store. */
+export async function getFollowedPlayerIds(): Promise<string[]> {
+  return [...currentUserFollows.playerIds]
+}
+
+function toPlayerView(player: Player): PlayerView {
+  const team = must(teamById.get(player.teamId), `team ${player.teamId}`)
+  return {
+    ...player,
+    team,
+    league: must(leagueById.get(team.leagueId), `league ${team.leagueId}`),
+  }
+}
+
+/** Every player with their team and league, sorted by display name. */
+export async function getPlayerViews(): Promise<PlayerView[]> {
+  return players
+    .map(toPlayerView)
+    .sort((a, b) => (a.handle ?? a.name).localeCompare(b.handle ?? b.name))
+}
+
+export async function getPlayerById(id: string): Promise<PlayerView | undefined> {
+  const player = players.find((entry) => entry.id === id)
+  return player ? toPlayerView(player) : undefined
+}
+
 /** Every team with its league and next match, sorted by name. */
 export async function getTeamViews(now = new Date()): Promise<TeamView[]> {
   const list = [...teams].sort((a, b) => a.name.localeCompare(b.name))
@@ -144,7 +171,6 @@ export async function getQuickStats(): Promise<QuickStats> {
   const follows = currentUserFollows
 
   return {
-    followedPlayers: follows.playerIds.length,
     followedLeagues: follows.leagueIds.length,
     followedSports: [
       ...new Set(

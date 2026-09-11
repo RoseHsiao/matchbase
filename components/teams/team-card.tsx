@@ -2,7 +2,7 @@ import Link from "next/link"
 import { cn } from "cn"
 
 import { TeamLogo } from "@/components/matches/team-logo"
-import { FollowButton } from "@/components/teams/follow-button"
+import { TeamFollowButton } from "@/components/teams/follow-button"
 import { Card, CardContent } from "@/components/ui/card"
 import type { TeamView } from "@/lib/data/types"
 import { sportLabel } from "@/lib/sports"
@@ -42,7 +42,7 @@ export function TeamCard({ team, className }: TeamCardProps) {
             {sportLabel(team.league.sport)} · {team.league.name}
           </div>
           <div className="mt-1">
-            <FollowButton teamId={team.id} teamName={team.name} size="sm" />
+            <TeamFollowButton teamId={team.id} teamName={team.name} size="sm" />
           </div>
         </div>
       </CardContent>

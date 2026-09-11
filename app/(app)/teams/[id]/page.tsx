@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { SectionCard } from "@/components/layout/section-card";
 import { MatchList } from "@/components/matches/match-list";
 import { TeamLogo } from "@/components/matches/team-logo";
-import { FollowButton } from "@/components/teams/follow-button";
+import { TeamFollowButton } from "@/components/teams/follow-button";
 import { buttonVariants } from "@/components/ui/button";
 import {
   getTeamById,
@@ -67,7 +67,7 @@ export default async function TeamPage({ params }: TeamPageProps) {
             title={team.name}
             description={`${team.code} · ${sportLabel(team.league.sport)} · ${team.league.name}`}
             actions={
-              <FollowButton
+              <TeamFollowButton
                 teamId={team.id}
                 teamName={team.name}
                 size="lg"

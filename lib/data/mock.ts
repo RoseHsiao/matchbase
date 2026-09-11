@@ -47,15 +47,30 @@ export const teams: Team[] = [
 ]
 
 export const players: Player[] = [
-  { id: "saka", name: "Bukayo Saka", teamId: "arsenal", role: "Right winger" },
-  { id: "odegaard", name: "Martin Ødegaard", teamId: "arsenal", role: "Attacking midfielder" },
-  { id: "salah", name: "Mohamed Salah", teamId: "liverpool", role: "Right winger" },
-  { id: "tatum", name: "Jayson Tatum", teamId: "celtics", role: "Forward" },
-  { id: "curry", name: "Stephen Curry", teamId: "warriors", role: "Point guard" },
-  { id: "caps", name: "Rasmus Winther", handle: "Caps", teamId: "g2", role: "Mid" },
-  { id: "tenz", name: "Tyson Ngo", handle: "TenZ", teamId: "sentinels", role: "Duelist" },
-  { id: "zywoo", name: "Mathieu Herbaut", handle: "ZywOo", teamId: "vitality", role: "AWPer" },
-  { id: "donk", name: "Danil Kryshkovets", handle: "donk", teamId: "spirit", role: "Rifler" },
+  // Football
+  { id: "saka", name: "Bukayo Saka", teamId: "arsenal", role: "Right winger", nationality: "England", number: 7 },
+  { id: "odegaard", name: "Martin Ødegaard", teamId: "arsenal", role: "Attacking midfielder", nationality: "Norway", number: 8 },
+  { id: "salah", name: "Mohamed Salah", teamId: "liverpool", role: "Right winger", nationality: "Egypt", number: 11 },
+  { id: "palmer", name: "Cole Palmer", teamId: "chelsea", role: "Attacking midfielder", nationality: "England", number: 20 },
+  { id: "haaland", name: "Erling Haaland", teamId: "man-city", role: "Striker", nationality: "Norway", number: 9 },
+  { id: "bellingham", name: "Jude Bellingham", teamId: "real-madrid", role: "Midfielder", nationality: "England", number: 5 },
+  { id: "kane", name: "Harry Kane", teamId: "bayern", role: "Striker", nationality: "England", number: 9 },
+  // Basketball
+  { id: "tatum", name: "Jayson Tatum", teamId: "celtics", role: "Forward", nationality: "United States", number: 0 },
+  { id: "curry", name: "Stephen Curry", teamId: "warriors", role: "Point guard", nationality: "United States", number: 30 },
+  { id: "lebron", name: "LeBron James", teamId: "lakers", role: "Forward", nationality: "United States", number: 23 },
+  { id: "jokic", name: "Nikola Jokić", teamId: "nuggets", role: "Center", nationality: "Serbia", number: 15 },
+  // League of Legends
+  { id: "caps", name: "Rasmus Winther", handle: "Caps", teamId: "g2", role: "Mid", nationality: "Denmark" },
+  { id: "razork", name: "Iván Martín Díaz", handle: "Razork", teamId: "fnatic", role: "Jungle", nationality: "Spain" },
+  { id: "targamas", name: "Raphaël Crabbé", handle: "Targamas", teamId: "kc", role: "Support", nationality: "Belgium" },
+  // Valorant
+  { id: "tenz", name: "Tyson Ngo", handle: "TenZ", teamId: "sentinels", role: "Duelist", nationality: "Canada" },
+  { id: "f0rsaken", name: "Jason Susanto", handle: "f0rsakeN", teamId: "prx", role: "Duelist", nationality: "Indonesia" },
+  // Counter-Strike
+  { id: "zywoo", name: "Mathieu Herbaut", handle: "ZywOo", teamId: "vitality", role: "AWPer", nationality: "France" },
+  { id: "donk", name: "Danil Kryshkovets", handle: "donk", teamId: "spirit", role: "Rifler", nationality: "Russia" },
+  { id: "ropz", name: "Robin Kool", handle: "ropz", teamId: "faze", role: "Rifler", nationality: "Estonia" },
 ]
 
 /** Build an ISO timestamp `dayOffset` days from today at the given local time. */

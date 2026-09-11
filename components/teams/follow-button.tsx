@@ -1,48 +1,29 @@
 "use client"
 
-import { CheckIcon, PlusIcon } from "lucide-react"
-import { cn } from "cn"
-
+import { FollowButton } from "@/components/follow-button"
 import { useFollows } from "@/components/teams/follows-provider"
-import { Button } from "@/components/ui/button"
 
-type FollowButtonProps = {
+type TeamFollowButtonProps = {
   teamId: string
-  /** Accessible team name for the button label. */
   teamName: string
   size?: "sm" | "default" | "lg"
-  /** Text shown while following. "Following" for lists, "Unfollow" for detail pages. */
   followedLabel?: "Following" | "Unfollow"
   className?: string
 }
 
-/** Follow or unfollow a team. Reads and writes the shared follows store. */
-export function FollowButton({
+/** Follow or unfollow a team through the shared team-follows store. */
+export function TeamFollowButton({
   teamId,
   teamName,
-  size = "sm",
-  followedLabel = "Following",
-  className,
-}: FollowButtonProps) {
+  ...props
+}: TeamFollowButtonProps) {
   const { has, toggle } = useFollows()
-  const followed = has(teamId)
-
   return (
-    <Button
-      type="button"
-      variant={followed ? "outline" : "default"}
-      size={size}
-      aria-pressed={followed}
-      aria-label={followed ? `Unfollow ${teamName}` : `Follow ${teamName}`}
-      className={cn("cursor-pointer", className)}
-      onClick={() => toggle(teamId)}
-    >
-      {followed ? (
-        <CheckIcon data-icon="inline-start" />
-      ) : (
-        <PlusIcon data-icon="inline-start" />
-      )}
-      {followed ? followedLabel : "Follow"}
-    </Button>
+    <FollowButton
+      followed={has(teamId)}
+      onToggle={() => toggle(teamId)}
+      name={teamName}
+      {...props}
+    />
   )
 }

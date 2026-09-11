@@ -27,9 +27,13 @@ export type Team = {
 export type Player = {
   id: string
   name: string
+  /** In-game name for esports players. */
   handle?: string
   teamId: string
   role: string
+  nationality?: string
+  /** Squad number for traditional sports. */
+  number?: number
 }
 
 export type MatchScore = {
@@ -67,13 +71,18 @@ export type MatchView = Match & {
   awayTeam: Team
 }
 
+/** A player joined with their team and league, ready to render. */
+export type PlayerView = Player & {
+  team: Team
+  league: League
+}
+
 export type TeamView = Team & {
   league: League
   nextMatch?: MatchView
 }
 
 export type QuickStats = {
-  followedPlayers: number
   followedLeagues: number
   /** Distinct sports across followed leagues, for display hints. */
   followedSports: Sport[]

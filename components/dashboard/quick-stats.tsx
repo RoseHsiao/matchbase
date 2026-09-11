@@ -1,16 +1,23 @@
-import { TrophyIcon, UserRoundIcon } from "lucide-react"
+import { TrophyIcon } from "lucide-react"
 
 import { StatCard } from "@/components/dashboard/stat-card"
+import { FollowedPlayersStatCard } from "@/components/players/followed-players-stat-card"
 import { FollowedTeamsStatCard } from "@/components/teams/followed-teams-stat-card"
 import { WatchlistStatCard } from "@/components/watchlist/watchlist-stat-card"
-import { getMatches, getQuickStats, getTeamViews } from "@/lib/data/queries"
+import {
+  getMatches,
+  getPlayerViews,
+  getQuickStats,
+  getTeamViews,
+} from "@/lib/data/queries"
 import { sportLabel } from "@/lib/sports"
 
 export async function QuickStats({ now }: { now: Date }) {
-  const [stats, matches, teams] = await Promise.all([
+  const [stats, matches, teams, players] = await Promise.all([
     getQuickStats(),
     getMatches(),
     getTeamViews(now),
+    getPlayerViews(),
   ])
 
   return (
@@ -20,13 +27,7 @@ export async function QuickStats({ now }: { now: Date }) {
         matches={matches}
         now={now.toISOString()}
       />
-      <StatCard
-        label="Followed players"
-        value={stats.followedPlayers}
-        hint="Across your followed teams"
-        icon={UserRoundIcon}
-        href="/players"
-      />
+      <FollowedPlayersStatCard players={players} />
       <StatCard
         label="Followed leagues"
         value={stats.followedLeagues}

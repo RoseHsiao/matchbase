@@ -5,11 +5,12 @@ import type { Team } from "@/lib/data/types"
 
 type TeamLogoProps = {
   team: Pick<Team, "name" | "code" | "color" | "logoUrl">
-  size?: "sm" | "default" | "lg" | "xl"
+  size?: "xs" | "sm" | "default" | "lg" | "xl"
   className?: string
 }
 
 const sizeClassName: Record<NonNullable<TeamLogoProps["size"]>, string> = {
+  xs: "size-5 text-[9px] tracking-normal",
   sm: "size-6 text-[9px]",
   default: "size-8 text-[10px]",
   lg: "size-10 text-xs",
@@ -27,7 +28,8 @@ function readableTextColor(hex: string): string {
 }
 
 /**
- * Team crest. Falls back to a coloured code badge until real logos exist.
+ * Team crest. Falls back to a coloured code badge until real logos exist;
+ * the extra-small size shows only the first letter so it fits.
  * Always rendered next to the team name, so it is hidden from screen readers.
  */
 export function TeamLogo({ team, size = "default", className }: TeamLogoProps) {
@@ -46,7 +48,7 @@ export function TeamLogo({ team, size = "default", className }: TeamLogoProps) {
         className="rounded-md font-semibold tracking-wide"
         style={{ backgroundColor: team.color, color: readableTextColor(team.color) }}
       >
-        {team.code.slice(0, 3)}
+        {size === "xs" ? team.code.slice(0, 1) : team.code.slice(0, 3)}
       </AvatarFallback>
     </Avatar>
   )
