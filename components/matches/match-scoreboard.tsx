@@ -2,12 +2,13 @@ import Link from "next/link"
 import { MapPinIcon } from "lucide-react"
 import { cn } from "cn"
 
+import { CategoryBadge } from "@/components/category-badge"
 import { MatchStatusBadge } from "@/components/matches/match-status-badge"
 import { TeamLogo } from "@/components/matches/team-logo"
 import { Card, CardContent } from "@/components/ui/card"
 import type { MatchView, Team } from "@/lib/data/types"
 import { formatDayLabel, formatKickoff, formatTime } from "@/lib/format"
-import { sportLabel } from "@/lib/sports"
+import { hasHomeAdvantage, sportCategory, sportLabel } from "@/lib/sports"
 
 type MatchScoreboardProps = {
   match: MatchView
@@ -22,12 +23,15 @@ export function MatchScoreboard({ match, now, className }: MatchScoreboardProps)
   const live = status === "live"
   const homeWon = finished && !!score && score.home > score.away
   const awayWon = finished && !!score && score.away > score.home
+  const sport = match.league.sport
+  const sides = hasHomeAdvantage(sport)
 
   return (
     <Card className={cn(live && "ring-red-500/30", className)}>
       <CardContent className="grid gap-6 py-2">
-        <div className="flex flex-wrap items-center justify-center gap-x-2 text-center text-sm text-muted-foreground">
-          <span>{sportLabel(match.league.sport)}</span>
+        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-sm text-muted-foreground">
+          <CategoryBadge category={sportCategory(sport)} />
+          <span>{sportLabel(sport)}</span>
           <span aria-hidden>·</span>
           <span>{match.league.name}</span>
           {match.stage ? (
@@ -41,7 +45,7 @@ export function MatchScoreboard({ match, now, className }: MatchScoreboardProps)
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-6">
           <TeamBlock
             team={match.homeTeam}
-            role="Home"
+            role={sides ? "Home" : undefined}
             emphasized={homeWon}
             muted={finished && awayWon}
           />
@@ -75,7 +79,7 @@ export function MatchScoreboard({ match, now, className }: MatchScoreboardProps)
 
           <TeamBlock
             team={match.awayTeam}
-            role="Away"
+            role={sides ? "Away" : undefined}
             emphasized={awayWon}
             muted={finished && homeWon}
           />
@@ -104,7 +108,8 @@ function TeamBlock({
   muted,
 }: {
   team: Team
-  role: "Home" | "Away"
+  /** Shown only for sports with a home venue. */
+  role?: "Home" | "Away"
   emphasized?: boolean
   muted?: boolean
 }) {
@@ -127,7 +132,7 @@ function TeamBlock({
           {team.name}
         </span>
         <span className="text-xs text-muted-foreground">
-          {team.code} · {role}
+          {role ? `${team.code} · ${role}` : team.code}
         </span>
       </span>
     </Link>

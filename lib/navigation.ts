@@ -39,7 +39,7 @@ export const navSections: NavSection[] = [
         title: "Schedule",
         href: "/schedule",
         icon: CalendarDays,
-        description: "Upcoming fixtures and kick-off times.",
+        description: "Upcoming fixtures and start times.",
         mobile: true,
       },
     ],

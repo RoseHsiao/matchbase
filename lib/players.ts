@@ -1,10 +1,12 @@
-import type { League, PlayerView, Sport, Team } from "@/lib/data/types"
-import { ALL, leaguesForSport, teamsForFilters } from "@/lib/schedule"
+import type { Category, League, PlayerView, Sport, Team } from "@/lib/data/types"
+import { ALL, reconcileHierarchy } from "@/lib/schedule"
+import { sportCategory } from "@/lib/sports"
 
 /** Pure player browsing logic: filter state, search, and reconciliation. */
 
 export type PlayerFilterState = {
   query: string
+  category: Category | typeof ALL
   sport: Sport | typeof ALL
   leagueId: string
   teamId: string
@@ -12,6 +14,7 @@ export type PlayerFilterState = {
 
 export const defaultPlayerFilters: PlayerFilterState = {
   query: "",
+  category: ALL,
   sport: ALL,
   leagueId: ALL,
   teamId: ALL,
@@ -20,6 +23,7 @@ export const defaultPlayerFilters: PlayerFilterState = {
 export function countActivePlayerFilters(filters: PlayerFilterState): number {
   return (
     (filters.query.trim() ? 1 : 0) +
+    (filters.category !== ALL ? 1 : 0) +
     (filters.sport !== ALL ? 1 : 0) +
     (filters.leagueId !== ALL ? 1 : 0) +
     (filters.teamId !== ALL ? 1 : 0)
@@ -46,6 +50,8 @@ export function filterPlayers(
 ): PlayerView[] {
   return players.filter(
     (player) =>
+      (filters.category === ALL ||
+        sportCategory(player.league.sport) === filters.category) &&
       (filters.sport === ALL || player.league.sport === filters.sport) &&
       (filters.leagueId === ALL || player.team.leagueId === filters.leagueId) &&
       (filters.teamId === ALL || player.teamId === filters.teamId) &&
@@ -53,24 +59,11 @@ export function filterPlayers(
   )
 }
 
-/** Drop league or team selections that no longer fit the broader filters. */
+/** Drop selections that no longer fit the broader filters. */
 export function reconcilePlayerFilters(
   next: PlayerFilterState,
   leagues: League[],
   teams: Team[]
 ): PlayerFilterState {
-  const result = { ...next }
-  if (
-    result.leagueId !== ALL &&
-    !leaguesForSport(leagues, result.sport).some((l) => l.id === result.leagueId)
-  ) {
-    result.leagueId = ALL
-  }
-  if (
-    result.teamId !== ALL &&
-    !teamsForFilters(teams, leagues, result).some((t) => t.id === result.teamId)
-  ) {
-    result.teamId = ALL
-  }
-  return result
+  return reconcileHierarchy(next, leagues, teams)
 }

@@ -20,7 +20,7 @@ export default async function TeamsPage() {
     <>
       <PageHeader
         title="Teams"
-        description="Browse teams across football, basketball, and esports, and follow the ones you care about."
+        description="Browse teams across sports and esports, and follow the ones you care about."
       />
       <TeamsView teams={teams} leagues={leagues} />
     </>

@@ -1,3 +1,10 @@
+/**
+ * Top-level domain. Sports and Esports are parallel categories; each sport or
+ * game belongs to exactly one of them (see `sportMeta` in lib/sports.ts).
+ */
+export type Category = "sports" | "esports"
+
+/** A traditional sport or an esports game. Each maps to a `Category`. */
 export type Sport = "football" | "basketball" | "lol" | "valorant" | "cs2"
 
 export type MatchStatus = "upcoming" | "live" | "finished"

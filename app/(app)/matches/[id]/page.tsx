@@ -13,7 +13,7 @@ import { WatchlistButton } from "@/components/watchlist/watchlist-button";
 import { buttonVariants } from "@/components/ui/button";
 import { getMatchById, getRelatedMatches } from "@/lib/data/queries";
 import { formatKickoff, formatLongDate, formatTime } from "@/lib/format";
-import { sportLabel } from "@/lib/sports";
+import { categoryLabel, sportCategory, sportLabel } from "@/lib/sports";
 
 type MatchPageProps = {
   params: Promise<{ id: string }>;
@@ -67,6 +67,7 @@ export default async function MatchPage({ params }: MatchPageProps) {
         <PageHeader
           title={`${match.homeTeam.name} vs ${match.awayTeam.name}`}
           description={[
+            categoryLabel(sportCategory(league.sport)),
             sportLabel(league.sport),
             league.name,
             league.season,
@@ -84,7 +85,7 @@ export default async function MatchPage({ params }: MatchPageProps) {
         title="Match information"
         description={
           match.status === "upcoming"
-            ? "Everything you need before kick-off."
+            ? "Everything you need before the match starts."
             : match.status === "live"
               ? "This match is in progress."
               : "Final details for this match."
@@ -93,8 +94,10 @@ export default async function MatchPage({ params }: MatchPageProps) {
       >
         <DetailList
           items={[
-            { label: "Venue", value: match.venue ?? "To be announced" },
+            { label: "Category", value: categoryLabel(sportCategory(league.sport)) },
+            { label: "Sport / Game", value: sportLabel(league.sport) },
             { label: "Competition", value: league.name },
+            { label: "Venue", value: match.venue ?? "To be announced" },
             { label: "Season", value: league.season },
             {
               label: "Status",

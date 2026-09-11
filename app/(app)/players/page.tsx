@@ -23,7 +23,7 @@ export default async function PlayersPage() {
     <>
       <PageHeader
         title="Players"
-        description="Browse players across football, basketball, and esports, and follow the ones you want to keep up with."
+        description="Browse players across sports and esports, and follow the ones you want to keep up with."
       />
       <PlayersView players={players} leagues={leagues} teams={teams} />
     </>

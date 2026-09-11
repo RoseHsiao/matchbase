@@ -17,7 +17,7 @@ import {
   getTeamResults,
 } from "@/lib/data/queries";
 import { playerDisplayName } from "@/lib/players";
-import { sportLabel } from "@/lib/sports";
+import { categoryLabel, sportCategory, sportLabel } from "@/lib/sports";
 
 type PlayerPageProps = {
   params: Promise<{ id: string }>;
@@ -102,7 +102,8 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
           items={[
             { label: "Team", value: teamLink },
             { label: "Role", value: player.role },
-            { label: "Sport", value: sportLabel(player.league.sport) },
+            { label: "Category", value: categoryLabel(sportCategory(player.league.sport)) },
+            { label: "Sport / Game", value: sportLabel(player.league.sport) },
             { label: "League", value: player.league.name },
             ...(player.nationality
               ? [{ label: "Nationality", value: player.nationality }]

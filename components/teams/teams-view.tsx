@@ -10,8 +10,8 @@ import { useFollows } from "@/components/teams/follows-provider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { League, TeamView } from "@/lib/data/types"
-import { leaguesForSport } from "@/lib/schedule"
-import { sportLabel, sports } from "@/lib/sports"
+import { leaguesForFilters, sportsForCategory } from "@/lib/schedule"
+import { categories, categoryLabel, sportLabel } from "@/lib/sports"
 import {
   countActiveTeamFilters,
   defaultTeamFilters,
@@ -33,7 +33,8 @@ export function TeamsView({ teams, leagues }: TeamsViewProps) {
   const visible = filterTeams(teams, filters)
   const followedVisible = visible.filter((team) => followedIds.has(team.id)).length
   const activeCount = countActiveTeamFilters(filters)
-  const leagueOptions = leaguesForSport(leagues, filters.sport)
+  const sportOptions = sportsForCategory(filters.category)
+  const leagueOptions = leaguesForFilters(leagues, filters)
 
   function update(patch: Partial<TeamFilterState>) {
     setFilters((current) => reconcileTeamFilters({ ...current, ...patch }, leagues))
@@ -59,14 +60,27 @@ export function TeamsView({ teams, leagues }: TeamsViewProps) {
           </div>
         </FilterField>
 
-        <div className="grid grid-cols-2 gap-3 lg:flex lg:items-end">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:flex lg:items-end">
+          <FilterSelect
+            id="teams-category"
+            label="Category"
+            allLabel="All"
+            value={filters.category}
+            onChange={(category) =>
+              update({ category: category as TeamFilterState["category"] })
+            }
+            options={categories.map((category) => ({
+              value: category,
+              label: categoryLabel(category),
+            }))}
+          />
           <FilterSelect
             id="teams-sport"
-            label="Sport"
-            allLabel="All sports"
+            label="Sport / Game"
+            allLabel="All"
             value={filters.sport}
             onChange={(sport) => update({ sport: sport as TeamFilterState["sport"] })}
-            options={sports.map((sport) => ({ value: sport, label: sportLabel(sport) }))}
+            options={sportOptions.map((sport) => ({ value: sport, label: sportLabel(sport) }))}
           />
           <FilterSelect
             id="teams-league"

@@ -1,13 +1,14 @@
 import Link from "next/link"
 import { cn } from "cn"
 
+import { CategoryBadge } from "@/components/category-badge"
 import { TeamLogo } from "@/components/matches/team-logo"
 import { PlayerAvatar } from "@/components/players/player-avatar"
 import { PlayerFollowButton } from "@/components/players/player-follow-button"
 import { Card, CardContent } from "@/components/ui/card"
 import type { PlayerView } from "@/lib/data/types"
 import { playerDisplayName } from "@/lib/players"
-import { sportLabel } from "@/lib/sports"
+import { sportCategory, sportLabel } from "@/lib/sports"
 
 type PlayerCardProps = {
   player: PlayerView
@@ -51,8 +52,11 @@ export function PlayerCard({ player, className }: PlayerCardProps) {
             <TeamLogo team={player.team} size="xs" />
             <span className="truncate">{player.team.name}</span>
           </Link>
-          <div className="truncate text-xs text-muted-foreground">
-            {sportLabel(player.league.sport)} · {player.league.name}
+          <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <CategoryBadge category={sportCategory(player.league.sport)} size="sm" />
+            <span className="truncate">
+              {sportLabel(player.league.sport)} · {player.league.name}
+            </span>
           </div>
           <div className="mt-1">
             <PlayerFollowButton playerId={player.id} playerName={displayName} size="sm" />

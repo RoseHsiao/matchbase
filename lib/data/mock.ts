@@ -11,6 +11,7 @@ export const leagues: League[] = [
   { id: "ucl", name: "UEFA Champions League", shortName: "UCL", sport: "football", region: "Europe", season: "2026/27" },
   { id: "nba", name: "NBA", shortName: "NBA", sport: "basketball", region: "North America", season: "2026-27" },
   { id: "lec", name: "LoL EMEA Championship", shortName: "LEC", sport: "lol", region: "Europe", season: "Summer 2026" },
+  { id: "lck", name: "LCK", shortName: "LCK", sport: "lol", region: "South Korea", season: "2026 Season" },
   { id: "vct", name: "VCT Champions", shortName: "VCT", sport: "valorant", region: "International", season: "Champions 2026" },
   { id: "esl", name: "ESL Pro League", shortName: "ESL", sport: "cs2", region: "International", season: "Season 22" },
 ]
@@ -34,6 +35,10 @@ export const teams: Team[] = [
   { id: "fnatic", name: "Fnatic", shortName: "Fnatic", code: "FNC", leagueId: "lec", color: "#FF5900" },
   { id: "kc", name: "Karmine Corp", shortName: "KC", code: "KC", leagueId: "lec", color: "#0A84FF" },
   { id: "mad", name: "MAD Lions KOI", shortName: "MAD", code: "MAD", leagueId: "lec", color: "#C9A227" },
+  { id: "t1", name: "T1", shortName: "T1", code: "T1", leagueId: "lck", color: "#E4002B" },
+  { id: "geng", name: "Gen.G", shortName: "Gen.G", code: "GEN", leagueId: "lck", color: "#AA8B56" },
+  { id: "hle", name: "Hanwha Life Esports", shortName: "HLE", code: "HLE", leagueId: "lck", color: "#F47B20" },
+  { id: "dk", name: "Dplus KIA", shortName: "DK", code: "DK", leagueId: "lck", color: "#1B1B1B" },
   // Valorant
   { id: "sentinels", name: "Sentinels", shortName: "Sentinels", code: "SEN", leagueId: "vct", color: "#C8102E" },
   { id: "fut", name: "FUT Esports", shortName: "FUT", code: "FUT", leagueId: "vct", color: "#0F766E" },
@@ -64,6 +69,10 @@ export const players: Player[] = [
   { id: "caps", name: "Rasmus Winther", handle: "Caps", teamId: "g2", role: "Mid", nationality: "Denmark" },
   { id: "razork", name: "Iván Martín Díaz", handle: "Razork", teamId: "fnatic", role: "Jungle", nationality: "Spain" },
   { id: "targamas", name: "Raphaël Crabbé", handle: "Targamas", teamId: "kc", role: "Support", nationality: "Belgium" },
+  { id: "faker", name: "Lee Sang-hyeok", handle: "Faker", teamId: "t1", role: "Mid", nationality: "South Korea" },
+  { id: "chovy", name: "Jeong Ji-hoon", handle: "Chovy", teamId: "geng", role: "Mid", nationality: "South Korea" },
+  { id: "zeka", name: "Kim Geon-woo", handle: "Zeka", teamId: "hle", role: "Mid", nationality: "South Korea" },
+  { id: "showmaker", name: "Heo Su", handle: "ShowMaker", teamId: "dk", role: "Mid", nationality: "South Korea" },
   // Valorant
   { id: "tenz", name: "Tyson Ngo", handle: "TenZ", teamId: "sentinels", role: "Duelist", nationality: "Canada" },
   { id: "f0rsaken", name: "Jason Susanto", handle: "f0rsakeN", teamId: "prx", role: "Duelist", nationality: "Indonesia" },
@@ -238,6 +247,48 @@ export const matches: Match[] = [
     stage: "Playoffs · Grand final",
     venue: "Uber Arena, Berlin",
   },
+  // LCK
+  {
+    id: "m-lck-t1-geng",
+    leagueId: "lck",
+    homeTeamId: "t1",
+    awayTeamId: "geng",
+    startsAt: fromNow(90),
+    status: "upcoming",
+    stage: "Regular season · Week 6",
+    venue: "LoL Park, Seoul",
+  },
+  {
+    id: "m-lck-hle-dk",
+    leagueId: "lck",
+    homeTeamId: "hle",
+    awayTeamId: "dk",
+    startsAt: at(1, 17, 0),
+    status: "upcoming",
+    stage: "Regular season · Week 6",
+    venue: "LoL Park, Seoul",
+  },
+  {
+    id: "m-lck-geng-dk",
+    leagueId: "lck",
+    homeTeamId: "geng",
+    awayTeamId: "dk",
+    startsAt: at(3, 17, 0),
+    status: "upcoming",
+    stage: "Regular season · Week 7",
+    venue: "LoL Park, Seoul",
+  },
+  {
+    id: "m-lck-t1-hle",
+    leagueId: "lck",
+    homeTeamId: "t1",
+    awayTeamId: "hle",
+    startsAt: at(-1, 17, 0),
+    status: "finished",
+    stage: "Regular season · Week 5",
+    venue: "LoL Park, Seoul",
+    score: { home: 2, away: 0 },
+  },
   // Recent history
   {
     id: "m-epl-mci-tot",
@@ -262,11 +313,12 @@ export const matches: Match[] = [
 ]
 
 export const currentUserFollows: UserFollows = {
-  teamIds: ["arsenal", "liverpool", "celtics", "g2", "sentinels", "vitality"],
-  playerIds: ["saka", "salah", "tatum", "caps", "tenz", "zywoo"],
-  leagueIds: ["epl", "nba", "lec", "vct"],
+  teamIds: ["arsenal", "liverpool", "celtics", "g2", "t1", "sentinels", "vitality"],
+  playerIds: ["saka", "salah", "tatum", "caps", "faker", "tenz", "zywoo"],
+  leagueIds: ["epl", "nba", "lec", "lck", "vct"],
   watchlistMatchIds: [
     "m-epl-ars-che",
+    "m-lck-t1-geng",
     "m-epl-liv-mci",
     "m-ucl-rma-fcb",
     "m-lec-g2-kc",

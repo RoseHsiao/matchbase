@@ -17,8 +17,8 @@ import {
   reconcilePlayerFilters,
   type PlayerFilterState,
 } from "@/lib/players"
-import { leaguesForSport, teamsForFilters } from "@/lib/schedule"
-import { sportLabel, sports } from "@/lib/sports"
+import { leaguesForFilters, sportsForCategory, teamsForFilters } from "@/lib/schedule"
+import { categories, categoryLabel, sportLabel } from "@/lib/sports"
 
 type PlayersViewProps = {
   players: PlayerView[]
@@ -34,7 +34,8 @@ export function PlayersView({ players, leagues, teams }: PlayersViewProps) {
   const visible = filterPlayers(players, filters)
   const followedVisible = visible.filter((player) => followedIds.has(player.id)).length
   const activeCount = countActivePlayerFilters(filters)
-  const leagueOptions = leaguesForSport(leagues, filters.sport)
+  const sportOptions = sportsForCategory(filters.category)
+  const leagueOptions = leaguesForFilters(leagues, filters)
   const teamOptions = teamsForFilters(teams, leagues, filters)
 
   function update(patch: Partial<PlayerFilterState>) {
@@ -63,14 +64,27 @@ export function PlayersView({ players, leagues, teams }: PlayersViewProps) {
           </div>
         </FilterField>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:flex lg:items-end">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:flex lg:items-end">
+          <FilterSelect
+            id="players-category"
+            label="Category"
+            allLabel="All"
+            value={filters.category}
+            onChange={(category) =>
+              update({ category: category as PlayerFilterState["category"] })
+            }
+            options={categories.map((category) => ({
+              value: category,
+              label: categoryLabel(category),
+            }))}
+          />
           <FilterSelect
             id="players-sport"
-            label="Sport"
-            allLabel="All sports"
+            label="Sport / Game"
+            allLabel="All"
             value={filters.sport}
             onChange={(sport) => update({ sport: sport as PlayerFilterState["sport"] })}
-            options={sports.map((sport) => ({ value: sport, label: sportLabel(sport) }))}
+            options={sportOptions.map((sport) => ({ value: sport, label: sportLabel(sport) }))}
           />
           <FilterSelect
             id="players-league"

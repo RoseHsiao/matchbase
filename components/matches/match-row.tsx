@@ -5,6 +5,7 @@ import { MatchStatusBadge } from "@/components/matches/match-status-badge"
 import { TeamLogo } from "@/components/matches/team-logo"
 import type { MatchView, Team } from "@/lib/data/types"
 import { formatDayLabel, formatTime } from "@/lib/format"
+import { hierarchyLabel, sportLabel } from "@/lib/sports"
 
 type MatchRowProps = {
   match: MatchView
@@ -68,10 +69,12 @@ export function MatchRow({
         <MatchStatusBadge status={match.status} liveDetail={match.liveDetail} />
         {showLeague ? (
           <span
-            className="hidden max-w-36 truncate text-xs text-muted-foreground sm:block"
-            title={match.league.name}
+            className="hidden max-w-40 truncate text-xs text-muted-foreground sm:block"
+            title={hierarchyLabel(match.league.sport, match.league.name)}
           >
-            {compact ? match.league.shortName : match.league.name}
+            {compact
+              ? match.league.shortName
+              : `${sportLabel(match.league.sport)} · ${match.league.shortName}`}
           </span>
         ) : null}
       </div>

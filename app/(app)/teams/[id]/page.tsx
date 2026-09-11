@@ -17,7 +17,7 @@ import {
   getTeamPlayers,
   getTeamResults,
 } from "@/lib/data/queries";
-import { sportLabel } from "@/lib/sports";
+import { categoryLabel, sportCategory, sportLabel } from "@/lib/sports";
 
 type TeamPageProps = {
   params: Promise<{ id: string }>;
@@ -65,7 +65,7 @@ export default async function TeamPage({ params }: TeamPageProps) {
           <PageHeader
             className="min-w-0 flex-1"
             title={team.name}
-            description={`${team.code} · ${sportLabel(team.league.sport)} · ${team.league.name}`}
+            description={`${team.code} · ${categoryLabel(sportCategory(team.league.sport))} · ${sportLabel(team.league.sport)} · ${team.league.name}`}
             actions={
               <TeamFollowButton
                 teamId={team.id}
@@ -82,7 +82,8 @@ export default async function TeamPage({ params }: TeamPageProps) {
         <DetailList
           items={[
             { label: "Abbreviation", value: team.code },
-            { label: "Sport", value: sportLabel(team.league.sport) },
+            { label: "Category", value: categoryLabel(sportCategory(team.league.sport)) },
+            { label: "Sport / Game", value: sportLabel(team.league.sport) },
             { label: "League", value: team.league.name },
             { label: "Region", value: team.league.region },
             { label: "Season", value: team.league.season },

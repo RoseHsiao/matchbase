@@ -6,6 +6,7 @@ import { LiveDot, liveTextClassName } from "@/components/matches/match-status-ba
 import { TeamLogo } from "@/components/matches/team-logo"
 import type { TeamView } from "@/lib/data/types"
 import { formatDayLabel, formatTime } from "@/lib/format"
+import { hasHomeAdvantage } from "@/lib/sports"
 
 type TeamRowProps = {
   team: TeamView
@@ -21,7 +22,9 @@ export function TeamRow({ team, now = new Date(), className }: TeamRowProps) {
       ? next.awayTeam
       : next.homeTeam
     : undefined
-  const isHome = next?.homeTeamId === team.id
+  // "at" only makes sense where the opponent hosts; esports have no home venue.
+  const away = !!next && next.homeTeamId !== team.id && hasHomeAdvantage(next.league.sport)
+  const versus = away ? "at" : "vs"
 
   return (
     <ListRowLink href={`/teams/${team.id}`} className={className}>
@@ -46,13 +49,13 @@ export function TeamRow({ team, now = new Date(), className }: TeamRowProps) {
                 Live now
               </div>
               <div className="text-muted-foreground">
-                {isHome ? "vs" : "at"} {opponent.code}
+                {versus} {opponent.code}
               </div>
             </>
           ) : (
             <>
               <div className="font-medium">
-                {isHome ? "vs" : "at"} {opponent.code}
+                {versus} {opponent.code}
               </div>
               <time
                 dateTime={next.startsAt}

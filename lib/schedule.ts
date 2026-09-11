@@ -1,4 +1,5 @@
 import type {
+  Category,
   League,
   MatchStatus,
   MatchView,
@@ -6,6 +7,7 @@ import type {
   Team,
 } from "@/lib/data/types"
 import { dayKey, startOfDay } from "@/lib/format"
+import { sportCategory, sports } from "@/lib/sports"
 
 /**
  * Pure schedule logic: filter state, filtering, and grouping.
@@ -15,6 +17,7 @@ import { dayKey, startOfDay } from "@/lib/format"
 export const ALL = "all"
 
 export type ScheduleFilterState = {
+  category: Category | typeof ALL
   sport: Sport | typeof ALL
   leagueId: string
   teamId: string
@@ -22,6 +25,7 @@ export type ScheduleFilterState = {
 }
 
 export const defaultScheduleFilters: ScheduleFilterState = {
+  category: ALL,
   sport: ALL,
   leagueId: ALL,
   teamId: ALL,
@@ -38,6 +42,8 @@ export function filterMatches(
 ): MatchView[] {
   return matches.filter(
     (match) =>
+      (filters.category === ALL ||
+        sportCategory(match.league.sport) === filters.category) &&
       (filters.sport === ALL || match.league.sport === filters.sport) &&
       (filters.leagueId === ALL || match.leagueId === filters.leagueId) &&
       (filters.teamId === ALL ||
@@ -47,48 +53,78 @@ export function filterMatches(
   )
 }
 
-export function leaguesForSport(
+/** Hierarchy filters shared by schedule, teams, and players. */
+export type HierarchyFilters = {
+  category: Category | typeof ALL
+  sport: Sport | typeof ALL
+}
+
+export function sportsForCategory(category: Category | typeof ALL): Sport[] {
+  return category === ALL
+    ? sports
+    : sports.filter((sport) => sportCategory(sport) === category)
+}
+
+export function leaguesForFilters(
   leagues: League[],
-  sport: ScheduleFilterState["sport"]
+  filters: HierarchyFilters
 ): League[] {
-  return sport === ALL
-    ? leagues
-    : leagues.filter((league) => league.sport === sport)
+  return leagues.filter(
+    (league) =>
+      (filters.category === ALL ||
+        sportCategory(league.sport) === filters.category) &&
+      (filters.sport === ALL || league.sport === filters.sport)
+  )
 }
 
 export function teamsForFilters(
   teams: Team[],
   leagues: League[],
-  filters: Pick<ScheduleFilterState, "sport" | "leagueId">
+  filters: HierarchyFilters & { leagueId: string }
 ): Team[] {
   const allowedLeagues = new Set(
-    leaguesForSport(leagues, filters.sport)
+    leaguesForFilters(leagues, filters)
       .filter((league) => filters.leagueId === ALL || league.id === filters.leagueId)
       .map((league) => league.id)
   )
   return teams.filter((team) => allowedLeagues.has(team.leagueId))
 }
 
-/** Drop league or team selections that no longer fit the broader filters. */
-export function reconcileFilters(
-  next: ScheduleFilterState,
-  leagues: League[],
-  teams: Team[]
-): ScheduleFilterState {
+/**
+ * Drop narrower selections that no longer fit the broader ones:
+ * category → sport → league → team. Works for any filter state that carries
+ * the hierarchy fields; `teamId` is reconciled only when `teams` is given.
+ */
+export function reconcileHierarchy<
+  T extends HierarchyFilters & { leagueId: string; teamId?: string },
+>(next: T, leagues: League[], teams?: Team[]): T {
   const result = { ...next }
+  if (result.sport !== ALL && !sportsForCategory(result.category).includes(result.sport)) {
+    result.sport = ALL
+  }
   if (
     result.leagueId !== ALL &&
-    !leaguesForSport(leagues, result.sport).some((l) => l.id === result.leagueId)
+    !leaguesForFilters(leagues, result).some((l) => l.id === result.leagueId)
   ) {
     result.leagueId = ALL
   }
   if (
+    teams &&
+    result.teamId !== undefined &&
     result.teamId !== ALL &&
     !teamsForFilters(teams, leagues, result).some((t) => t.id === result.teamId)
   ) {
     result.teamId = ALL
   }
   return result
+}
+
+export function reconcileFilters(
+  next: ScheduleFilterState,
+  leagues: League[],
+  teams: Team[]
+): ScheduleFilterState {
+  return reconcileHierarchy(next, leagues, teams)
 }
 
 export type MatchDayGroup = {

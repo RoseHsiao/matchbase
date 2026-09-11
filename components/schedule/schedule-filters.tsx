@@ -10,12 +10,13 @@ import {
   ALL,
   countActiveFilters,
   defaultScheduleFilters,
-  leaguesForSport,
+  leaguesForFilters,
   reconcileFilters,
+  sportsForCategory,
   teamsForFilters,
   type ScheduleFilterState,
 } from "@/lib/schedule"
-import { sportLabel, sports } from "@/lib/sports"
+import { categories, categoryLabel, sportLabel } from "@/lib/sports"
 
 type ScheduleFiltersProps = {
   value: ScheduleFilterState
@@ -38,7 +39,8 @@ export function ScheduleFilters({
   teams,
 }: ScheduleFiltersProps) {
   const activeCount = countActiveFilters(value)
-  const leagueOptions = leaguesForSport(leagues, value.sport)
+  const sportOptions = sportsForCategory(value.category)
+  const leagueOptions = leaguesForFilters(leagues, value)
   const teamOptions = teamsForFilters(teams, leagues, value)
 
   function update(patch: Partial<ScheduleFilterState>) {
@@ -47,14 +49,27 @@ export function ScheduleFilters({
 
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:flex lg:flex-wrap lg:items-end">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:flex lg:flex-wrap lg:items-end">
+        <FilterSelect
+          id="schedule-category"
+          label="Category"
+          allLabel="All"
+          value={value.category}
+          onChange={(category) =>
+            update({ category: category as ScheduleFilterState["category"] })
+          }
+          options={categories.map((category) => ({
+            value: category,
+            label: categoryLabel(category),
+          }))}
+        />
         <FilterSelect
           id="schedule-sport"
-          label="Sport"
-          allLabel="All sports"
+          label="Sport / Game"
+          allLabel="All"
           value={value.sport}
           onChange={(sport) => update({ sport: sport as ScheduleFilterState["sport"] })}
-          options={sports.map((sport) => ({ value: sport, label: sportLabel(sport) }))}
+          options={sportOptions.map((sport) => ({ value: sport, label: sportLabel(sport) }))}
         />
         <FilterSelect
           id="schedule-league"
