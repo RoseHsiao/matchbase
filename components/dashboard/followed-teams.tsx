@@ -1,35 +1,17 @@
-import { UsersIcon } from "lucide-react"
-
 import { SectionCard } from "@/components/layout/section-card"
-import { EmptyState } from "@/components/empty-state"
-import { TeamCard } from "@/components/teams/team-card"
-import { getFollowedTeams } from "@/lib/data/queries"
+import { FollowedTeamList } from "@/components/teams/followed-team-list"
+import { getTeamViews } from "@/lib/data/queries"
 
 export async function FollowedTeams({ now }: { now: Date }) {
-  const teams = await getFollowedTeams(now)
+  const teams = await getTeamViews(now)
 
   return (
     <SectionCard
       title="Followed teams"
-      description={`${teams.length} ${teams.length === 1 ? "team" : "teams"}`}
+      description="Teams you follow and their next fixture"
       href="/teams"
     >
-      {teams.length === 0 ? (
-        <EmptyState
-          icon={UsersIcon}
-          title="You're not following any teams"
-          description="Follow a team to see its fixtures here."
-          className="mx-2"
-        />
-      ) : (
-        <ul className="grid gap-0.5">
-          {teams.map((team) => (
-            <li key={team.id}>
-              <TeamCard team={team} now={now} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <FollowedTeamList teams={teams} now={now.toISOString()} />
     </SectionCard>
   )
 }

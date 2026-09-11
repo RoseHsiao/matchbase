@@ -73,11 +73,8 @@ export type TeamView = Team & {
 }
 
 export type QuickStats = {
-  followedTeams: number
   followedPlayers: number
   followedLeagues: number
-  /** How many followed teams play today, shown as a hint. */
-  teamsPlayingToday: number
   /** Distinct sports across followed leagues, for display hints. */
   followedSports: Sport[]
 }

@@ -1,75 +1,51 @@
-import { ChevronRightIcon } from "lucide-react"
+import Link from "next/link"
 import { cn } from "cn"
 
-import { ListRowLink } from "@/components/list-row-link"
-import { LiveDot, liveTextClassName } from "@/components/matches/match-status-badge"
 import { TeamLogo } from "@/components/matches/team-logo"
+import { FollowButton } from "@/components/teams/follow-button"
+import { Card, CardContent } from "@/components/ui/card"
 import type { TeamView } from "@/lib/data/types"
-import { formatDayLabel, formatTime } from "@/lib/format"
+import { sportLabel } from "@/lib/sports"
 
 type TeamCardProps = {
   team: TeamView
-  now?: Date
   className?: string
 }
 
-/** Compact followed-team tile linking to the team page. */
-export function TeamCard({ team, now = new Date(), className }: TeamCardProps) {
-  const next = team.nextMatch
-  const opponent = next
-    ? next.homeTeamId === team.id
-      ? next.awayTeam
-      : next.homeTeam
-    : undefined
-  const isHome = next?.homeTeamId === team.id
-
+/**
+ * Grid card for browsing teams. The name links to the team page; the follow
+ * button is a separate control, so the card itself is not clickable.
+ */
+export function TeamCard({ team, className }: TeamCardProps) {
   return (
-    <ListRowLink href={`/teams/${team.id}`} className={className}>
-      <TeamLogo team={team} size="lg" />
-      <div className="grid min-w-0 flex-1 overflow-hidden">
-        <span className="truncate text-sm font-medium">{team.name}</span>
-        <span className="truncate text-xs text-muted-foreground">
-          {team.league.name}
-        </span>
-      </div>
-      <div className="shrink-0 text-right text-xs">
-        {next && opponent ? (
-          next.status === "live" ? (
-            <>
-              <div
-                className={cn(
-                  "flex items-center justify-end gap-1.5 font-medium",
-                  liveTextClassName
-                )}
-              >
-                <LiveDot />
-                Live now
-              </div>
-              <div className="text-muted-foreground">
-                {isHome ? "vs" : "at"} {opponent.code}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="font-medium">
-                {isHome ? "vs" : "at"} {opponent.code}
-              </div>
-              <time
-                dateTime={next.startsAt}
-                className="block text-muted-foreground tabular-nums"
-              >
-                {formatDayLabel(next.startsAt, now)} · {formatTime(next.startsAt)}
-              </time>
-            </>
-          )
-        ) : (
-          <span className="text-muted-foreground">No upcoming fixture</span>
-        )}
-      </div>
-      <ChevronRightIcon
-        className="size-4 shrink-0 text-muted-foreground"
-        aria-hidden
-      />
-    </ListRowLink>
+    <Card size="sm" className={cn("min-w-0", className)}>
+      <CardContent className="flex items-start gap-3">
+        <Link
+          href={`/teams/${team.id}`}
+          aria-label={team.name}
+          className="shrink-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <TeamLogo team={team} size="lg" />
+        </Link>
+
+        <div className="grid min-w-0 flex-1 gap-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <Link
+              href={`/teams/${team.id}`}
+              className="min-w-0 truncate text-sm font-semibold outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              {team.name}
+            </Link>
+            <span className="shrink-0 text-xs text-muted-foreground">{team.code}</span>
+          </div>
+          <div className="truncate text-xs text-muted-foreground">
+            {sportLabel(team.league.sport)} · {team.league.name}
+          </div>
+          <div className="mt-1">
+            <FollowButton teamId={team.id} teamName={team.name} size="sm" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

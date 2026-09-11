@@ -95,11 +95,14 @@ export async function getUpcomingFollowedMatches(
     .map(toMatchView)
 }
 
-/** Followed teams with their next scheduled match attached. */
-export async function getFollowedTeams(now = new Date()): Promise<TeamView[]> {
-  const list = currentUserFollows.teamIds.map((id) =>
-    must(teamById.get(id), `team ${id}`)
-  )
+/** Ids of teams the user follows. Seeds the client follows store. */
+export async function getFollowedTeamIds(): Promise<string[]> {
+  return [...currentUserFollows.teamIds]
+}
+
+/** Every team with its league and next match, sorted by name. */
+export async function getTeamViews(now = new Date()): Promise<TeamView[]> {
+  const list = [...teams].sort((a, b) => a.name.localeCompare(b.name))
   return toTeamViews(list, now)
 }
 
@@ -137,21 +140,12 @@ export async function getTeams(): Promise<Team[]> {
   return [...teams].sort((a, b) => a.name.localeCompare(b.name))
 }
 
-export async function getQuickStats(now = new Date()): Promise<QuickStats> {
+export async function getQuickStats(): Promise<QuickStats> {
   const follows = currentUserFollows
-  const teamsPlayingToday = follows.teamIds.filter((teamId) =>
-    matches.some(
-      (match) =>
-        isSameDay(match.startsAt, now) &&
-        (match.homeTeamId === teamId || match.awayTeamId === teamId)
-    )
-  ).length
 
   return {
-    followedTeams: follows.teamIds.length,
     followedPlayers: follows.playerIds.length,
     followedLeagues: follows.leagueIds.length,
-    teamsPlayingToday,
     followedSports: [
       ...new Set(
         follows.leagueIds.map(
@@ -193,19 +187,41 @@ export async function getTeamById(id: string): Promise<TeamView | undefined> {
   return view
 }
 
-export async function getTeamMatches(teamId: string): Promise<MatchView[]> {
+function involvesTeam(teamId: string) {
+  return (match: Match) =>
+    match.homeTeamId === teamId || match.awayTeamId === teamId
+}
+
+/** Live and upcoming matches for a team, soonest first. */
+export async function getTeamFixtures(
+  teamId: string,
+  now = new Date()
+): Promise<MatchView[]> {
+  const cutoff = new Date(now.getTime() - 3 * 3_600_000)
   return matches
-    .filter((match) => match.homeTeamId === teamId || match.awayTeamId === teamId)
+    .filter(involvesTeam(teamId))
+    .filter(
+      (match) => match.status !== "finished" && new Date(match.startsAt) > cutoff
+    )
     .sort(byStartTime)
     .map(toMatchView)
 }
 
-export async function getTeamPlayers(teamId: string): Promise<Player[]> {
-  return players.filter((player) => player.teamId === teamId)
+/** Finished matches for a team, most recent first. */
+export async function getTeamResults(
+  teamId: string,
+  limit?: number
+): Promise<MatchView[]> {
+  const list = matches
+    .filter(involvesTeam(teamId))
+    .filter((match) => match.status === "finished")
+    .sort((a, b) => byStartTime(b, a))
+    .map(toMatchView)
+  return limit === undefined ? list : list.slice(0, limit)
 }
 
-export async function isTeamFollowed(teamId: string): Promise<boolean> {
-  return currentUserFollows.teamIds.includes(teamId)
+export async function getTeamPlayers(teamId: string): Promise<Player[]> {
+  return players.filter((player) => player.teamId === teamId)
 }
 
 function toTeamViews(list: Team[], now = new Date()): TeamView[] {
