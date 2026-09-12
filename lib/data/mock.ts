@@ -330,6 +330,7 @@ export const currentUserFollows: UserFollows = {
   watchlistMatchIds: [
     "m-epl-ars-che",
     "m-lck-t1-geng",
+    "m-lck-t1-hle",
     "m-epl-liv-mci",
     "m-ucl-rma-fcb",
     "m-lec-g2-kc",

@@ -1,6 +1,6 @@
+import Link from "next/link"
 import { cn } from "cn"
 
-import { ListRowLink } from "@/components/list-row-link"
 import { MatchStatusBadge } from "@/components/matches/match-status-badge"
 import { TeamLogo } from "@/components/matches/team-logo"
 import type { MatchView, Team } from "@/lib/data/types"
@@ -21,7 +21,12 @@ type MatchRowProps = {
   className?: string
 }
 
-/** One match in a list. Links to the match detail page. */
+/**
+ * One match in a list. The row links to the match page; the league label is a
+ * separate link to the league page, and `action` renders a control beside it.
+ * The match link is "stretched" over the row so the whole row stays clickable
+ * without nesting anchors.
+ */
 export function MatchRow({
   match,
   now = new Date(),
@@ -36,57 +41,62 @@ export function MatchRow({
   const homeWon = finished && !!score && score.home > score.away
   const awayWon = finished && !!score && score.away > score.home
 
-  const row = (
-    <ListRowLink href={`/matches/${match.id}`} className={className}>
-      <time
-        dateTime={match.startsAt}
-        className="block w-18 shrink-0 text-xs tabular-nums"
+  return (
+    <div
+      className={cn(
+        "relative flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/60 has-[[data-row-link]:focus-visible]:ring-2 has-[[data-row-link]:focus-visible]:ring-ring/50",
+        className
+      )}
+    >
+      <Link
+        href={`/matches/${match.id}`}
+        data-row-link
+        className="flex min-w-0 flex-1 items-center gap-3 outline-none after:absolute after:inset-0 after:z-[1] after:rounded-lg"
       >
-        <span className="block font-medium">{formatTime(match.startsAt)}</span>
-        {showDay ? (
-          <span className="block text-muted-foreground">
-            {formatDayLabel(match.startsAt, now)}
-          </span>
-        ) : null}
-      </time>
+        <time
+          dateTime={match.startsAt}
+          className="block w-18 shrink-0 text-xs tabular-nums"
+        >
+          <span className="block font-medium">{formatTime(match.startsAt)}</span>
+          {showDay ? (
+            <span className="block text-muted-foreground">
+              {formatDayLabel(match.startsAt, now)}
+            </span>
+          ) : null}
+        </time>
 
-      <div className="grid min-w-0 flex-1 gap-1 overflow-hidden">
-        <TeamLine
-          team={match.homeTeam}
-          score={score?.home}
-          emphasized={homeWon}
-          muted={finished && awayWon}
-        />
-        <TeamLine
-          team={match.awayTeam}
-          score={score?.away}
-          emphasized={awayWon}
-          muted={finished && homeWon}
-        />
-      </div>
+        <div className="grid min-w-0 flex-1 gap-1 overflow-hidden">
+          <TeamLine
+            team={match.homeTeam}
+            score={score?.home}
+            emphasized={homeWon}
+            muted={finished && awayWon}
+          />
+          <TeamLine
+            team={match.awayTeam}
+            score={score?.away}
+            emphasized={awayWon}
+            muted={finished && homeWon}
+          />
+        </div>
+      </Link>
 
       <div className="flex shrink-0 flex-col items-end gap-1 text-right">
         <MatchStatusBadge status={match.status} liveDetail={match.liveDetail} />
         {showLeague ? (
-          <span
-            className="hidden max-w-40 truncate text-xs text-muted-foreground sm:block"
+          <Link
+            href={`/leagues/${match.league.id}`}
+            className="relative z-[2] hidden max-w-40 truncate rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 sm:block"
             title={hierarchyLabel(match.league.sport, match.league.name)}
           >
             {compact
               ? match.league.shortName
               : `${sportLabel(match.league.sport)} · ${match.league.shortName}`}
-          </span>
+          </Link>
         ) : null}
       </div>
-    </ListRowLink>
-  )
 
-  if (!action) return row
-
-  return (
-    <div className="flex items-center gap-1 pr-2">
-      <div className="min-w-0 flex-1">{row}</div>
-      {action}
+      {action ? <div className="relative z-[2] shrink-0">{action}</div> : null}
     </div>
   )
 }

@@ -96,7 +96,14 @@ export default async function MatchPage({ params }: MatchPageProps) {
           items={[
             { label: "Category", value: categoryLabel(sportCategory(league.sport)) },
             { label: "Sport / Game", value: sportLabel(league.sport) },
-            { label: "Competition", value: league.name },
+            {
+              label: "Competition",
+              value: (
+                <Link href={`/leagues/${league.id}`} className="rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50">
+                  {league.name}
+                </Link>
+              ),
+            },
             { label: "Venue", value: match.venue ?? "To be announced" },
             { label: "Season", value: league.season },
             {
@@ -127,8 +134,8 @@ export default async function MatchPage({ params }: MatchPageProps) {
       <SectionCard
         title={`More from ${league.shortName}`}
         description={`Upcoming ${league.name} matches`}
-        href="/schedule"
-        actionLabel="Full schedule"
+        href={`/leagues/${league.id}`}
+        actionLabel="League page"
       >
         <MatchList
           matches={related}

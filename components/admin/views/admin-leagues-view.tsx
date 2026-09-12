@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react"
 
 import { useAdminCollection } from "@/components/admin/admin-data-provider"
@@ -11,7 +12,7 @@ import { AdminPage } from "@/components/admin/admin-page"
 import { AdminStatusBadge } from "@/components/admin/admin-status-badge"
 import { AdminToolbar } from "@/components/admin/admin-toolbar"
 import { SelectField, TextField } from "@/components/admin/form-fields"
-import { HierarchyFilterSelects, useHierarchyFilters } from "@/components/admin/hierarchy-filters"
+import { HierarchyFilterSelects, useHierarchyFilters } from "@/components/filters/hierarchy-filters"
 import { useEntityEditor } from "@/components/admin/use-entity-editor"
 import { CategoryBadge } from "@/components/category-badge"
 import { FilterSelect } from "@/components/filters/filter-select"
@@ -62,7 +63,12 @@ export function AdminLeaguesView() {
       header: "League",
       cell: (row) => (
         <span className="grid leading-tight">
-          <span className="font-medium">{row.name}</span>
+          <Link
+            href={`/leagues/${row.id}`}
+            className="w-fit font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            {row.name}
+          </Link>
           <span className="text-xs text-muted-foreground">{row.shortName} · {row.region}</span>
         </span>
       ),

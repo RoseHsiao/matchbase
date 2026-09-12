@@ -42,7 +42,13 @@ export function TeamCard({ team, className }: TeamCardProps) {
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
             <CategoryBadge category={sportCategory(team.league.sport)} size="sm" />
             <span className="truncate">
-              {sportLabel(team.league.sport)} · {team.league.name}
+              {sportLabel(team.league.sport)} ·{" "}
+              <Link
+                href={`/leagues/${team.league.id}`}
+                className="rounded-sm outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                {team.league.name}
+              </Link>
             </span>
           </div>
           <div className="mt-1">

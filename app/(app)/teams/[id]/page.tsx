@@ -84,7 +84,14 @@ export default async function TeamPage({ params }: TeamPageProps) {
             { label: "Abbreviation", value: team.code },
             { label: "Category", value: categoryLabel(sportCategory(team.league.sport)) },
             { label: "Sport / Game", value: sportLabel(team.league.sport) },
-            { label: "League", value: team.league.name },
+            {
+              label: "League",
+              value: (
+                <Link href={`/leagues/${team.league.id}`} className="rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50">
+                  {team.league.name}
+                </Link>
+              ),
+            },
             { label: "Region", value: team.league.region },
             { label: "Season", value: team.league.season },
           ]}

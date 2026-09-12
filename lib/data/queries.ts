@@ -19,6 +19,7 @@ import type {
   Player,
   PlayerView,
   QuickStats,
+  Season,
   Team,
   TeamView,
 } from "@/lib/data/types"
@@ -168,6 +169,53 @@ export async function getScheduleMatches(
 
 export async function getLeagues(): Promise<League[]> {
   return leagues
+}
+
+export async function getLeagueById(id: string): Promise<League | undefined> {
+  return leagueById.get(id)
+}
+
+/** Seasons for a league, current first, then upcoming, then completed. */
+export async function getLeagueSeasons(leagueId: string): Promise<Season[]> {
+  const order: Record<Season["status"], number> = { current: 0, upcoming: 1, completed: 2 }
+  return seasons
+    .filter((season) => season.leagueId === leagueId)
+    .sort((a, b) => order[a.status] - order[b.status] || b.startsAt.localeCompare(a.startsAt))
+}
+
+/** Teams in a league with their next match, sorted by name. */
+export async function getLeagueTeamViews(leagueId: string, now = new Date()): Promise<TeamView[]> {
+  const list = teams
+    .filter((team) => team.leagueId === leagueId)
+    .sort((a, b) => a.name.localeCompare(b.name))
+  return toTeamViews(list, now)
+}
+
+/** Live and upcoming matches in a league, soonest first. */
+export async function getLeagueFixtures(leagueId: string, now = new Date()): Promise<MatchView[]> {
+  const cutoff = new Date(now.getTime() - 3 * 3_600_000)
+  return matches
+    .filter((match) => match.leagueId === leagueId)
+    .filter((match) => match.status !== "finished" && new Date(match.startsAt) > cutoff)
+    .sort(byStartTime)
+    .map(toMatchView)
+}
+
+/** Finished matches in a league, most recent first. */
+export async function getLeagueResults(leagueId: string, limit?: number): Promise<MatchView[]> {
+  const list = matches
+    .filter((match) => match.leagueId === leagueId && match.status === "finished")
+    .sort((a, b) => byStartTime(b, a))
+    .map(toMatchView)
+  return limit === undefined ? list : list.slice(0, limit)
+}
+
+/** Every finished match, most recent first. Backs the History page. */
+export async function getFinishedMatches(): Promise<MatchView[]> {
+  return matches
+    .filter((match) => match.status === "finished")
+    .sort((a, b) => byStartTime(b, a))
+    .map(toMatchView)
 }
 
 export async function getTeams(): Promise<Team[]> {

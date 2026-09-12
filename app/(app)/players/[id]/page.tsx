@@ -104,7 +104,14 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
             { label: "Role", value: player.role },
             { label: "Category", value: categoryLabel(sportCategory(player.league.sport)) },
             { label: "Sport / Game", value: sportLabel(player.league.sport) },
-            { label: "League", value: player.league.name },
+            {
+              label: "League",
+              value: (
+                <Link href={`/leagues/${player.league.id}`} className="rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50">
+                  {player.league.name}
+                </Link>
+              ),
+            },
             ...(player.nationality
               ? [{ label: "Nationality", value: player.nationality }]
               : []),

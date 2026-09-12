@@ -134,8 +134,11 @@ export type MatchDayGroup = {
   matches: MatchView[]
 }
 
-/** Group matches by local calendar day, preserving start-time order. */
-export function groupMatchesByDay(matches: MatchView[]): MatchDayGroup[] {
+/** Group matches by local calendar day. "desc" puts the newest day and match first. */
+export function groupMatchesByDay(
+  matches: MatchView[],
+  order: "asc" | "desc" = "asc"
+): MatchDayGroup[] {
   const groups = new Map<string, MatchDayGroup>()
   for (const match of matches) {
     const key = dayKey(match.startsAt)
@@ -146,5 +149,13 @@ export function groupMatchesByDay(matches: MatchView[]): MatchDayGroup[] {
       groups.set(key, { key, date: startOfDay(match.startsAt), matches: [match] })
     }
   }
-  return [...groups.values()].sort((a, b) => a.key.localeCompare(b.key))
+  const factor = order === "asc" ? 1 : -1
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      matches: [...group.matches].sort(
+        (a, b) => a.startsAt.localeCompare(b.startsAt) * factor
+      ),
+    }))
+    .sort((a, b) => a.key.localeCompare(b.key) * factor)
 }

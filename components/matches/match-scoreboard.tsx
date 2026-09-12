@@ -33,7 +33,12 @@ export function MatchScoreboard({ match, now, className }: MatchScoreboardProps)
           <CategoryBadge category={sportCategory(sport)} />
           <span>{sportLabel(sport)}</span>
           <span aria-hidden>·</span>
-          <span>{match.league.name}</span>
+          <Link
+            href={`/leagues/${match.league.id}`}
+            className="rounded-sm outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            {match.league.name}
+          </Link>
           {match.stage ? (
             <>
               <span aria-hidden>·</span>
