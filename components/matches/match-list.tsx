@@ -9,6 +9,7 @@ type RowOptions = {
   showLeague?: boolean
   showDay?: boolean
   compact?: boolean
+  showCategory?: boolean
   /** Per-row control rendered beside the link, e.g. a watchlist toggle. */
   renderAction?: (match: MatchView) => React.ReactNode
 }

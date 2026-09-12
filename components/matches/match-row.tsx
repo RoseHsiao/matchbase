@@ -1,11 +1,12 @@
 import Link from "next/link"
 import { cn } from "cn"
 
+import { CategoryBadge } from "@/components/category-badge"
 import { MatchStatusBadge } from "@/components/matches/match-status-badge"
 import { TeamLogo } from "@/components/matches/team-logo"
 import type { MatchView, Team } from "@/lib/data/types"
 import { formatDayLabel, formatTime } from "@/lib/format"
-import { hierarchyLabel, sportLabel } from "@/lib/sports"
+import { hierarchyLabel, sportCategory, sportLabel } from "@/lib/sports"
 
 type MatchRowProps = {
   match: MatchView
@@ -16,6 +17,8 @@ type MatchRowProps = {
   showDay?: boolean
   /** Use the league's short name, for narrow columns. */
   compact?: boolean
+  /** Show the Sports/Esports badge beside the league label. */
+  showCategory?: boolean
   /** Control rendered beside the row, outside the link (e.g. a watchlist star). */
   action?: React.ReactNode
   className?: string
@@ -33,6 +36,7 @@ export function MatchRow({
   showLeague = true,
   showDay = true,
   compact = false,
+  showCategory = false,
   action,
   className,
 }: MatchRowProps) {
@@ -84,15 +88,20 @@ export function MatchRow({
       <div className="flex shrink-0 flex-col items-end gap-1 text-right">
         <MatchStatusBadge status={match.status} liveDetail={match.liveDetail} />
         {showLeague ? (
-          <Link
-            href={`/leagues/${match.league.id}`}
-            className="relative z-[2] hidden max-w-40 truncate rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 sm:block"
-            title={hierarchyLabel(match.league.sport, match.league.name)}
-          >
-            {compact
-              ? match.league.shortName
-              : `${sportLabel(match.league.sport)} · ${match.league.shortName}`}
-          </Link>
+          <span className="hidden max-w-48 items-center gap-1.5 sm:flex">
+            {showCategory ? (
+              <CategoryBadge category={sportCategory(match.league.sport)} size="sm" />
+            ) : null}
+            <Link
+              href={`/leagues/${match.league.id}`}
+              className="relative z-[2] truncate rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+              title={hierarchyLabel(match.league.sport, match.league.name)}
+            >
+              {compact
+                ? match.league.shortName
+                : `${sportLabel(match.league.sport)} · ${match.league.shortName}`}
+            </Link>
+          </span>
         ) : null}
       </div>
 

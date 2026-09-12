@@ -7,7 +7,7 @@ import type {
   Team,
 } from "@/lib/data/types"
 import { dayKey, startOfDay } from "@/lib/format"
-import { sportCategory, sports } from "@/lib/sports"
+import { categoryLabel, sportCategory, sportLabel, sports } from "@/lib/sports"
 
 /**
  * Pure schedule logic: filter state, filtering, and grouping.
@@ -125,6 +125,44 @@ export function reconcileFilters(
   teams: readonly Team[]
 ): ScheduleFilterState {
   return reconcileHierarchy(next, leagues, teams)
+}
+
+const OVERVIEW_STATUS_ORDER: Record<MatchStatus, number> = {
+  live: 0,
+  upcoming: 1,
+  finished: 2,
+}
+
+/**
+ * Discovery ordering: live first, then upcoming soonest-first, then finished
+ * most-recent-first. Returns a new array.
+ */
+export function sortMatchesForOverview(matches: MatchView[]): MatchView[] {
+  return [...matches].sort((a, b) => {
+    const byStatus = OVERVIEW_STATUS_ORDER[a.status] - OVERVIEW_STATUS_ORDER[b.status]
+    if (byStatus !== 0) return byStatus
+    const byStart = a.startsAt.localeCompare(b.startsAt)
+    return a.status === "finished" ? -byStart : byStart
+  })
+}
+
+/** Case-insensitive match on teams, league, sport/game, or category. */
+export function matchesSearch(match: MatchView, query: string): boolean {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return true
+  const { homeTeam, awayTeam, league } = match
+  return [
+    homeTeam.name,
+    homeTeam.shortName,
+    homeTeam.code,
+    awayTeam.name,
+    awayTeam.shortName,
+    awayTeam.code,
+    league.name,
+    league.shortName,
+    sportLabel(league.sport),
+    categoryLabel(sportCategory(league.sport)),
+  ].some((value) => value.toLowerCase().includes(needle))
 }
 
 export type MatchDayGroup = {
