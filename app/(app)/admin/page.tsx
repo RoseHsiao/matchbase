@@ -1,15 +1,13 @@
 import type { Metadata } from "next";
 
-import { AdminDashboardView } from "@/components/admin/views/admin-dashboard-view";
-import { getAdminNavItem } from "@/lib/admin/navigation";
-
-const nav = getAdminNavItem("/admin");
+import { AdminLandingView } from "@/components/admin/views/admin-landing-view";
 
 export const metadata: Metadata = {
   title: "Admin",
-  description: nav.description,
+  description: "Overview of the catalogue, recent activity, and data health.",
 };
 
+/** Admin root: a lightweight landing with counts, activity, and data health. */
 export default function AdminPage() {
-  return <AdminDashboardView />;
+  return <AdminLandingView />;
 }

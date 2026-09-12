@@ -1,10 +1,18 @@
 "use client"
 
+import * as React from "react"
 import Link from "next/link"
+import { cn } from "cn"
 import { usePathname } from "next/navigation"
 import { TrophyIcon } from "lucide-react"
 
-import { adminNavItems, isAdminNavItemActive, isAdminPath } from "@/lib/admin/navigation"
+import {
+  ADMIN_ROOT,
+  adminSections,
+  isAdminNavItemActive,
+  isAdminPath,
+  isRoutable,
+} from "@/lib/admin/navigation"
 import { isNavItemActive, navSections } from "@/lib/navigation"
 import { NavUser } from "@/components/layout/nav-user"
 import {
@@ -62,42 +70,28 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             <SidebarGroupContent>
               <SidebarMenu>
                 {section.items.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      isActive={isNavItemActive(pathname, item.href)}
-                      tooltip={item.title}
-                      render={<Link href={item.href} onClick={handleNavigate} />}
-                    >
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  <React.Fragment key={item.href}>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        isActive={isNavItemActive(pathname, item.href)}
+                        tooltip={item.title}
+                        render={<Link href={item.href} onClick={handleNavigate} />}
+                      >
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    {inAdmin && item.href === ADMIN_ROOT ? (
+                      <SidebarMenuItem>
+                        <AdminContextNav pathname={pathname} onNavigate={handleNavigate} />
+                      </SidebarMenuItem>
+                    ) : null}
+                  </React.Fragment>
                 ))}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
         ))}
-        {inAdmin ? (
-          <SidebarGroup>
-            <SidebarGroupLabel>Manage</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {adminNavItems.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      isActive={isAdminNavItemActive(pathname, item)}
-                      tooltip={item.title}
-                      render={<Link href={item.href} onClick={handleNavigate} />}
-                    >
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ) : null}
       </SidebarContent>
 
       <SidebarFooter>
@@ -105,5 +99,80 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+  )
+}
+
+/**
+ * Contextual admin navigation nested under the Admin entry: four parallel,
+ * non-clickable section labels (Manage, Analytics, Monitoring, Settings), each
+ * over its groups of navigation items. Group labels are plain text too.
+ * Inactive entries reserve pages that are not built yet: no href, and the
+ * sidebar button's own disabled treatment (muted, no hover, no pointer).
+ * Indents and labels hide in icon-collapsed mode so item icons and tooltips
+ * still work there.
+ */
+function AdminContextNav({
+  pathname,
+  onNavigate,
+}: {
+  pathname: string
+  onNavigate: () => void
+}) {
+  const indent =
+    "ml-3.5 border-l border-sidebar-border pl-2 group-data-[collapsible=icon]:ml-0 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:pl-0"
+  const hideCollapsed = "group-data-[collapsible=icon]:hidden"
+
+  return (
+    <div className={cn(indent, "grid gap-3 pt-1 group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:pt-0")}>
+      {adminSections.map((section) => (
+        <div key={section.title} className="grid gap-1">
+          {/* Section label: same style for all four, never a link. */}
+          <div
+            aria-hidden
+            className={cn("px-2 text-xs font-medium text-sidebar-foreground/80", hideCollapsed)}
+          >
+            {section.title}
+          </div>
+          <div className={cn(indent, "grid gap-2")}>
+            {section.groups.map((group, index) => (
+              <div key={group.label ?? index} className="grid gap-0.5">
+                {group.label ? (
+                  <div
+                    aria-hidden
+                    className={cn("px-2 text-xs text-muted-foreground", hideCollapsed)}
+                  >
+                    {group.label}
+                  </div>
+                ) : null}
+                <SidebarMenu aria-label={group.label ? `${section.title} · ${group.label}` : section.title}>
+                  {group.items.map((item) => (
+                    <SidebarMenuItem
+                      key={item.title}
+                      className={cn(!isRoutable(item) && hideCollapsed)}
+                    >
+                      {!isRoutable(item) ? (
+                        <SidebarMenuButton render={<span aria-disabled="true" />}>
+                          <item.icon />
+                          <span>{item.title}</span>
+                        </SidebarMenuButton>
+                      ) : (
+                        <SidebarMenuButton
+                          isActive={isAdminNavItemActive(pathname, item)}
+                          tooltip={item.title}
+                          render={<Link href={item.href} onClick={onNavigate} />}
+                        >
+                          <item.icon />
+                          <span>{item.title}</span>
+                        </SidebarMenuButton>
+                      )}
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }

@@ -22,7 +22,7 @@ import { SectionCard } from "@/components/layout/section-card"
 import { buttonVariants } from "@/components/ui/button"
 import { formatRelativeTime } from "@/lib/format"
 
-export function AdminDashboardView() {
+export function AdminLandingView() {
   const now = useAdminNow()
   const { items: sports } = useAdminCollection("sports")
   const { items: leagues } = useAdminCollection("leagues")
