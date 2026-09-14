@@ -1,0 +1,391 @@
+// MatchBase v1 Prisma schema.
+//
+// Contract: docs/data-model-decisions.md (sections 1-20 and "Prisma Schema
+// Implementation Notes"). Background: docs/data-model-architecture-audit.md.
+//
+// Conventions
+// - String ids. Seeded rows keep the existing MatchBase slugs ("arsenal",
+//   "m-epl-ars-che"); rows created later receive cuid() values.
+// - Every absolute instant is a timezone-aware timestamp stored in UTC.
+//   Presentation converts to Asia/Taipei.
+// - Season bounds are calendar dates (no time of day).
+// - Delete behaviour is conservative: domain parents are Restrict, optional
+//   references are SetNull, user join rows and sync logs Cascade.
+// - No model exists for a UI concept (views, filters, dashboard, admin pages).
+//
+// Invariants that Prisma cannot express and that the repository layer must
+// enforce for now:
+// - Match.homeTeamId <> Match.awayTeamId
+// - Match.homeScore and Match.awayScore are both null or both set
+//   (both could later become PostgreSQL CHECK constraints in a migration)
+// - at most one Season per League has status CURRENT
+//   (not expressible as a normal Prisma constraint or a CHECK constraint;
+//   the eventual database-level solution is a PostgreSQL partial unique
+//   index on leagueId WHERE status = 'CURRENT', added in a hand-written
+//   migration)
+
+// Prisma 7: the connection URL lives in prisma.config.ts (CLI, direct/unpooled
+// Neon connection) and is passed to PrismaClient through a driver adapter at
+// runtime (pooled DATABASE_URL). The generated client is written to
+// lib/generated/prisma and is git-ignored; run `prisma generate` after install.
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+/// Top-level grouping. Deliberately an enum, not a table (decisions §2).
+enum Category {
+  SPORTS
+  ESPORTS
+}
+
+/// Admin-managed lifecycle flag for catalogue entities (decisions §14).
+enum EntityStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SeasonStatus {
+  CURRENT
+  UPCOMING
+  COMPLETED
+}
+
+enum MatchStatus {
+  UPCOMING
+  LIVE
+  FINISHED
+}
+
+/// Whether a feed is in use. Feed health ("needs attention") is derived from
+/// the latest SyncLog rather than stored here.
+enum DataSourceStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue: Sport -> League -> Season / Team -> Player
+// ---------------------------------------------------------------------------
+
+/// A traditional sport or an esports title. The id is the stable code the
+/// application already uses ("football", "basketball", "lol", "valorant",
+/// "cs2"); new titles such as "tennis" are added as rows, never as schema.
+model Sport {
+  /// Stable code, supplied explicitly (no generated default).
+  id        String       @id
+  category  Category
+  name      String
+  /// True when one side hosts. Drives "Home / Away" versus "Side A / Side B"
+  /// wording in the presentation layer; never hardcoded per league.
+  homeAway  Boolean      @default(false)
+  status    EntityStatus @default(ACTIVE)
+  sortOrder Int          @default(0)
+
+  leagues     League[]
+  dataSources DataSource[]
+}
+
+/// A competition within one sport or game (NBA, LCK, EPL are rows here).
+model League {
+  id        String       @id @default(cuid())
+  sportId   String
+  name      String
+  shortName String
+  region    String?
+  status    EntityStatus @default(ACTIVE)
+
+  /// External provider identity (decisions §10). Null for local records.
+  dataSourceId String?
+  externalId   String?
+
+  sport      Sport       @relation(fields: [sportId], references: [id], onDelete: Restrict)
+  dataSource DataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+
+  seasons Season[]
+  teams   Team[]
+  matches Match[]
+  follows UserLeagueFollow[]
+  // sportId lookups are served by the leading column of the unique index above.
+
+  @@unique([sportId, shortName])
+  @@unique([dataSourceId, externalId])
+}
+
+/// A dated window within a league. "Current season" is a Season row with
+/// status CURRENT; the league carries no season label.
+model Season {
+  id       String       @id @default(cuid())
+  leagueId String
+  name     String
+  /// Calendar dates: time of day is not meaningful for a season window.
+  startsAt DateTime     @db.Date
+  endsAt   DateTime     @db.Date
+  status   SeasonStatus @default(UPCOMING)
+
+  league  League  @relation(fields: [leagueId], references: [id], onDelete: Restrict)
+  matches Match[]
+
+  @@unique([leagueId, name])
+  @@index([leagueId, status])
+}
+
+/// A club or organisation in its primary competition (one league in v1).
+model Team {
+  id        String       @id @default(cuid())
+  leagueId  String
+  name      String
+  shortName String
+  /// Two to four letter abbreviation, unique within the league.
+  code      String
+  /// Brand colour for the logo placeholder.
+  color     String?
+  logoUrl   String?
+  status    EntityStatus @default(ACTIVE)
+
+  dataSourceId String?
+  externalId   String?
+
+  league     League      @relation(fields: [leagueId], references: [id], onDelete: Restrict)
+  dataSource DataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+
+  players     Player[]
+  homeMatches Match[]          @relation("HomeTeam")
+  awayMatches Match[]          @relation("AwayTeam")
+  follows     UserTeamFollow[]
+  // leagueId lookups are served by the leading column of the unique index above.
+
+  @@unique([leagueId, code])
+  @@unique([dataSourceId, externalId])
+}
+
+/// A person on a team's current roster. No membership history in v1.
+model Player {
+  id          String       @id @default(cuid())
+  /// Null for a free agent.
+  teamId      String?
+  name        String
+  /// In-game name for esports players.
+  handle      String?
+  /// Position or role, free text ("Striker", "Mid", "AWPer").
+  role        String?
+  nationality String?
+  /// Squad number for traditional sports.
+  number      Int?
+  status      EntityStatus @default(ACTIVE)
+
+  dataSourceId String?
+  externalId   String?
+
+  team       Team?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  dataSource DataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+
+  follows UserPlayerFollow[]
+
+  @@unique([dataSourceId, externalId])
+  @@index([teamId])
+}
+
+/// A physical location. Optional for every match, including esports.
+model Venue {
+  id       String       @id @default(cuid())
+  name     String
+  city     String?
+  country  String?
+  capacity Int?
+  status   EntityStatus @default(ACTIVE)
+
+  dataSourceId String?
+  externalId   String?
+
+  dataSource DataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+
+  matches Match[]
+
+  @@unique([dataSourceId, externalId])
+}
+
+// ---------------------------------------------------------------------------
+// Match
+// ---------------------------------------------------------------------------
+
+/// One fixture, live match, or result between two sides. The two team slots
+/// mean Home / Away when Sport.homeAway is true and first / second side
+/// otherwise; the column names stay positional on purpose (decisions §6).
+model Match {
+  id         String  @id @default(cuid())
+  leagueId   String
+  seasonId   String
+  homeTeamId String
+  awayTeamId String
+  venueId    String?
+
+  /// Absolute instant, stored in UTC.
+  startsAt   DateTime    @db.Timestamptz(3)
+  /// Stored data; transitions are owned by the sync process, not the clock.
+  status     MatchStatus @default(UPCOMING)
+  /// Round, week, or playoff stage label ("Matchweek 4", "Playoffs · Final").
+  stage      String?
+  /// Both null (not started) or both set. Enforced by the repository layer.
+  homeScore  Int?
+  awayScore  Int?
+  /// Live-only detail such as "67'" or "Map 3".
+  liveDetail String?
+
+  dataSourceId String?
+  externalId   String?
+
+  league     League      @relation(fields: [leagueId], references: [id], onDelete: Restrict)
+  season     Season      @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  homeTeam   Team        @relation("HomeTeam", fields: [homeTeamId], references: [id], onDelete: Restrict)
+  awayTeam   Team        @relation("AwayTeam", fields: [awayTeamId], references: [id], onDelete: Restrict)
+  venue      Venue?      @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  dataSource DataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+
+  watchlistedBy UserWatchlistMatch[]
+
+  @@unique([dataSourceId, externalId])
+  // Schedule window, "today", history: ordered scans by start time.
+  @@index([startsAt])
+  // Live / upcoming / finished lists ordered by start time.
+  @@index([status, startsAt])
+  // League fixtures and results.
+  @@index([leagueId, startsAt])
+  // Season results and standings.
+  @@index([seasonId])
+  // Team fixtures and results (home OR away).
+  @@index([homeTeamId, startsAt])
+  @@index([awayTeamId, startsAt])
+  // Admin venue usage counts.
+  @@index([venueId])
+}
+
+// ---------------------------------------------------------------------------
+// User state
+// ---------------------------------------------------------------------------
+
+/// Owner of follows and the watchlist. No credentials, sessions, or roles in
+/// v1; authentication is integrated later without changing these tables.
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  teamFollows   UserTeamFollow[]
+  playerFollows UserPlayerFollow[]
+  leagueFollows UserLeagueFollow[]
+  watchlist     UserWatchlistMatch[]
+}
+
+model UserTeamFollow {
+  userId    String
+  teamId    String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([userId, teamId])
+  @@index([teamId])
+}
+
+model UserPlayerFollow {
+  userId    String
+  playerId  String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@id([userId, playerId])
+  @@index([playerId])
+}
+
+model UserLeagueFollow {
+  userId    String
+  leagueId  String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@id([userId, leagueId])
+  @@index([leagueId])
+}
+
+model UserWatchlistMatch {
+  userId    String
+  matchId   String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, matchId])
+  @@index([matchId])
+}
+
+// ---------------------------------------------------------------------------
+// Operational: data sources and sync logs
+// ---------------------------------------------------------------------------
+
+/// An external feed or manual import channel, optionally scoped to one sport.
+model DataSource {
+  id           String           @id @default(cuid())
+  name         String
+  /// Null for cross-discipline sources such as manual import.
+  sportId      String?
+  status       DataSourceStatus @default(ACTIVE)
+  lastSyncedAt DateTime?        @db.Timestamptz(3)
+
+  sport Sport? @relation(fields: [sportId], references: [id], onDelete: SetNull)
+
+  syncLogs SyncLog[]
+
+  // Back-relations for external identity fields on domain entities.
+  leagues League[]
+  teams   Team[]
+  players Player[]
+  venues  Venue[]
+  matches Match[]
+
+  @@index([sportId])
+}
+
+/// One synchronisation run. Operational data only: nothing in the domain
+/// model references it, and it never points at individual domain rows.
+model SyncLog {
+  id           String     @id @default(cuid())
+  dataSourceId String
+  /// What the run touched: "matches", "teams", "players", "leagues". Free
+  /// text so a fetcher can add kinds without a schema change.
+  entity       String
+  records      Int        @default(0)
+  status       SyncStatus
+  /// Null while RUNNING.
+  durationMs   Int?
+  /// Mock field `at` maps here.
+  startedAt    DateTime   @db.Timestamptz(3)
+  error        String?
+
+  dataSource DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+
+  @@index([dataSourceId, startedAt])
+  @@index([startedAt])
+}
