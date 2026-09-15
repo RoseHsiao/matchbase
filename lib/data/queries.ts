@@ -1,6 +1,8 @@
+import { cache } from "react"
+
+import { getCurrentUserId } from "@/lib/data/current-user"
 import {
   adminActivity,
-  currentUserFollows,
   dataSources,
   leagues as mockLeagues,
   matches as mockMatches,
@@ -15,6 +17,7 @@ import { matchRepository } from "@/lib/data/repositories/match-repository"
 import { playerRepository } from "@/lib/data/repositories/player-repository"
 import { seasonRepository } from "@/lib/data/repositories/season-repository"
 import { teamRepository } from "@/lib/data/repositories/team-repository"
+import { userStateRepository } from "@/lib/data/repositories/user-state-repository"
 import type {
   AdminData,
   League,
@@ -27,6 +30,7 @@ import type {
   Season,
   Team,
   TeamView,
+  UserFollows,
 } from "@/lib/data/types"
 import { addDays, startOfDay } from "@/lib/format"
 import { sports } from "@/lib/sports"
@@ -34,20 +38,28 @@ import { sports } from "@/lib/sports"
 /**
  * Read-side data access: the application-facing query API.
  *
- * Catalogue reads (leagues, seasons, teams, players, matches) go through the
- * repositories in lib/data/repositories, which query PostgreSQL through
- * Prisma. Pages and server components call these functions; nothing outside
- * lib/data touches Prisma.
+ * Catalogue reads (leagues, seasons, teams, players, matches) and the current
+ * user's follows and watchlist go through the repositories in
+ * lib/data/repositories, which query PostgreSQL through Prisma. Pages and
+ * server components call these functions; nothing outside lib/data touches
+ * Prisma. Writes to user state live in lib/data/user-state-actions.ts.
  *
- * Still served from lib/data/mock.ts, by design, until their own phases:
- * - the current user's follows and watchlist (`currentUserFollows`), which
- *   seed the client-side stores and drive the dashboard's followed filters;
- * - `getAdminData`, because Admin persistence is a separate phase.
+ * Still served from lib/data/mock.ts, by design: `getAdminData`, because
+ * Admin persistence is a separate phase.
  *
  * Day boundaries ("today", the schedule window) are computed with the shared
  * helpers in lib/format.ts, exactly as before, so the database filters use
  * the same boundaries the mock filters did.
  */
+
+/**
+ * The current user's follows and watchlist, read once per request. React's
+ * `cache` is request-scoped, so nothing user-specific outlives the request
+ * or leaks between users once authentication exists.
+ */
+const getCurrentUserFollows = cache(
+  async (): Promise<UserFollows> => userStateRepository.getFollows(await getCurrentUserId())
+)
 
 const STATUS_ORDER: Record<MatchStatus, number> = {
   live: 0,
@@ -74,7 +86,7 @@ function dayWindow(now: Date): { gte: Date; lt: Date } {
 
 /** All of today's matches in followed leagues or with followed teams. Live first. */
 export async function getTodaysMatches(now = new Date()): Promise<MatchView[]> {
-  const { teamIds, leagueIds } = currentUserFollows
+  const { teamIds, leagueIds } = await getCurrentUserFollows()
   const matches = await matchRepository.findViews({
     startsAt: dayWindow(now),
     followed: { teamIds, leagueIds },
@@ -90,22 +102,28 @@ export async function getUpcomingFollowedMatches(
   limit = 5,
   now = new Date()
 ): Promise<MatchView[]> {
+  const { teamIds } = await getCurrentUserFollows()
   return matchRepository.findViews({
     status: "upcoming",
     startsAt: { gte: dayWindow(now).lt },
-    teamIds: currentUserFollows.teamIds,
+    teamIds,
     limit,
   })
 }
 
 /** Ids of teams the user follows. Seeds the client follows store. */
 export async function getFollowedTeamIds(): Promise<string[]> {
-  return [...currentUserFollows.teamIds]
+  return (await getCurrentUserFollows()).teamIds
 }
 
 /** Ids of players the user follows. Seeds the client player-follows store. */
 export async function getFollowedPlayerIds(): Promise<string[]> {
-  return [...currentUserFollows.playerIds]
+  return (await getCurrentUserFollows()).playerIds
+}
+
+/** Ids of leagues the user follows. No UI toggles this yet; the dashboard filters on it. */
+export async function getFollowedLeagueIds(): Promise<string[]> {
+  return (await getCurrentUserFollows()).leagueIds
 }
 
 /** Every player with their team and league, sorted by display name. */
@@ -124,7 +142,7 @@ export async function getTeamViews(now = new Date()): Promise<TeamView[]> {
 
 /** Ids the user has saved. Seeds the client watchlist store. */
 export async function getWatchlistIds(): Promise<string[]> {
-  return [...currentUserFollows.watchlistMatchIds]
+  return (await getCurrentUserFollows()).watchlistMatchIds
 }
 
 /** Every known match in start order. Client views filter this by saved ids. */
@@ -183,7 +201,7 @@ export async function getTeams(): Promise<Team[]> {
 }
 
 export async function getQuickStats(): Promise<QuickStats> {
-  const follows = currentUserFollows
+  const follows = await getCurrentUserFollows()
   const followedLeagues = await leagueRepository.findByIds(follows.leagueIds)
 
   return {

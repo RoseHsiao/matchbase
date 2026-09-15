@@ -14,6 +14,8 @@ export type IdSetStore = {
   add: (id: string) => void
   remove: (id: string) => void
   toggle: (id: string) => void
+  /** Replace the whole set, e.g. with a fresh snapshot from the server. */
+  reset: (ids: Iterable<string>) => void
 }
 
 export function createIdSetStore(initialIds: Iterable<string> = []): IdSetStore {
@@ -47,5 +49,6 @@ export function createIdSetStore(initialIds: Iterable<string> = []): IdSetStore 
     add,
     remove,
     toggle: (id) => (ids.has(id) ? remove(id) : add(id)),
+    reset: (next) => set(new Set(next)),
   }
 }

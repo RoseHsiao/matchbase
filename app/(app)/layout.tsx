@@ -11,9 +11,18 @@ import {
   getLeagues,
   getWatchlistIds,
 } from "@/lib/data/queries";
+import {
+  setMatchWatchlisted,
+  setPlayerFollowed,
+  setTeamFollowed,
+} from "@/lib/data/user-state-actions";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 
+/**
+ * Seeds the client-side follow and watchlist stores from the database on
+ * every render and hands each store the server action that persists changes.
+ */
 export default async function AppLayout({
   children,
 }: {
@@ -31,9 +40,9 @@ export default async function AppLayout({
   const leagueCrumbs = leagues.map(({ id, name, sport }) => ({ id, name, sport }));
 
   return (
-    <WatchlistProvider initialIds={watchlistIds}>
-      <FollowsProvider initialIds={followedTeamIds}>
-        <PlayerFollowsProvider initialIds={followedPlayerIds}>
+    <WatchlistProvider initialIds={watchlistIds} persist={setMatchWatchlisted}>
+      <FollowsProvider initialIds={followedTeamIds} persist={setTeamFollowed}>
+        <PlayerFollowsProvider initialIds={followedPlayerIds} persist={setPlayerFollowed}>
           <BreadcrumbDataProvider leagues={leagueCrumbs}>
             <AppShell defaultOpen={defaultOpen}>{children}</AppShell>
           </BreadcrumbDataProvider>

@@ -589,6 +589,32 @@ Server Component / page
 - Relation loads are batched by Prisma (`IN (...)` per relation), so statement counts scale with the number of query calls per page, not with rows. The dashboard issues several dozen statements because its sections call `getMatches` and `getTeamViews` independently; request-scoped memoisation with React `cache()` is a possible follow-up, not done here.
 - `PRISMA_QUERY_LOG=1` prints every SQL statement from the application client.
 
+### User state (Phase 2, implemented 2026-09-14)
+
+Follows and the watchlist are persisted in PostgreSQL. The four normalized join tables from the schema are the source of truth; `currentUserFollows` in `lib/data/mock.ts` is no longer read at runtime and survives only as seed input.
+
+```
+Client Component (follow / watchlist button)
+  ↓ useIdSet() from components/id-set-provider.tsx   (client cache, optimistic update, rollback on failure)
+  ↓ Server Action in lib/data/user-state-actions.ts  (passed to the provider as a prop from the app layout)
+  ↓ lib/data/repositories/user-state-repository.ts   (idempotent upsert / deleteMany, FK errors surfaced)
+  ↓ lib/data/db.ts → Prisma → Neon PostgreSQL
+
+Server Component (dashboard, layout seeds)
+  ↓ lib/data/queries.ts  (getFollowedTeamIds, getFollowedPlayerIds, getFollowedLeagueIds, getWatchlistIds,
+                          and the follow filters inside getTodaysMatches, getUpcomingFollowedMatches, getQuickStats)
+  ↓ one request-scoped React cache() read of all four id sets
+  ↓ user-state-repository → Prisma
+```
+
+- **Demo user.** There is no authentication. `lib/data/current-user.ts` (server-only) exposes `getCurrentUserId()`, which returns the constant `demo-user` from `lib/data/demo-user.ts`. It is the only place that knows who the user is; a later auth phase replaces its body with a session lookup and nothing else changes. The seed creates that user (`guest@matchbase.app`, "Guest", matching the sidebar placeholder) and turns the mock `currentUserFollows` ids into its join rows, so the dashboard and watchlist demo state is unchanged. The seed only guarantees those rows exist; it never removes rows the user added.
+- **Mutations.** Four Server Actions, one per relationship, each taking `(id, desired state)`: `setTeamFollowed`, `setPlayerFollowed`, `setLeagueFollowed`, `setMatchWatchlisted`. Follow/add is an `upsert` on the composite primary key (no read-then-write race); unfollow/remove is a `deleteMany`. Unknown ids are rejected by the foreign keys and reported as a plain error. After a write the action calls `refresh()` from `next/cache` so server-rendered sections that depend on follows (dashboard matches, stats, the layout's store seeds) re-render from the database.
+- **Client state.** The three id-set providers were kept as a lightweight cache of server state rather than replaced. The app layout seeds them from the database on every render and passes the matching action as `persist`. A toggle updates the store immediately, calls the action, and rolls the store back if the action rejects. When the server sends a fresh id list the store re-syncs to it, so it can never diverge from PostgreSQL for longer than one in-flight action. No new state library, no API route.
+- **Caching.** User-specific reads use React `cache()`, which is scoped to one request, so no user's follows can leak into another's render once real users exist. Nothing user-specific is stored in a cross-request cache.
+- **League follows** have a repository, an action, and a query, but no UI toggle yet (unchanged from before; the dashboard filters on them).
+- **Seed robustness.** Every seed transaction now carries a 60-second timeout; the default 5 seconds was exceeded by a 26-row batch over the remote connection.
+- No schema change and no migration were needed: the join tables already existed.
+
 ### Deferred (unchanged from section 16)
 
 `LeagueTeam`, `TeamMembership`, `MatchParticipant`, `MatchPeriod`, a Category table, `ExternalIdentity`, `AuditLog`, and analytics models are not in the schema.

@@ -23,8 +23,12 @@
  *
  * Idempotent: every row is upserted by id. No table is truncated.
  *
- * Not seeded: User and the four follow/watchlist join tables (user state),
- * AdminActivity (no table in v1).
+ * User state: the single development user (lib/data/demo-user.ts) is created
+ * and the mock `currentUserFollows` ids become its follow / watchlist rows,
+ * so the dashboard and watchlist show the same demo state as before. Rows the
+ * user adds at runtime are kept; the seed only guarantees the demo rows exist.
+ *
+ * Not seeded: AdminActivity (no table in v1).
  */
 
 import { PrismaPg } from "@prisma/adapter-pg"
@@ -38,6 +42,7 @@ import {
   SyncStatus,
   type Prisma,
 } from "../lib/generated/prisma/client"
+import { DEMO_USER_EMAIL, DEMO_USER_ID, DEMO_USER_NAME } from "../lib/data/demo-user"
 import type * as MockTypes from "../lib/data/types"
 import { sportMeta, sports } from "../lib/sports"
 
@@ -216,6 +221,14 @@ async function main() {
 
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 
+  /**
+   * Each table is written in one transaction of sequential upserts. Over a
+   * remote connection a batch of ~25 round trips can exceed Prisma's default
+   * 5 s transaction limit, so allow a generous timeout.
+   */
+  const transaction = (operations: Prisma.PrismaPromise<unknown>[]) =>
+    prisma.$transaction(operations, { timeout: 60_000 })
+
   try {
     // 1. Sport: from the code registry, in registry order.
     const sportRows: Prisma.SportCreateInput[] = sports.map((id, index) => ({
@@ -226,7 +239,7 @@ async function main() {
       status: EntityStatus.ACTIVE,
       sortOrder: index,
     }))
-    await prisma.$transaction(
+    await transaction(
       sportRows.map((data) => prisma.sport.upsert({ where: { id: data.id }, create: data, update: data }))
     )
 
@@ -238,7 +251,7 @@ async function main() {
       status: dataSourceStatus[source.status],
       lastSyncedAt: source.lastSyncedAt ? reanchor(source.lastSyncedAt, importNow) : null,
     }))
-    await prisma.$transaction(
+    await transaction(
       dataSourceRows.map((data) => prisma.dataSource.upsert({ where: { id: data.id }, create: data, update: data }))
     )
 
@@ -251,7 +264,7 @@ async function main() {
       region: league.region,
       status: entityStatus(league.status),
     }))
-    await prisma.$transaction(
+    await transaction(
       leagueRows.map((data) => prisma.league.upsert({ where: { id: data.id }, create: data, update: data }))
     )
 
@@ -264,7 +277,7 @@ async function main() {
       endsAt: isoDate(season.endsAt),
       status: seasonStatus[season.status],
     }))
-    await prisma.$transaction(
+    await transaction(
       seasonRows.map((data) => prisma.season.upsert({ where: { id: data.id }, create: data, update: data }))
     )
 
@@ -289,7 +302,7 @@ async function main() {
       logoUrl: team.logoUrl ?? null,
       status: entityStatus(team.status),
     }))
-    await prisma.$transaction(
+    await transaction(
       teamRows.map((data) => prisma.team.upsert({ where: { id: data.id }, create: data, update: data }))
     )
 
@@ -308,7 +321,7 @@ async function main() {
         status: entityStatus(player.status),
       }
     })
-    await prisma.$transaction(
+    await transaction(
       playerRows.map((data) => prisma.player.upsert({ where: { id: data.id }, create: data, update: data }))
     )
 
@@ -321,7 +334,7 @@ async function main() {
       capacity: venue.capacity ?? null,
       status: entityStatus(venue.status),
     }))
-    await prisma.$transaction(
+    await transaction(
       venueRows.map((data) => prisma.venue.upsert({ where: { id: data.id }, create: data, update: data }))
     )
     const venueIdByName = new Map(mock.venues.map((venue) => [venue.name, venue.id]))
@@ -341,7 +354,7 @@ async function main() {
       awayScore: match.score?.away ?? null,
       liveDetail: match.liveDetail ?? null,
     }))
-    await prisma.$transaction(
+    await transaction(
       matchRows.map((data) => prisma.match.upsert({ where: { id: data.id }, create: data, update: data }))
     )
 
@@ -356,9 +369,32 @@ async function main() {
       startedAt: reanchor(log.at, importNow),
       error: null,
     }))
-    await prisma.$transaction(
+    await transaction(
       syncLogRows.map((data) => prisma.syncLog.upsert({ where: { id: data.id }, create: data, update: data }))
     )
+
+    // 10. Development user and the demo follows / watchlist from mock data.
+    const userId = DEMO_USER_ID
+    await prisma.user.upsert({
+      where: { id: userId },
+      create: { id: userId, email: DEMO_USER_EMAIL, name: DEMO_USER_NAME },
+      update: { email: DEMO_USER_EMAIL, name: DEMO_USER_NAME },
+    })
+    const follows = mock.currentUserFollows
+    await transaction([
+      ...follows.teamIds.map((teamId) =>
+        prisma.userTeamFollow.upsert({ where: { userId_teamId: { userId, teamId } }, create: { userId, teamId }, update: {} })
+      ),
+      ...follows.playerIds.map((playerId) =>
+        prisma.userPlayerFollow.upsert({ where: { userId_playerId: { userId, playerId } }, create: { userId, playerId }, update: {} })
+      ),
+      ...follows.leagueIds.map((leagueId) =>
+        prisma.userLeagueFollow.upsert({ where: { userId_leagueId: { userId, leagueId } }, create: { userId, leagueId }, update: {} })
+      ),
+      ...follows.watchlistMatchIds.map((matchId) =>
+        prisma.userWatchlistMatch.upsert({ where: { userId_matchId: { userId, matchId } }, create: { userId, matchId }, update: {} })
+      ),
+    ])
 
     const counts = {
       sport: await prisma.sport.count(),
@@ -370,6 +406,11 @@ async function main() {
       match: await prisma.match.count(),
       dataSource: await prisma.dataSource.count(),
       syncLog: await prisma.syncLog.count(),
+      user: await prisma.user.count(),
+      userTeamFollow: await prisma.userTeamFollow.count(),
+      userPlayerFollow: await prisma.userPlayerFollow.count(),
+      userLeagueFollow: await prisma.userLeagueFollow.count(),
+      userWatchlistMatch: await prisma.userWatchlistMatch.count(),
     }
     console.log(`Seeded from mock data (reference time ${new Date(SEED_NOW).toISOString()}):`)
     for (const [table, count] of Object.entries(counts)) console.log(`  ${table}: ${count}`)
