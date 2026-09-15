@@ -18,13 +18,15 @@ export type AdminPersist = {
   remove: (collection: string, id: string) => Promise<AdminActionResult>
 }
 
+export type AdminNotice = { tone: "error" | "info"; message: string }
+
 type AdminContextValue = {
   stores: AdminStores
   persist?: AdminPersist
   /** Server reference time as ISO, so relative labels agree on both sides. */
   now: string
-  error: string | null
-  setError: (message: string | null) => void
+  notice: AdminNotice | null
+  setNotice: (notice: AdminNotice | null) => void
 }
 
 const AdminContext = React.createContext<AdminContextValue | null>(null)
@@ -74,33 +76,39 @@ function resetStores(stores: AdminStores, snapshot: AdminData) {
  */
 export function AdminDataProvider({ initial, now, persist, children }: AdminDataProviderProps) {
   const [stores] = React.useState<AdminStores>(() => createStores(initial))
-  const [error, setError] = React.useState<string | null>(null)
+  const [notice, setNotice] = React.useState<AdminNotice | null>(null)
 
   React.useEffect(() => {
     resetStores(stores, initial)
   }, [initial, stores])
 
   const value = React.useMemo<AdminContextValue>(
-    () => ({ stores, persist, now, error, setError }),
-    [stores, persist, now, error]
+    () => ({ stores, persist, now, notice, setNotice }),
+    [stores, persist, now, notice]
   )
 
   return (
     <AdminContext.Provider value={value}>
-      {error ? <AdminMutationAlert message={error} onDismiss={() => setError(null)} /> : null}
+      {notice ? <AdminNoticeBanner notice={notice} onDismiss={() => setNotice(null)} /> : null}
       {children}
     </AdminContext.Provider>
   )
 }
 
-function AdminMutationAlert({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+function AdminNoticeBanner({ notice, onDismiss }: { notice: AdminNotice; onDismiss: () => void }) {
+  const isError = notice.tone === "error"
   return (
     <div
-      role="alert"
-      className="flex items-start justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
+      role={isError ? "alert" : "status"}
+      className={
+        isError
+          ? "flex items-start justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
+          : "flex items-start justify-between gap-3 rounded-lg border bg-muted/60 px-4 py-3 text-sm"
+      }
     >
       <span>
-        <span className="font-medium">Change not saved.</span> {message}
+        {isError ? <span className="font-medium">Change not saved. </span> : null}
+        {notice.message}
       </span>
       <Button variant="ghost" size="icon-sm" className="-mr-1 shrink-0 cursor-pointer" aria-label="Dismiss" onClick={onDismiss}>
         <XIcon />
@@ -120,7 +128,8 @@ function useAdminContext(): AdminContextValue {
 /** Read and change one admin collection. Re-renders on every change. */
 export function useAdminCollection<K extends keyof AdminData>(name: K) {
   type Item = AdminData[K][number]
-  const { stores, persist, setError } = useAdminContext()
+  const { stores, persist, setNotice } = useAdminContext()
+  const setError = (message: string) => setNotice({ tone: "error", message })
   const store = stores[name] as CollectionStore<Item>
   const items = React.useSyncExternalStore(
     store.subscribe,
@@ -166,6 +175,15 @@ export function useAdminCollection<K extends keyof AdminData>(name: K) {
   }
 
   return { items, upsert, remove }
+}
+
+/** Show a message above the admin content, e.g. the outcome of a sync run. */
+export function useAdminNotice() {
+  const { setNotice } = useAdminContext()
+  return {
+    notify: (message: string, tone: AdminNotice["tone"] = "info") => setNotice({ tone, message }),
+    clear: () => setNotice(null),
+  }
 }
 
 /** Server reference time for the admin session. */

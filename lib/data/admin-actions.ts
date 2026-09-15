@@ -3,6 +3,7 @@
 import { refresh } from "next/cache"
 
 import { AdminError, adminRepository } from "@/lib/data/repositories/admin-repository"
+import { syncDataSource } from "@/lib/data/sync/sync-service"
 
 /**
  * Server boundary for Admin CRUD. The client collection stores call these
@@ -11,7 +12,7 @@ import { AdminError, adminRepository } from "@/lib/data/repositories/admin-repos
  * else is logged on the server and reported generically.
  */
 
-export type AdminActionResult = { ok: true } | { ok: false; error: string }
+export type AdminActionResult = { ok: true; message?: string } | { ok: false; error: string }
 
 /** Collections the Admin UI can write. Sync logs and activity are read-only. */
 export type AdminMutableCollection =
@@ -63,6 +64,26 @@ export async function saveAdminRecord(collection: string, item: unknown): Promis
   const save = savers[collection as AdminMutableCollection]
   if (!save) return { ok: false, error: "This collection cannot be edited." }
   return run(() => save(item))
+}
+
+/**
+ * Runs one synchronisation for a data source, then refreshes the admin
+ * snapshot so the new sync log, lastSyncedAt, and any synced catalogue rows
+ * appear. Provider credentials never leave the server.
+ */
+export async function runDataSourceSync(dataSourceId: unknown): Promise<AdminActionResult> {
+  if (typeof dataSourceId !== "string" || dataSourceId.length === 0 || dataSourceId.length > 200) return { ok: false, error: "Invalid data source id." }
+  try {
+    const result = await syncDataSource(dataSourceId)
+    refresh()
+    if (result.status === "FAILED") return { ok: false, error: `Sync failed: ${result.error ?? "see the sync log."}` }
+    const failed = Object.values(result.counts).reduce((sum, c) => sum + c.failed, 0)
+    const detail = result.status === "PARTIAL" ? ` (${failed} failed, see the sync log)` : ""
+    return { ok: true, message: `Sync ${result.status.toLowerCase()}: ${result.records} records in ${result.durationMs} ms${detail}.` }
+  } catch (error) {
+    console.error("Sync failed unexpectedly.", error)
+    return { ok: false, error: "Sync failed unexpectedly. Please try again." }
+  }
 }
 
 export async function deleteAdminRecord(collection: string, id: unknown): Promise<AdminActionResult> {

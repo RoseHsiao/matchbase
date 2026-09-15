@@ -108,7 +108,8 @@ export type DataSource = {
 }
 
 export type SyncStatus = "running" | "success" | "failed" | "partial"
-export type SyncEntity = "matches" | "teams" | "players" | "leagues"
+/** What a sync run touched. "all" is a full provider snapshot. */
+export type SyncEntity = "all" | "matches" | "teams" | "players" | "leagues"
 
 export type SyncLog = {
   id: string

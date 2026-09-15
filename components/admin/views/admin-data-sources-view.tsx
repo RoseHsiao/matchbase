@@ -1,8 +1,9 @@
 "use client"
 
-import { PencilIcon } from "lucide-react"
+import * as React from "react"
+import { PencilIcon, RefreshCwIcon } from "lucide-react"
 
-import { useAdminCollection, useAdminNow } from "@/components/admin/admin-data-provider"
+import { useAdminCollection, useAdminNotice, useAdminNow } from "@/components/admin/admin-data-provider"
 import { AdminDataTable, type AdminColumn } from "@/components/admin/admin-data-table"
 import { AdminFormDialog } from "@/components/admin/admin-form-dialog"
 import { AdminPage } from "@/components/admin/admin-page"
@@ -14,6 +15,7 @@ import { useEntityEditor } from "@/components/admin/use-entity-editor"
 import { CategoryBadge } from "@/components/category-badge"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { dataSourceStatusOptions } from "@/lib/admin/status"
+import { runDataSourceSync } from "@/lib/data/admin-actions"
 import type { DataSource, DataSourceStatus, Sport } from "@/lib/data/types"
 import { formatRelativeTime } from "@/lib/format"
 import { ALL } from "@/lib/schedule"
@@ -29,6 +31,22 @@ export function AdminDataSourcesView() {
   const hierarchy = useHierarchyFilters({ category: ALL, sport: ALL, leagueId: ALL, status: ALL }, leagues)
   const { filters, update } = hierarchy
   const editor = useEntityEditor<Draft>({ name: "", sport: NONE, status: "connected" })
+  const { notify } = useAdminNotice()
+  const [syncingId, setSyncingId] = React.useState<string | null>(null)
+
+  async function sync(source: DataSource) {
+    if (syncingId) return
+    setSyncingId(source.id)
+    notify(`Syncing ${source.name}…`)
+    try {
+      const result = await runDataSourceSync(source.id)
+      notify(result.ok ? (result.message ?? "Sync finished.") : result.error, result.ok ? "info" : "error")
+    } catch {
+      notify("Sync failed unexpectedly. Please try again.", "error")
+    } finally {
+      setSyncingId(null)
+    }
+  }
 
   const rows = dataSources.filter(
     (source) =>
@@ -62,6 +80,7 @@ export function AdminDataSourcesView() {
         noun="source"
         defaultSort={{ key: "name", direction: "asc" }}
         rowActions={[
+          { label: "Sync now", icon: RefreshCwIcon, onSelect: (row) => void sync(row) },
           { label: "Edit", icon: PencilIcon, onSelect: (row) => editor.openEdit(row.id, { name: row.name, sport: row.sport ?? NONE, status: row.status }) },
         ]}
         emptyTitle="No data sources match"

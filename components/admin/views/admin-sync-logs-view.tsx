@@ -14,6 +14,7 @@ import { formatDateTime, formatDuration } from "@/lib/format"
 import { ALL } from "@/lib/schedule"
 
 const entityOptions = [
+  { value: "all", label: "Full sync" },
   { value: "matches", label: "Matches" },
   { value: "teams", label: "Teams" },
   { value: "players", label: "Players" },

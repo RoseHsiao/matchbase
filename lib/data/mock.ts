@@ -374,6 +374,8 @@ export const dataSources: DataSource[] = [
   { id: "ds-vct", name: "VCT Data API", sport: "valorant", status: "disconnected", lastSyncedAt: fromNow(-60 * 30) },
   { id: "ds-esl", name: "ESL Pro League Feed", sport: "cs2", status: "connected", lastSyncedAt: fromNow(-45) },
   { id: "ds-manual", name: "Manual Import", status: "connected", lastSyncedAt: fromNow(-60 * 26) },
+  // Bound to the deterministic mock provider in lib/data/sync/providers/registry.ts.
+  { id: "ds-mock-basketball", name: "Mock Basketball Feed", sport: "basketball", status: "connected" },
 ]
 
 export const syncLogs: SyncLog[] = [
