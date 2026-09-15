@@ -92,6 +92,8 @@ export type FetchJsonOptions = RetryOptions & {
   timeoutMs?: number
   headers?: Record<string, string>
   limiter?: RateLimiter
+  /** Called with the successful response's headers, e.g. to read pagination totals. */
+  onResponse?: (headers: Headers) => void
 }
 
 /** GET a JSON document with a timeout, bounded retries, and optional rate limiting. */
@@ -106,6 +108,7 @@ export async function fetchJson<T>(url: string, options: FetchJsonOptions = {}):
       const retryAfterMs = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : undefined
       throw new HttpError(response.status, url, retryAfterMs)
     }
+    options.onResponse?.(response.headers)
     return (await response.json()) as T
   }, options)
 }

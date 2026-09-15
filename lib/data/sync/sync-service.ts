@@ -163,11 +163,14 @@ export async function syncDataSource(dataSourceId: string, options: SyncOptions 
     }
   }
 
-  // 5. Players.
+  // 5. Players. A player without a team (individual sports) is stored with no team.
   for (const player of snapshot.players) {
     try {
-      const teamId = teamIds.get(player.teamExternalId)
-      if (!teamId) throw new Error(`Team ${player.teamExternalId} was not synced.`)
+      let teamId: string | null = null
+      if (player.teamExternalId !== undefined) {
+        teamId = teamIds.get(player.teamExternalId) ?? null
+        if (!teamId) throw new Error(`Team ${player.teamExternalId} was not synced.`)
+      }
       const result = await syncRepository.upsertPlayer(dataSourceId, teamId, player)
       record("players", result.created)
     } catch (error) {
@@ -214,6 +217,20 @@ export async function syncDataSource(dataSourceId: string, options: SyncOptions 
     } catch (error) {
       failRecord("matches", "match", match.externalId, error)
     }
+  }
+
+  // 7. Player-vs-player matches: normalized in full, but the current Match row
+  //    needs a team on each side, so they cannot be written yet. Count them as
+  //    failed records with one summarising issue instead of dropping them silently.
+  const individual = snapshot.individualMatches ?? []
+  if (individual.length > 0) {
+    const doubles = individual.filter((m) => m.sides.some((side) => side.participants.length > 1)).length
+    counts.matches.failed += individual.length
+    issues.push({
+      level: "error",
+      entity: "match",
+      message: `${individual.length} matches with player participants (${individual.length - doubles} singles, ${doubles} doubles) were not stored: the current Match model only holds team sides. See docs/tennis-provider.md.`,
+    })
   }
 
   const records = Object.values(counts).reduce((sum, c) => sum + c.created + c.updated, 0)

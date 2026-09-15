@@ -53,7 +53,8 @@ export type NormalizedTeam = {
 
 export type NormalizedPlayer = {
   externalId: string
-  teamExternalId: string
+  /** Absent for individual-sport athletes, who belong to no team. */
+  teamExternalId?: string
   name: string
   handle?: string
   role?: string
@@ -94,6 +95,37 @@ export type NormalizedMatch = {
   liveDetail?: string
 }
 
+/** One competitor on a side: a team, or one player (two players make a doubles side). */
+export type NormalizedSideParticipant = { kind: "team"; externalId: string } | { kind: "player"; externalId: string }
+
+export type NormalizedSide = {
+  /** In provider order; for doubles both players are kept. */
+  participants: NormalizedSideParticipant[]
+  /** Aggregate result for this side (sets, games, points), never period detail. */
+  score?: number
+}
+
+/**
+ * A match whose sides are players (singles or doubles) rather than teams.
+ * The current Match row cannot store it (both sides must be teams), so the
+ * sync service reports these instead of writing them. The shape is the one
+ * the future participant model will persist directly
+ * (docs/match-participant-model-analysis.md, §18).
+ */
+export type NormalizedIndividualMatch = {
+  externalId: string
+  leagueExternalId: string
+  seasonExternalId: string
+  venueExternalId?: string
+  startsAt: string
+  status: NormalizedMatchStatus
+  rawStatus?: string
+  stage?: string
+  /** Side A first. For sports without home advantage the order is the provider's. */
+  sides: [NormalizedSide, NormalizedSide]
+  liveDetail?: string
+}
+
 export type SyncEntityKind = "provider" | "league" | "season" | "team" | "player" | "venue" | "match"
 
 /** Something worth recording without stopping the sync. Errors mark a record as failed; warnings do not. */
@@ -112,8 +144,22 @@ export type NormalizedSnapshot = {
   players: NormalizedPlayer[]
   venues: NormalizedVenue[]
   matches: NormalizedMatch[]
+  /** Player-vs-player matches, fully normalized but not storable yet. */
+  individualMatches?: NormalizedIndividualMatch[]
   /** Issues found while normalizing, e.g. unsupported participant formats. */
   issues: SyncIssue[]
+}
+
+/**
+ * Thrown by an adapter's `fetch` when it cannot even attempt a request:
+ * missing credentials, rejected key, bad configuration. The sync service
+ * records it as a FAILED run with the message.
+ */
+export class ProviderConfigurationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "ProviderConfigurationError"
+  }
 }
 
 // ---------------------------------------------------------------------------

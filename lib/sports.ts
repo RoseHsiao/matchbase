@@ -14,6 +14,7 @@ export type SportMeta = {
 export const sportMeta: Record<Sport, SportMeta> = {
   football: { label: "Football", category: "sports", homeAway: true },
   basketball: { label: "Basketball", category: "sports", homeAway: true },
+  tennis: { label: "Tennis", category: "sports", homeAway: false },
   lol: { label: "League of Legends", category: "esports", homeAway: false },
   valorant: { label: "Valorant", category: "esports", homeAway: false },
   cs2: { label: "Counter-Strike 2", category: "esports", homeAway: false },
@@ -28,7 +29,7 @@ const categoryLabels: Record<Category, string> = {
 export const categories: Category[] = ["sports", "esports"]
 
 /** Every sport and game in display order. */
-export const sports: Sport[] = ["football", "basketball", "lol", "valorant", "cs2"]
+export const sports: Sport[] = ["football", "basketball", "tennis", "lol", "valorant", "cs2"]
 
 export function categoryLabel(category: Category): string {
   return categoryLabels[category]

@@ -645,6 +645,10 @@ Admin layout (server)
 
 See `docs/external-data-sync-architecture.md`. Summary: provider adapters (`lib/data/sync/providers/*`) fetch and normalize into provider-agnostic types; `lib/data/sync/sync-service.ts` upserts through `lib/data/repositories/sync-repository.ts` by `(dataSourceId, externalId)`, seasons by `(leagueId, name)`; every run writes a `SyncLog` (entity `"all"`, RUNNING → SUCCESS | PARTIAL | FAILED) and updates `DataSource.lastSyncedAt`. One deterministic mock basketball provider is bound to the new seeded source `ds-mock-basketball`. No schema change; the DataSource→provider binding is code until a `provider` column is added. Tennis, table tennis, and badminton remain unrepresentable in the team-vs-team `Match` row and must be reported as issues by their adapters until a `MatchParticipant` model exists.
 
+### Tennis provider (implemented 2026-09-15)
+
+See `docs/tennis-provider.md`. The sport registry and `Sport` union gained `tennis` (`homeAway: false`). A Sportradar Tennis adapter syncs Grand Slam competitions as Leagues, seasons by year, venues, and players with `teamId = null`. Singles and doubles matches are normalized completely (`NormalizedIndividualMatch`, two sides of one or two players) but cannot be stored: `Match` requires a `Team` on each side and fake teams are ruled out. The sync log reports them and the run ends PARTIAL. This is the first concrete case for the participant model in `docs/match-participant-model-analysis.md`; that migration is now justified when tennis matches need to be shown.
+
 ### Deferred (unchanged from section 16)
 
 `LeagueTeam`, `TeamMembership`, `MatchParticipant`, `MatchPeriod`, a Category table, `ExternalIdentity`, `AuditLog`, and analytics models are not in the schema.

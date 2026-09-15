@@ -1,4 +1,5 @@
 import { mockBasketballProvider } from "@/lib/data/sync/providers/mock-basketball"
+import { sportradarTennisProvider } from "@/lib/data/sync/providers/sportradar-tennis"
 import type { Provider } from "@/lib/data/sync/types"
 
 /**
@@ -7,6 +8,7 @@ import type { Provider } from "@/lib/data/sync/types"
  */
 export const providers: Record<string, Provider<never>> = {
   [mockBasketballProvider.key]: mockBasketballProvider as Provider<never>,
+  [sportradarTennisProvider.key]: sportradarTennisProvider as Provider<never>,
 }
 
 /**
@@ -18,6 +20,7 @@ export const providers: Record<string, Provider<never>> = {
  */
 export const dataSourceProviders: Record<string, string> = {
   "ds-mock-basketball": mockBasketballProvider.key,
+  "ds-tennis-sportradar": sportradarTennisProvider.key,
 }
 
 export function resolveProvider(dataSourceId: string): Provider<never> | undefined {

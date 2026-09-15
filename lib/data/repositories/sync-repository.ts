@@ -81,7 +81,8 @@ export const syncRepository = {
     return { id: row.id, created: !existing }
   },
 
-  async upsertPlayer(dataSourceId: string, teamId: string, player: NormalizedPlayer): Promise<Upserted> {
+  /** `teamId` null for individual-sport athletes (schema allows it; user-facing reads currently skip them). */
+  async upsertPlayer(dataSourceId: string, teamId: string | null, player: NormalizedPlayer): Promise<Upserted> {
     const where = { dataSourceId_externalId: { dataSourceId, externalId: player.externalId } }
     const existing = await db.player.findUnique({ where, select: { id: true } })
     const data = { teamId, name: player.name, handle: player.handle ?? null, role: player.role ?? null, nationality: player.nationality ?? null, number: player.number ?? null }

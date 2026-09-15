@@ -5,7 +5,7 @@
 export type Category = "sports" | "esports"
 
 /** A traditional sport or an esports game. Each maps to a `Category`. */
-export type Sport = "football" | "basketball" | "lol" | "valorant" | "cs2"
+export type Sport = "football" | "basketball" | "tennis" | "lol" | "valorant" | "cs2"
 
 export type MatchStatus = "upcoming" | "live" | "finished"
 

@@ -49,7 +49,7 @@ One adapter serves one sport. A provider covering several sports registers one a
 
 `lib/data/sync/providers/registry.ts` holds two maps: provider key → adapter, and DataSource id → provider key. The `DataSource` model has no provider column yet; adding one is the correct long-term home and needs a migration, so it is deferred and the binding is code for now. A DataSource with no binding cannot sync and gets a FAILED log saying so.
 
-The seed adds one DataSource, `ds-mock-basketball` ("Mock Basketball Feed", basketball), bound to the mock adapter. The other seeded sources (NBA, LCK, EPL, VCT, ESL feeds, Manual Import) remain unbound placeholders.
+The seed adds two bound DataSources: `ds-mock-basketball` ("Mock Basketball Feed", basketball, mock adapter) and `ds-tennis-sportradar` ("Sportradar Tennis", tennis, Sportradar adapter, needs `SPORTRADAR_API_KEY`). The other seeded sources (NBA, LCK, EPL, VCT, ESL feeds, Manual Import) remain unbound placeholders.
 
 ## Sync lifecycle
 
@@ -98,7 +98,8 @@ Adapters hand over ISO 8601 instants; the service parses them with `new Date()` 
 
 ## Errors, retries, rate limits
 
-- `utils/http.ts` provides `fetchJson` (timeout via `AbortSignal.timeout`, bounded exponential-backoff retries, `Retry-After` support), `withRetry`, and a `RateLimiter` enforcing a minimum interval between requests. Adapters compose them; the mock adapter pages its fixtures through the limiter to exercise the path.
+- `utils/http.ts` provides `fetchJson` (timeout via `AbortSignal.timeout`, bounded exponential-backoff retries, `Retry-After` support, an `onResponse` hook for pagination headers), `withRetry`, and a `RateLimiter` enforcing a minimum interval between requests. Adapters compose them; the mock adapter pages its fixtures through the limiter to exercise the path, the tennis adapter pages real responses with `X-Max-Results`.
+- Configuration problems (missing or rejected credentials) are thrown as `ProviderConfigurationError` from `fetch`; the run is FAILED with that message and no request is retried.
 - Fetch and normalize errors abort the run as FAILED. Record-level errors (missing parent, invalid date, same team on both sides, database constraint) fail that record only.
 - No job queue, cron, or worker exists. `syncDataSource` is a plain server function callable from a Server Action today and from a scheduler later.
 
@@ -112,7 +113,9 @@ Basketball, football, volleyball, League of Legends, Valorant and other team-vs-
 
 ## Tennis, table tennis, badminton
 
-The `Match` model is team-vs-team (`homeTeamId` / `awayTeamId` → `Team`). Singles are player-vs-player and doubles are pairs; neither is a `Team`. An adapter for these sports must not create fake teams from players to make a sync pass. The intended handling until a `MatchParticipant` model exists: the adapter emits a `SyncIssue` (level `warning`, entity `match`) for each fixture it cannot represent and omits it from `matches`. The normalized types already carry that path (`NormalizedSnapshot.issues`). This is a documented limitation of v1, not a Phase 4 redesign.
+The `Match` model is team-vs-team (`homeTeamId` / `awayTeamId` → `Team`). Singles are player-vs-player and doubles are pairs; neither is a `Team`. An adapter for these sports must not create fake teams from players to make a sync pass.
+
+Handling until a `MatchParticipant` model exists (implemented with the Sportradar tennis adapter, see `docs/tennis-provider.md`): the adapter emits `NormalizedSnapshot.individualMatches`, each with two `sides` whose `participants` are players (one for singles, two for doubles, nothing dropped), and players with no `teamExternalId`. The sync service writes leagues, seasons, venues, and team-less players (`Player.teamId = null`), and reports the individual matches as failed records with one summarising `SyncLog` line, so the run ends PARTIAL rather than pretending success. `NormalizedIndividualMatch` is the shape the future participant model persists directly (`docs/match-participant-model-analysis.md`, §18).
 
 ## Admin integration
 

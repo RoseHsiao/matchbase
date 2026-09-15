@@ -376,6 +376,8 @@ export const dataSources: DataSource[] = [
   { id: "ds-manual", name: "Manual Import", status: "connected", lastSyncedAt: fromNow(-60 * 26) },
   // Bound to the deterministic mock provider in lib/data/sync/providers/registry.ts.
   { id: "ds-mock-basketball", name: "Mock Basketball Feed", sport: "basketball", status: "connected" },
+  // Bound to the Sportradar tennis adapter; needs SPORTRADAR_API_KEY to sync.
+  { id: "ds-tennis-sportradar", name: "Sportradar Tennis", sport: "tennis", status: "connected" },
 ]
 
 export const syncLogs: SyncLog[] = [
