@@ -41,7 +41,8 @@ export type Player = {
   name: string
   /** In-game name for esports players. */
   handle?: string
-  teamId: string
+  /** Absent for individual-sport athletes, who belong to no team. */
+  teamId?: string
   role: string
   nationality?: string
   /** Squad number for traditional sports. */
@@ -49,9 +50,30 @@ export type Player = {
   status?: EntityStatus
 }
 
+/**
+ * The two sides of a match. Side A is the home side when the sport has home
+ * advantage (see `sportMeta`); otherwise the sides are first and second.
+ */
+export type MatchSide = "A" | "B"
+
+/** Aggregate result per side in the sport's natural unit (points, sets, games, maps). */
 export type MatchScore = {
-  home: number
-  away: number
+  a: number
+  b: number
+}
+
+/**
+ * One competitor on one side: a team, or a single player. Two player
+ * participants on a side form a doubles pair. Exactly one of `teamId` /
+ * `playerId` is set.
+ */
+export type MatchParticipant = {
+  id: string
+  side: MatchSide
+  /** Position within the side, from 1. */
+  order: number
+  teamId?: string
+  playerId?: string
 }
 
 export type Match = {
@@ -59,8 +81,8 @@ export type Match = {
   leagueId: string
   /** Season the match belongs to. Always set for database-backed matches. */
   seasonId?: string
-  homeTeamId: string
-  awayTeamId: string
+  /** Ordered by side then position. Every match has at least one participant per side. */
+  participants: MatchParticipant[]
   /** ISO 8601 timestamp. */
   startsAt: string
   status: MatchStatus
@@ -156,17 +178,25 @@ export type UserFollows = {
   watchlistMatchIds: string[]
 }
 
-/** A match joined with its league and both teams, ready to render. */
-export type MatchView = Match & {
-  league: League
-  homeTeam: Team
-  awayTeam: Team
+/** A participant joined with the team or player it references. */
+export type MatchParticipantView = MatchParticipant & {
+  team?: Team
+  player?: Player
 }
 
-/** A player joined with their team and league, ready to render. */
-export type PlayerView = Player & {
-  team: Team
+/** A match joined with its league and its participants, ready to render. */
+export type MatchView = Match & {
   league: League
+  participants: MatchParticipantView[]
+}
+
+/**
+ * A player joined with their team and league, ready to render. Individual
+ * athletes have no team; their league is the competition they last played in.
+ */
+export type PlayerView = Player & {
+  team?: Team
+  league?: League
 }
 
 export type TeamView = Team & {

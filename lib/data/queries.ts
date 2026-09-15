@@ -73,10 +73,10 @@ function dayWindow(now: Date): { gte: Date; lt: Date } {
 
 /** All of today's matches in followed leagues or with followed teams. Live first. */
 export async function getTodaysMatches(now = new Date()): Promise<MatchView[]> {
-  const { teamIds, leagueIds } = await getCurrentUserFollows()
+  const { teamIds, playerIds, leagueIds } = await getCurrentUserFollows()
   const matches = await matchRepository.findViews({
     startsAt: dayWindow(now),
-    followed: { teamIds, leagueIds },
+    followed: { teamIds, playerIds, leagueIds },
   })
   return matches.sort(byStatusThenStart)
 }
@@ -89,11 +89,11 @@ export async function getUpcomingFollowedMatches(
   limit = 5,
   now = new Date()
 ): Promise<MatchView[]> {
-  const { teamIds } = await getCurrentUserFollows()
+  const { teamIds, playerIds } = await getCurrentUserFollows()
   return matchRepository.findViews({
     status: "upcoming",
     startsAt: { gte: dayWindow(now).lt },
-    teamIds,
+    followed: { teamIds, playerIds, leagueIds: [] },
     limit,
   })
 }
@@ -242,6 +242,20 @@ export async function getTeamResults(
 
 export async function getTeamPlayers(teamId: string): Promise<Player[]> {
   return playerRepository.findByTeam(teamId)
+}
+
+/** Live and upcoming matches a player takes part in directly (individual sports), soonest first. */
+export async function getPlayerFixtures(playerId: string, now = new Date()): Promise<MatchView[]> {
+  return matchRepository.findViews({
+    playerIds: [playerId],
+    status: { not: "finished" },
+    startsAt: { gt: new Date(now.getTime() - FIXTURE_GRACE_MS) },
+  })
+}
+
+/** Finished matches a player took part in directly, most recent first. */
+export async function getPlayerResults(playerId: string, limit?: number): Promise<MatchView[]> {
+  return matchRepository.findViews({ playerIds: [playerId], status: "finished", order: "desc", limit })
 }
 
 /**

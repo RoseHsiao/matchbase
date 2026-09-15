@@ -4,6 +4,8 @@ import type {
   EntityStatus,
   League,
   Match,
+  MatchParticipant,
+  MatchParticipantView,
   MatchStatus,
   MatchView,
   Player,
@@ -16,7 +18,9 @@ import type {
 } from "@/lib/data/types"
 import type {
   EntityStatus as DbEntityStatus,
+  MatchParticipant as DbMatchParticipant,
   MatchStatus as DbMatchStatus,
+  Player as DbPlayer,
   Season as DbSeason,
   SeasonStatus as DbSeasonStatus,
   Team as DbTeam,
@@ -26,6 +30,7 @@ import type {
   LeagueInclude,
   MatchGetPayload,
   MatchInclude,
+  MatchParticipantFindManyArgs,
   PlayerGetPayload,
   PlayerInclude,
   TeamGetPayload,
@@ -65,15 +70,29 @@ export const teamInclude = {
   league: { include: leagueInclude },
 } satisfies TeamInclude
 
+/**
+ * A player's league is the team's league, or, for individual athletes, the
+ * league of their most recent match.
+ */
 export const playerInclude = {
   team: { include: teamInclude },
+  participations: {
+    select: { match: { select: { league: { include: leagueInclude } } } },
+    orderBy: { match: { startsAt: "desc" } },
+    take: 1,
+  },
 } satisfies PlayerInclude
+
+/** Participants in side/position order with whichever entity they reference. */
+export const participantInclude = {
+  include: { team: true, player: true },
+  orderBy: [{ side: "asc" }, { order: "asc" }],
+} satisfies MatchParticipantFindManyArgs
 
 export const matchInclude = {
   league: { include: leagueInclude },
-  homeTeam: true,
-  awayTeam: true,
   venue: { select: { name: true } },
+  participants: participantInclude,
 } satisfies MatchInclude
 
 export type LeagueRecord = LeagueGetPayload<{ include: typeof leagueInclude }>
@@ -174,20 +193,12 @@ export function toTeamView(record: TeamRecord, nextMatch?: MatchView): TeamView 
   }
 }
 
-/**
- * The domain Player always has a team (lib/data/types.ts). The database allows
- * free agents (decisions §5); repositories exclude them from user-facing reads
- * until the domain type grows a nullable team.
- */
-export function toPlayer(record: PlayerRecord): Player {
-  if (record.teamId === null || record.team === null) {
-    throw new Error(`Player "${record.id}" has no team and cannot be mapped to the domain Player type.`)
-  }
+export function toPlayer(record: DbPlayer): Player {
   return {
     id: record.id,
     name: record.name,
     handle: orUndefined(record.handle),
-    teamId: record.teamId,
+    teamId: orUndefined(record.teamId),
     role: record.role ?? "",
     nationality: orUndefined(record.nationality),
     number: orUndefined(record.number),
@@ -196,39 +207,50 @@ export function toPlayer(record: PlayerRecord): Player {
 }
 
 export function toPlayerView(record: PlayerRecord): PlayerView {
-  const player = toPlayer(record)
-  // toPlayer has already rejected a missing team.
-  const team = record.team as NonNullable<PlayerRecord["team"]>
+  const leagueRecord = record.team?.league ?? record.participations[0]?.match.league
   return {
-    ...player,
-    team: toTeam(team),
-    league: toLeague(team.league),
+    ...toPlayer(record),
+    team: record.team ? toTeam(record.team) : undefined,
+    league: leagueRecord ? toLeague(leagueRecord) : undefined,
+  }
+}
+
+export function toParticipant(record: DbMatchParticipant): MatchParticipant {
+  return {
+    id: record.id,
+    side: record.side,
+    order: record.order,
+    teamId: orUndefined(record.teamId),
+    playerId: orUndefined(record.playerId),
   }
 }
 
 export function toMatch(record: MatchRecord): Match {
-  const hasScore = record.homeScore !== null && record.awayScore !== null
+  const hasScore = record.sideAScore !== null && record.sideBScore !== null
   return {
     id: record.id,
     leagueId: record.leagueId,
     seasonId: record.seasonId,
-    homeTeamId: record.homeTeamId,
-    awayTeamId: record.awayTeamId,
+    participants: record.participants.map(toParticipant),
     startsAt: record.startsAt.toISOString(),
     status: matchStatus[record.status],
     stage: orUndefined(record.stage),
     venue: record.venue?.name,
     venueId: orUndefined(record.venueId),
-    score: hasScore ? { home: record.homeScore as number, away: record.awayScore as number } : undefined,
+    score: hasScore ? { a: record.sideAScore as number, b: record.sideBScore as number } : undefined,
     liveDetail: orUndefined(record.liveDetail),
   }
 }
 
 export function toMatchView(record: MatchRecord): MatchView {
+  const participants: MatchParticipantView[] = record.participants.map((p) => ({
+    ...toParticipant(p),
+    team: p.team ? toTeam(p.team) : undefined,
+    player: p.player ? toPlayer(p.player) : undefined,
+  }))
   return {
     ...toMatch(record),
     league: toLeague(record.league),
-    homeTeam: toTeam(record.homeTeam),
-    awayTeam: toTeam(record.awayTeam),
+    participants,
   }
 }

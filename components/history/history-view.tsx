@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { useWatchlist } from "@/components/watchlist/watchlist-provider"
 import type { League, MatchView, Team } from "@/lib/data/types"
 import { dayDifference } from "@/lib/format"
+import { participantSearchTerms } from "@/lib/matches"
 import { ALL, filterMatches, groupMatchesByDay } from "@/lib/schedule"
 
 const dateOptions = [
@@ -56,10 +57,7 @@ export function HistoryView({ matches, leagues, teams, now: nowIso }: HistoryVie
       (filters.date === "week" && daysAgo >= 0 && daysAgo <= 7) ||
       (filters.date === "older" && daysAgo > 7)
     const inQuery =
-      !query ||
-      [match.homeTeam, match.awayTeam].some((team) =>
-        [team.name, team.shortName, team.code].some((v) => v.toLowerCase().includes(query))
-      )
+      !query || participantSearchTerms(match).some((v) => v.toLowerCase().includes(query))
     return inDate && inQuery
   })
   const groups = groupMatchesByDay(visible, "desc")

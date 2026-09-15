@@ -122,11 +122,12 @@ Player contains:
 
 ## 6. Match
 
-- Keep the current two-sided match model for v1: `homeTeamId` and `awayTeamId`.
-- No generic `MatchParticipant` model.
-- For sports where `Sport.homeAway` is true, the two slots mean Home and Away.
-- For esports where `Sport.homeAway` is false, the two slots mean the first and second competing sides. The column names stay `homeTeamId` / `awayTeamId` to match existing code; the semantics are positional.
-- UI labels ("Home / Away" versus "Team A / Team B", "at" versus "vs") are driven by `Sport.homeAway`, never hardcoded per league.
+*Revised 2026-09-15 (Phase 5). The original v1 decision kept `homeTeamId` / `awayTeamId`; the participant model below replaced it once the tennis provider needed player sides. History: `docs/match-participant-model-analysis.md`.*
+
+- A match has two sides, `A` and `B` (`enum MatchSide`). Each side holds one or more participants in `MatchParticipant`.
+- A participant is exactly one team or exactly one player (`teamId` xor `playerId`). Two player participants on a side form a doubles pair; there is no `Pair` entity and no `PAIR` kind.
+- Home/Away is presentation only. When `Sport.homeAway` is true, side A is Home and side B is Away; when false, the sides are first and second. Providers map their home side to A and away side to B. No component reads a sport id to decide this.
+- No `MatchSide` table: side identity is the enum and per-side data is the two score columns.
 
 Match contains:
 
@@ -135,33 +136,36 @@ Match contains:
 | `id` | Text primary key, existing ids preserved |
 | `leagueId` | FK → League, required |
 | `seasonId` | FK → Season, required |
-| `homeTeamId` | FK → Team, required |
-| `awayTeamId` | FK → Team, required |
 | `venueId` | FK → Venue, nullable |
 | `startsAt` | Timezone-aware timestamp |
 | `status` | Enum `upcoming` \| `live` \| `finished`, NOT NULL |
 | `stage` | Free text, nullable |
-| `homeScore` | Integer, nullable |
-| `awayScore` | Integer, nullable |
-| `liveDetail` | Free text, nullable (e.g. `67'`, `Map 3`) |
+| `sideAScore` | Integer, nullable; aggregate result of side A in the sport's natural unit |
+| `sideBScore` | Integer, nullable |
+| `liveDetail` | Free text, nullable (e.g. `67'`, `Map 3`, `Set 2`) |
+
+MatchParticipant contains:
+
+| Field | Notes |
+|---|---|
+| `id` | Text primary key |
+| `matchId` | FK → Match, cascade on match delete |
+| `side` | `A` \| `B` |
+| `order` | Position within the side, from 1 |
+| `teamId` | FK → Team, nullable, restrict on team delete |
+| `playerId` | FK → Player, nullable, restrict on player delete |
 
 Rules:
 
-- `homeTeamId` and `awayTeamId` cannot be equal (database CHECK).
-- `homeScore` and `awayScore` are either both null or both set (database CHECK).
-- Match status is stored data. It is not inferred solely from the current timestamp.
-- Match status transitions (`upcoming → live → finished`) will eventually be owned by the sync/data ingestion process. Until that exists, status is set by seed data and Admin edits.
-- Indexes on `startsAt`, `(leagueId, startsAt)`, `homeTeamId`, `awayTeamId`.
+- Database: `(matchId, side, order)` unique; `(matchId, teamId)` unique; `(matchId, playerId)` unique; CHECK exactly one of `teamId` / `playerId`; CHECK `order >= 1`; CHECK `sideAScore` and `sideBScore` both null or both set.
+- Code (`lib/data/match-participants.ts`, shared by admin, sync and seed): both sides non-empty; a side is all teams or all players; a team side holds exactly one team; a player side holds one or more players; a team or player never appears twice in a match (so never on both sides).
+- Repository: team participants and the season must belong to the match's league; player participants must exist but need no team.
+- Match status is stored data, owned by sync and Admin edits, never inferred from the clock.
+- Indexes on `startsAt`, `(status, startsAt)`, `(leagueId, startsAt)`, `seasonId`, `venueId`; participation queries use `MatchParticipant(teamId)` / `(playerId)`.
 
 ### Tennis decision
 
-For v1:
-
-- No special player-versus-player schema for Tennis.
-- No `MatchParticipant` introduced just for Tennis.
-- The two-sided Match structure is kept.
-- This is a known v1 limitation: Match references Teams, and a Tennis participant is a Player.
-- Revisit only when real Tennis data requirements demand player-level match participants.
+Tennis (and any individual or pair sport) uses the same model: player participants, one per side for singles, two per side for doubles, no fake teams. `tennis` is registered with `homeAway: false`. Badminton or table tennis need only a registry entry and an adapter.
 
 ---
 
@@ -325,7 +329,6 @@ Explicitly deferred until a concrete product requirement exists:
 
 - `LeagueTeam` (team in multiple competitions)
 - `TeamMembership` / player team history
-- `MatchParticipant`
 - `MatchPeriod` / set / map breakdown
 - Category database table
 - `ExternalIdentity` (polymorphic provider identity)
@@ -428,8 +431,8 @@ Team also references League directly (primary league). Match references League, 
 | Season | Separate database entity |
 | Team | One primary League |
 | Player | Optional Team |
-| Match | Two-sided Home/Away-style model |
-| Tennis | Keep two-sided model for now |
+| Match | Two sides (A/B) of `MatchParticipant` rows; Home/Away is presentation |
+| Tennis | Player participants, singles and doubles, no fake teams |
 | Venue | Nullable FK |
 | User | Minimal entity |
 | Follow/Watchlist | Join tables |
@@ -493,8 +496,8 @@ The schema brief asked for wider nullability than the current TypeScript types. 
 
 These are documented invariants for the repository layer. No workaround was built into the schema. Repository/application validation is acceptable for v1.
 
-- `Match.homeTeamId <> Match.awayTeamId`. Can later become a PostgreSQL CHECK constraint in a hand-written migration.
-- `Match.homeScore` and `Match.awayScore` are both null or both set. Can later become a PostgreSQL CHECK constraint in a hand-written migration.
+- Participant side rules (both sides non-empty, homogeneous sides, one team per team side): code only, in `lib/data/match-participants.ts`.
+- `Match.sideAScore` and `Match.sideBScore` both null or both set, one reference per participant, and positive `order` are PostgreSQL CHECK constraints written by hand in the `match_participants` migration.
 - At most one `Season` per `League` with status `CURRENT`. This cannot be represented by a normal Prisma constraint, and it is not a CHECK constraint either, because it spans rows. The eventual database-level solution is a PostgreSQL partial unique index on `leagueId WHERE status = 'CURRENT'`, added in a hand-written migration. Until then the repository enforces it when a season is created or its status changes.
 
 ### External identity: implemented
@@ -520,7 +523,7 @@ Because every domain parent is Restrict, Admin "delete" on a league, team, or se
 
 ### Indexes
 
-Indexes follow the query patterns in the audit's section 8.1. Where a composite unique constraint already leads with the foreign key (`League(sportId, shortName)`, `Team(leagueId, code)`, `Season(leagueId, name)`), no separate single-column index was added. `Match` carries indexes on `startsAt`, `(status, startsAt)`, `(leagueId, startsAt)`, `seasonId`, `(homeTeamId, startsAt)`, `(awayTeamId, startsAt)`, and `venueId`. `Season` has `(leagueId, status)` for the current-season lookup. Join tables index the target id so "who follows this team" queries do not scan. `SyncLog` indexes `(dataSourceId, startedAt)` and `startedAt`.
+Indexes follow the query patterns in the audit's section 8.1. Where a composite unique constraint already leads with the foreign key (`League(sportId, shortName)`, `Team(leagueId, code)`, `Season(leagueId, name)`), no separate single-column index was added. `Match` carries indexes on `startsAt`, `(status, startsAt)`, `(leagueId, startsAt)`, `seasonId`, and `venueId`; `MatchParticipant` indexes `matchId`, `teamId`, and `playerId` for team and player fixtures. `Season` has `(leagueId, status)` for the current-season lookup. Join tables index the target id so "who follows this team" queries do not scan. `SyncLog` indexes `(dataSourceId, startedAt)` and `startedAt`.
 
 ### Relations to review
 
@@ -559,7 +562,8 @@ Normalisation performed by the seed:
 | `sports` + `sportMeta` (code registry) | `Sport` rows; `sortOrder` is registry order |
 | `League.season` label | `Match.seasonId` = the league's `Season` with that name (each league has exactly one, and it is the `CURRENT` one) |
 | `Match.venue` free text | `Match.venueId` by exact `Venue.name`; two mock matches have no venue and keep null |
-| `Match.score.{home,away}` | `homeScore` / `awayScore` |
+| `Match.score.{a,b}` | `sideAScore` / `sideBScore` |
+| `Match.participants` | `MatchParticipant` rows, reconciled by `(matchId, side, order)` |
 | lowercase statuses | Prisma enums; DataSource `connected` and `attention` → `ACTIVE`, `disconnected` → `INACTIVE` |
 | `SyncLog.at` | `SyncLog.startedAt`; `error` is null because the mock has none |
 
@@ -579,7 +583,7 @@ Server Component / page
 
 - `lib/data/types.ts` remains the application model. `repositories/mappers.ts` maps every Prisma record to it; no component or page sees a Prisma type. Optional domain fields are `undefined`, never `null`.
 - The domain `League.season` label is derived per query from the league's seasons (current first, then upcoming, then most recent completed) through a nested `take: 1` include. No season string exists in the database.
-- `Match.venue` (domain, free text) is the related `Venue.name`; `Match.score` is built from `homeScore` / `awayScore` when both are set.
+- `Match.venue` (domain, free text) is the related `Venue.name`; `Match.score` is built from `sideAScore` / `sideBScore` when both are set; `MatchView.participants` carries each participant's team or player.
 - Still mock-backed on purpose: `currentUserFollows` (seeds the client stores and drives the dashboard's followed filters) and `getAdminData` (Admin persistence is its own phase). These are the only remaining runtime imports of `lib/data/mock.ts`.
 - Players without a team are excluded from user-facing reads because the domain `Player.teamId` is required. None exist in the seed.
 - A sport id present in the database but missing from `lib/sports.ts` throws with a clear message; the registry must be updated alongside a new `Sport` row.
@@ -634,7 +638,7 @@ Admin layout (server)
 
 - **`lib/collection-store.ts`** stays as the client cache behind the admin tables, dialogs, and filters. It is no longer a source of truth: the layout re-seeds every store from the database on each render, and a rejected write rolls the store back and shows an inline alert. It gained a `reset` method for that.
 - **Validation and errors.** Every write validates the untrusted form payload on the server (required text, enum values, integers, dates, ids), then upserts by id. Prisma unique (P2002), foreign-key (P2003), and missing-row (P2025) errors become plain `AdminError` messages; nothing else reaches the UI. Match writes also enforce the rules the schema cannot: distinct teams, paired scores, and teams and season belonging to the match's league. Season writes enforce one CURRENT season per league at the repository level (the partial unique index remains deferred).
-- **Delete semantics** follow the schema: League and Season deletes are blocked by the database while dependants exist and surface as clean errors; Team deletes are refused while the team has players or matches (the schema would set players' team to null, but the domain Player requires a team); Player and Match deletes cascade their follow and watchlist rows; Venue deletes set matches' venue to null. Delete-dialog wording was updated to match.
+- **Delete semantics** follow the schema: League and Season deletes are blocked by the database while dependants exist and surface as clean errors; Team deletes are refused while the team has players or match participations; Player deletes are blocked by the database while the player has match participations (history is kept) and otherwise cascade follows; Match deletes cascade participants, follows and watchlist rows; Venue deletes set matches' venue to null. Delete-dialog wording was updated to match.
 - **Sports & Games.** `Sport.status` is persisted; the catalogue itself, labels, category, and Home/Away wording still come from `lib/sports.ts` (decisions §2). Admin edits status only, as before.
 - **Form changes forced by the schema.** The League form no longer has a "Current season" text field: the label is derived from Season rows and managed on the Seasons page. The Match form gained a Season select (required, defaulting to the league's current season) and replaced the free-text venue with a Venue select. The domain `Match` type gained optional `seasonId` and `venueId` so the admin UI can carry them.
 - **Data sources.** Stored status is `ACTIVE | INACTIVE`; the "Needs attention" state shown in Admin is derived from the latest sync log (FAILED or PARTIAL), so it reproduces the previous mock display. Sync logs are read-only in Admin, read from the database; the domain `SyncStatus` gained `running`.
@@ -643,12 +647,16 @@ Admin layout (server)
 
 ### External data sync (Phase 4, implemented 2026-09-15)
 
-See `docs/external-data-sync-architecture.md`. Summary: provider adapters (`lib/data/sync/providers/*`) fetch and normalize into provider-agnostic types; `lib/data/sync/sync-service.ts` upserts through `lib/data/repositories/sync-repository.ts` by `(dataSourceId, externalId)`, seasons by `(leagueId, name)`; every run writes a `SyncLog` (entity `"all"`, RUNNING → SUCCESS | PARTIAL | FAILED) and updates `DataSource.lastSyncedAt`. One deterministic mock basketball provider is bound to the new seeded source `ds-mock-basketball`. No schema change; the DataSource→provider binding is code until a `provider` column is added. Tennis, table tennis, and badminton remain unrepresentable in the team-vs-team `Match` row and must be reported as issues by their adapters until a `MatchParticipant` model exists.
+See `docs/external-data-sync-architecture.md`. Summary: provider adapters (`lib/data/sync/providers/*`) fetch and normalize into provider-agnostic types; `lib/data/sync/sync-service.ts` upserts through `lib/data/repositories/sync-repository.ts` by `(dataSourceId, externalId)`, seasons by `(leagueId, name)`; every run writes a `SyncLog` (entity `"all"`, RUNNING → SUCCESS | PARTIAL | FAILED) and updates `DataSource.lastSyncedAt`. One deterministic mock basketball provider is bound to the new seeded source `ds-mock-basketball`. No schema change; the DataSource→provider binding is code until a `provider` column is added. Since Phase 5, both `NormalizedMatch` (team sides) and `NormalizedIndividualMatch` (player sides) are persisted as `MatchParticipant` rows through the same service path.
 
 ### Tennis provider (implemented 2026-09-15)
 
-See `docs/tennis-provider.md`. The sport registry and `Sport` union gained `tennis` (`homeAway: false`). A Sportradar Tennis adapter syncs Grand Slam competitions as Leagues, seasons by year, venues, and players with `teamId = null`. Singles and doubles matches are normalized completely (`NormalizedIndividualMatch`, two sides of one or two players) but cannot be stored: `Match` requires a `Team` on each side and fake teams are ruled out. The sync log reports them and the run ends PARTIAL. This is the first concrete case for the participant model in `docs/match-participant-model-analysis.md`; that migration is now justified when tennis matches need to be shown.
+See `docs/tennis-provider.md`. The sport registry and `Sport` union gained `tennis` (`homeAway: false`). A Sportradar Tennis adapter syncs Grand Slam competitions as Leagues, seasons by year, venues, and players with `teamId = null`. Singles and doubles matches are normalized completely (`NormalizedIndividualMatch`, two sides of one or two players) and, since Phase 5, stored as player participants. Real-feed verification is pending a configured `SPORTRADAR_API_KEY`.
+
+### MatchParticipant (Phase 5, implemented 2026-09-15)
+
+See section 6 (revised) and `docs/match-participant-model-analysis.md` §26. Two migrations: `20260915061141_match_participants` (additive: enum, table, side scores, backfill from `homeTeamId` / `awayTeamId` / `homeScore` / `awayScore`, CHECK constraints) and `20260915063143_drop_legacy_match_sides` (guarded drop of the legacy columns, relations and indexes). All 28 existing match ids, 7 watchlist rows, and provider external ids were preserved; the 56 backfilled participant rows keep their ids across seeds because the seed reconciles participants by `(matchId, side, order)`. Domain `Player.teamId` became optional and team-less players are shown as "Independent". Seed adds a Wimbledon league with six team-less players, one finished singles, one upcoming singles, and one upcoming doubles match.
 
 ### Deferred (unchanged from section 16)
 
-`LeagueTeam`, `TeamMembership`, `MatchParticipant`, `MatchPeriod`, a Category table, `ExternalIdentity`, `AuditLog`, and analytics models are not in the schema.
+`LeagueTeam`, `TeamMembership`, `MatchPeriod`, `MatchSide` (table), a Category table, `ExternalIdentity`, `AuditLog`, and analytics models are not in the schema.

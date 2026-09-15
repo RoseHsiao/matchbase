@@ -105,17 +105,15 @@ Adapters hand over ISO 8601 instants; the service parses them with `new Date()` 
 
 ## Transaction boundaries
 
-Each upsert is its own atomic statement. There is no run-wide transaction: a remote snapshot can be slow to fetch, a long transaction would hold locks and risk Prisma's interactive-transaction timeout, and a single bad record should not undo the good ones. The trade-off is that a run can leave a partially updated snapshot, which is exactly what the PARTIAL status and the issue list report.
+Each upsert is its own atomic statement or, for a match whose participants changed, one short transaction (match update, participant delete, participant insert). There is no run-wide transaction: a remote snapshot can be slow to fetch, a long transaction would hold locks and risk Prisma's interactive-transaction timeout, and a single bad record should not undo the good ones. The trade-off is that a run can leave a partially updated snapshot, which is exactly what the PARTIAL status and the issue list report.
 
 ## Multi-sport extensibility
 
-Basketball, football, volleyball, League of Legends, Valorant and other team-vs-team formats fit the current `Match` row directly; for sports without a home side the adapter places the first-listed side in `homeTeamExternalId`, and the UI already labels sides from `Sport.homeAway`. Adding such a provider is: one adapter file, one registry entry, one DataSource row. No change to the service, repositories, queries, or UI.
+Every match is two sides of participants (`MatchParticipant`, side A and B). Basketball, football, volleyball, League of Legends, Valorant and other team-vs-team formats use `NormalizedMatch`: the adapter's `homeTeamExternalId` becomes side A and `awayTeamExternalId` side B; for sports without a home side the adapter simply lists the first side as "home", and the UI labels sides from `Sport.homeAway`. Adding such a provider is: one adapter file, one registry entry, one DataSource row. No change to the service, repositories, queries, or UI.
 
 ## Tennis, table tennis, badminton
 
-The `Match` model is team-vs-team (`homeTeamId` / `awayTeamId` → `Team`). Singles are player-vs-player and doubles are pairs; neither is a `Team`. An adapter for these sports must not create fake teams from players to make a sync pass.
-
-Handling until a `MatchParticipant` model exists (implemented with the Sportradar tennis adapter, see `docs/tennis-provider.md`): the adapter emits `NormalizedSnapshot.individualMatches`, each with two `sides` whose `participants` are players (one for singles, two for doubles, nothing dropped), and players with no `teamExternalId`. The sync service writes leagues, seasons, venues, and team-less players (`Player.teamId = null`), and reports the individual matches as failed records with one summarising `SyncLog` line, so the run ends PARTIAL rather than pretending success. `NormalizedIndividualMatch` is the shape the future participant model persists directly (`docs/match-participant-model-analysis.md`, §18).
+Individual and pair formats use `NormalizedSnapshot.individualMatches`: each `NormalizedIndividualMatch` has two `sides` whose `participants` are players (one for singles, two for doubles, in the provider's order) and players carry no `teamExternalId`. Adapters must not create fake teams. The service converts both normalized shapes through `lib/data/sync/participants.ts` into participant inputs, validates them with the shared rules in `lib/data/match-participants.ts`, and writes them through `syncRepository.upsertMatch`, which reconciles the participant set (unchanged sets are left alone; changed sets are replaced inside the match's transaction). Nothing in the service knows the sport. The Sportradar tennis adapter (`docs/tennis-provider.md`) is the first user of this path; badminton or table tennis would be another adapter with no service change.
 
 ## Admin integration
 
@@ -130,4 +128,4 @@ Data Sources row menu → "Sync now" → Server Action `runDataSourceSync(id)` �
 
 ## Deferred
 
-Real provider; `DataSource.provider` column; scheduling and background execution; live-score streaming; per-entity sync scopes; deletion or archival reconciliation; `MatchParticipant`; provider credential storage beyond environment variables.
+Real team-sport provider; `DataSource.provider` column; scheduling and background execution; live-score streaming; per-entity sync scopes; deletion or archival reconciliation; per-period scores (`MatchPeriod`); provider credential storage beyond environment variables.

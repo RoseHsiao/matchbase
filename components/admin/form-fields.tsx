@@ -132,15 +132,17 @@ export function SelectField({
   placeholder = "Select…",
   full,
   hint,
+  hideLabel,
 }: BaseFieldProps & {
   value: string
   onChange: (value: string) => void
   options: { value: string; label: string }[]
   placeholder?: string
+  /** Keep the label for assistive technology only, e.g. in a repeated row with a shared heading. */
+  hideLabel?: boolean
 }) {
   const items = Object.fromEntries(options.map((option) => [option.value, option.label]))
-  return (
-    <Field id={id} label={label} full={full} hint={hint}>
+  const select = (
       <Select
         value={value || null}
         items={items}
@@ -148,7 +150,7 @@ export function SelectField({
           if (typeof next === "string") onChange(next)
         }}
       >
-        <SelectTrigger id={id} className="w-full cursor-pointer">
+        <SelectTrigger id={id} className="w-full cursor-pointer" aria-label={hideLabel ? label : undefined}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent align="start" alignItemWithTrigger={false}>
@@ -159,6 +161,11 @@ export function SelectField({
           ))}
         </SelectContent>
       </Select>
+  )
+  if (hideLabel) return select
+  return (
+    <Field id={id} label={label} full={full} hint={hint}>
+      {select}
     </Field>
   )
 }

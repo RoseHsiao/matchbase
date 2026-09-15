@@ -62,13 +62,13 @@ Tournament hierarchy: Sportradar groups the five event types under a parent comp
 
 Tennis players are stored as `Player` rows with `teamId = null`, which the schema allows. External identity is `(dataSourceId, externalId)` with the Sportradar competitor id, so re-syncs update the same rows. Ranking and seed are not stored (no schema support; not required).
 
-Limitation: the user-facing Players pages and the Admin Players table currently show only players with a team (`lib/data/repositories/player-repository.ts`, `admin-repository.ts`), because the domain `Player` type still requires one. Tennis players are persisted but invisible in the UI until that domain rule is relaxed (see the participant-model analysis, open question 3).
+Team-less players are first-class: they appear on the Players page and in Admin Players as "Independent", can be followed, and their Player Detail page lists the matches they take part in directly. Their league is derived from their most recent match.
 
 ## Singles and doubles
 
 The normalizer keeps every participant: singles produce one player per side, doubles produce two players per side in the provider's order, with side A being the provider's `home` competitor. Nothing is collapsed into a pair or a team. This is covered by `tests/sync/sportradar-tennis.test.ts`.
 
-Limitation: **tennis matches are not written to the database.** `Match.homeTeamId` and `awayTeamId` are `NOT NULL` foreign keys to `Team`, and inventing teams for players or pairs is ruled out. The sync service counts every normalized individual match as a failed record with one summarising sync-log line, e.g. "254 matches with player participants (127 singles, 127 doubles) were not stored: the current Match model only holds team sides." A tennis run therefore ends PARTIAL (leagues, seasons, players, venues written; matches reported), and the Data Sources page shows "Needs attention" for the feed, which is accurate.
+Persistence: each side becomes `MatchParticipant` rows (`side` A or B, `order` 1..n, `playerId` set, `teamId` null) through the generic sync path (`lib/data/sync/participants.ts` → `syncRepository.upsertMatch`); the winner's aggregate sets go to `Match.sideAScore` / `sideBScore`. Nothing tennis-specific exists in the service or repository. Match Detail renders singles as "Alcaraz vs Sinner" and doubles as "Player A / Player B vs Player C / Player D", with no Home/Away label because `tennis` has `homeAway: false`. A run with a valid key is therefore expected to end SUCCESS (or PARTIAL only for genuinely bad records).
 
 ## Status mapping
 
@@ -98,13 +98,11 @@ Unchanged from Phase 4: `(dataSourceId, externalId)` on League, Team, Player, Ve
 
 ## Known limitations
 
-1. Matches are normalized but not persisted (schema); see above.
-2. Persisted tennis players are hidden from the UI until team-less players are allowed by the domain type.
-3. No ranking, seeding, or period (set/game) data is stored.
-4. The tournament parent grouping is not stored.
-5. Doubles player nationality is not available from the summaries feed (a competitor-profile call per player would be needed).
-6. Real-feed verification could not be run here because no key is configured; the adapter is verified against fixtures shaped like the documented responses and the configuration-failure path is verified end to end.
+1. No ranking, seeding, or period (set/game) data is stored.
+2. The tournament parent grouping is not stored.
+3. Doubles player nationality is not available from the summaries feed (a competitor-profile call per player would be needed).
+4. **Real-feed verification is pending.** `SPORTRADAR_API_KEY` is not configured in this environment, so no live sync has been run against Sportradar since matches became persistable. The adapter is verified against fixtures shaped like the documented responses, the configuration-failure path is verified end to end, and the persistence path is verified with the seeded tennis matches and `tests/sync/participants.test.ts`.
 
 ## Tests
 
-`npm test` runs `tests/sync/sportradar-tennis.test.ts` (Node's built-in test runner through `tsx`): registry and DataSource resolution, configuration failure without network access, 403 handling, competition and season selection, pagination via `X-Max-Results`, header-based authentication, singles and doubles normalization (both players per side retained), Grand Slam league mapping, player and match external ids, status mapping including cancelled, malformed-record isolation, determinism, and a regression check on the mock basketball provider.
+`npm test` runs `tests/sync/sportradar-tennis.test.ts` (Node's built-in test runner through `tsx`): registry and DataSource resolution, configuration failure without network access, 403 handling, competition and season selection, pagination via `X-Max-Results`, header-based authentication, singles and doubles normalization (both players per side retained), Grand Slam league mapping, player and match external ids, status mapping including cancelled, malformed-record isolation, determinism, and a regression check on the mock basketball provider. `tests/sync/participants.test.ts` covers the conversion of both normalized match shapes into participants, and `tests/domain/*.test.ts` cover the participant rules and the singles/doubles presentation.

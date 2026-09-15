@@ -14,6 +14,7 @@
  * - Lowercase mock statuses map to the Prisma enums. DataSource
  *   connected/attention -> ACTIVE, disconnected -> INACTIVE.
  * - SyncLog.at -> SyncLog.startedAt.
+ * - Match.participants -> MatchParticipant rows, reconciled by (matchId, side, order).
  *
  * Determinism: mock.ts generates every timestamp relative to the moment the
  * module is imported. The seed instead anchors all timestamps to a fixed
@@ -43,6 +44,7 @@ import {
   type Prisma,
 } from "../lib/generated/prisma/client"
 import { DEMO_USER_EMAIL, DEMO_USER_ID, DEMO_USER_NAME } from "../lib/data/demo-user"
+import { validateParticipants } from "../lib/data/match-participants"
 import type * as MockTypes from "../lib/data/types"
 import { sportMeta, sports } from "../lib/sports"
 
@@ -116,6 +118,9 @@ const MATCH_TIME_SPECS: Record<string, TimeSpec> = {
   "m-lck-t1-hle": at(-1, 17, 0),
   "m-epl-mci-tot": at(-2, 20, 0),
   "m-nba-bos-gsw": at(-1, 19, 30),
+  "m-wim-alcaraz-sinner": at(-1, 14, 0),
+  "m-wim-sinner-alcaraz-exh": at(3, 15, 0),
+  "m-wim-doubles-final": at(2, 13, 0),
 }
 
 /** Evaluate a spec the way mock.ts does (machine-local time), for the self-check. */
@@ -227,7 +232,7 @@ async function main() {
    * remote connection a batch of ~25 round trips can exceed Prisma's default
    * 5 s transaction limit, so allow a generous timeout.
    */
-  const transaction = (operations: Prisma.PrismaPromise<unknown>[]) =>
+  const transaction = <T,>(operations: Prisma.PrismaPromise<T>[]) =>
     prisma.$transaction(operations, { timeout: 60_000 })
 
   try {
@@ -310,10 +315,11 @@ async function main() {
     // 6. Player
     const teamIds = new Set(mock.teams.map((team) => team.id))
     const playerRows: Prisma.PlayerUncheckedCreateInput[] = mock.players.map((player) => {
-      if (!teamIds.has(player.teamId)) throw new Error(`Cannot map mock data: player ${player.id} references unknown team ${player.teamId}.`)
+      // Individual-sport athletes have no team (decisions §4); a team, when given, must exist.
+      if (player.teamId !== undefined && !teamIds.has(player.teamId)) throw new Error(`Cannot map mock data: player ${player.id} references unknown team ${player.teamId}.`)
       return {
         id: player.id,
-        teamId: player.teamId,
+        teamId: player.teamId ?? null,
         name: player.name,
         handle: player.handle ?? null,
         role: player.role,
@@ -345,21 +351,46 @@ async function main() {
       id: match.id,
       leagueId: match.leagueId,
       seasonId: must(seasonIdByLeague.get(match.leagueId), `match ${match.id} league ${match.leagueId} has no season`),
-      homeTeamId: match.homeTeamId,
-      awayTeamId: match.awayTeamId,
       venueId: match.venue === undefined ? null : must(venueIdByName.get(match.venue), `match ${match.id} venue "${match.venue}" has no Venue row`),
       startsAt: evaluateForSeed(MATCH_TIME_SPECS[match.id]),
       status: matchStatus[match.status],
       stage: match.stage ?? null,
-      homeScore: match.score?.home ?? null,
-      awayScore: match.score?.away ?? null,
+      sideAScore: match.score?.a ?? null,
+      sideBScore: match.score?.b ?? null,
       liveDetail: match.liveDetail ?? null,
     }))
     await transaction(
       matchRows.map((data) => prisma.match.upsert({ where: { id: data.id }, create: data, update: data }))
     )
 
-    // 9. SyncLog (mock `at` -> startedAt)
+    // 9. MatchParticipant. Reconciled by the natural key (matchId, side, order) rather than
+    //    by id, so rows created by the participant backfill migration keep their ids. Every
+    //    participant of a seeded match must be one of the mock participants; the rest go.
+    const playerIds = new Set(mock.players.map((player) => player.id))
+    const participantRows = mock.matches.flatMap((match) => {
+      const validation = validateParticipants(match.participants)
+      if (!validation.ok) throw new Error(`Cannot map mock data: match ${match.id}: ${validation.error}`)
+      return validation.participants.map((participant) => {
+        if (participant.teamId !== undefined && !teamIds.has(participant.teamId)) throw new Error(`Cannot map mock data: match ${match.id} references unknown team ${participant.teamId}.`)
+        if (participant.playerId !== undefined && !playerIds.has(participant.playerId)) throw new Error(`Cannot map mock data: match ${match.id} references unknown player ${participant.playerId}.`)
+        return { matchId: match.id, side: participant.side, order: participant.order, teamId: participant.teamId ?? null, playerId: participant.playerId ?? null }
+      })
+    })
+    const kept = await transaction(
+      participantRows.map((data) =>
+        prisma.matchParticipant.upsert({
+          where: { matchId_side_order: { matchId: data.matchId, side: data.side, order: data.order } },
+          create: data,
+          update: { teamId: data.teamId, playerId: data.playerId },
+          select: { id: true },
+        })
+      )
+    )
+    await prisma.matchParticipant.deleteMany({
+      where: { matchId: { in: mock.matches.map((match) => match.id) }, id: { notIn: kept.map((row) => row.id) } },
+    })
+
+    // 10. SyncLog (mock `at` -> startedAt)
     const syncLogRows: Prisma.SyncLogUncheckedCreateInput[] = mock.syncLogs.map((log) => ({
       id: log.id,
       dataSourceId: log.dataSourceId,
@@ -374,7 +405,7 @@ async function main() {
       syncLogRows.map((data) => prisma.syncLog.upsert({ where: { id: data.id }, create: data, update: data }))
     )
 
-    // 10. Development user and the demo follows / watchlist from mock data.
+    // 11. Development user and the demo follows / watchlist from mock data.
     const userId = DEMO_USER_ID
     await prisma.user.upsert({
       where: { id: userId },
@@ -382,7 +413,7 @@ async function main() {
       update: { email: DEMO_USER_EMAIL, name: DEMO_USER_NAME },
     })
     const follows = mock.currentUserFollows
-    await transaction([
+    await transaction<unknown>([
       ...follows.teamIds.map((teamId) =>
         prisma.userTeamFollow.upsert({ where: { userId_teamId: { userId, teamId } }, create: { userId, teamId }, update: {} })
       ),
@@ -405,6 +436,7 @@ async function main() {
       player: await prisma.player.count(),
       venue: await prisma.venue.count(),
       match: await prisma.match.count(),
+      matchParticipant: await prisma.matchParticipant.count(),
       dataSource: await prisma.dataSource.count(),
       syncLog: await prisma.syncLog.count(),
       user: await prisma.user.count(),

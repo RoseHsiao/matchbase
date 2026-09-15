@@ -48,12 +48,13 @@ export function filterPlayers(
   players: PlayerView[],
   filters: PlayerFilterState
 ): PlayerView[] {
+  // A player without a league (no team, no matches yet) only matches unfiltered hierarchy levels.
   return players.filter(
     (player) =>
       (filters.category === ALL ||
-        sportCategory(player.league.sport) === filters.category) &&
-      (filters.sport === ALL || player.league.sport === filters.sport) &&
-      (filters.leagueId === ALL || player.team.leagueId === filters.leagueId) &&
+        (player.league !== undefined && sportCategory(player.league.sport) === filters.category)) &&
+      (filters.sport === ALL || player.league?.sport === filters.sport) &&
+      (filters.leagueId === ALL || player.league?.id === filters.leagueId) &&
       (filters.teamId === ALL || player.teamId === filters.teamId) &&
       matchesPlayerQuery(player, filters.query)
   )

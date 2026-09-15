@@ -71,11 +71,10 @@ export type NormalizedVenue = {
 }
 
 /**
- * A two-sided match, which is what the v1 Match model stores. For sports
- * where "home" has no meaning the adapter puts the first-listed side in
- * `homeTeamExternalId` (decisions §6). Individual-participant formats
- * (tennis, table tennis, badminton singles/doubles) cannot be expressed here;
- * adapters must report those as issues instead of inventing teams.
+ * A team-vs-team match. `homeTeamExternalId` becomes side A and
+ * `awayTeamExternalId` side B; for sports without home advantage the adapter
+ * simply puts the first-listed side in `homeTeamExternalId` (decisions §6).
+ * Player-based formats use `NormalizedIndividualMatch` instead.
  */
 export type NormalizedMatch = {
   externalId: string
@@ -107,10 +106,8 @@ export type NormalizedSide = {
 
 /**
  * A match whose sides are players (singles or doubles) rather than teams.
- * The current Match row cannot store it (both sides must be teams), so the
- * sync service reports these instead of writing them. The shape is the one
- * the future participant model will persist directly
- * (docs/match-participant-model-analysis.md, §18).
+ * Persisted like any other match: each participant becomes a MatchParticipant
+ * row on side A or B (docs/match-participant-model-analysis.md, §18).
  */
 export type NormalizedIndividualMatch = {
   externalId: string
@@ -144,7 +141,7 @@ export type NormalizedSnapshot = {
   players: NormalizedPlayer[]
   venues: NormalizedVenue[]
   matches: NormalizedMatch[]
-  /** Player-vs-player matches, fully normalized but not storable yet. */
+  /** Player-vs-player matches (singles and doubles). */
   individualMatches?: NormalizedIndividualMatch[]
   /** Issues found while normalizing, e.g. unsupported participant formats. */
   issues: SyncIssue[]

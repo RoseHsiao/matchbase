@@ -1,6 +1,7 @@
 import "server-only"
 
 import { db } from "@/lib/data/db"
+import { validateParticipants } from "@/lib/data/match-participants"
 import { adminActivity } from "@/lib/data/mock"
 import {
   entityStatus,
@@ -8,6 +9,7 @@ import {
   matchInclude,
   toLeague,
   toMatch,
+  toPlayer,
   toSeason,
   toSport,
   toTeam,
@@ -18,7 +20,6 @@ import type {
   DataSourceStatus,
   EntityStatus,
   MatchStatus,
-  Player,
   SeasonStatus,
   SportRecord,
   SyncEntity,
@@ -194,7 +195,7 @@ export const adminRepository = {
       db.league.findMany({ include: leagueInclude, orderBy: [{ sport: { sortOrder: "asc" } }, { name: "asc" }] }),
       db.season.findMany({ orderBy: [{ leagueId: "asc" }, { startsAt: "desc" }] }),
       db.team.findMany({ orderBy: { name: "asc" } }),
-      db.player.findMany({ where: { teamId: { not: null } }, orderBy: { name: "asc" } }),
+      db.player.findMany({ orderBy: { name: "asc" } }),
       db.venue.findMany({ orderBy: { name: "asc" } }),
       db.match.findMany({ include: matchInclude, orderBy: [{ startsAt: "asc" }, { id: "asc" }] }),
       db.dataSource.findMany({
@@ -208,18 +209,7 @@ export const adminRepository = {
       leagues: leagues.map(toLeague),
       seasons: seasons.map(toSeason),
       teams: teams.map(toTeam),
-      players: players.map(
-        (row): Player => ({
-          id: row.id,
-          name: row.name,
-          handle: row.handle ?? undefined,
-          teamId: row.teamId as string,
-          role: row.role ?? "",
-          nationality: row.nationality ?? undefined,
-          number: row.number ?? undefined,
-          status: entityStatus[row.status],
-        })
-      ),
+      players: players.map(toPlayer),
       matches: matches.map(toMatch),
       venues: venues.map(toVenue),
       dataSources: dataSources.map(
@@ -309,7 +299,8 @@ export const adminRepository = {
     const p = payload(input)
     const playerId = id(p)
     const data = {
-      teamId: id(p, "teamId"),
+      // Null for individual-sport athletes.
+      teamId: text(p, "teamId", "Team") ?? null,
       name: requiredText(p, "name", "Full name"),
       handle: text(p, "handle", "Handle", { max: 60 }) ?? null,
       role: requiredText(p, "role", "Role", 60),
@@ -335,46 +326,60 @@ export const adminRepository = {
     await write(() => db.venue.upsert({ where: { id: venueId }, create: { id: venueId, ...data }, update: data }))
   },
 
+  /**
+   * Writes the match row and replaces its participant set in one transaction.
+   * Participant rules come from lib/data/match-participants.ts (shared with sync).
+   */
   async saveMatch(input: unknown): Promise<void> {
     const p = payload(input)
     const matchId = id(p)
     const leagueId = id(p, "leagueId")
     const seasonId = id(p, "seasonId")
-    const homeTeamId = id(p, "homeTeamId")
-    const awayTeamId = id(p, "awayTeamId")
-    if (homeTeamId === awayTeamId) throw new AdminError("A match needs two different teams.")
-    const homeScore = optionalInt(p, "homeScore", "Home score")
-    const awayScore = optionalInt(p, "awayScore", "Away score")
-    if ((homeScore === undefined) !== (awayScore === undefined)) throw new AdminError("Enter both scores or neither.")
+    const validation = validateParticipants(p.participants)
+    if (!validation.ok) throw new AdminError(validation.error)
+    const participants = validation.participants
+    const score = p.score === undefined || p.score === null ? undefined : payload(p.score)
+    const sideAScore = score ? optionalInt(score, "a", "Side A score") : undefined
+    const sideBScore = score ? optionalInt(score, "b", "Side B score") : undefined
+    if ((sideAScore === undefined) !== (sideBScore === undefined)) throw new AdminError("Enter both scores or neither.")
     const venueId = text(p, "venueId", "Venue") ?? null
     const status = toDbMatchStatus[oneOf(p, "status", "Status", MATCH_STATUSES, "upcoming")]
     const data = {
       leagueId,
       seasonId,
-      homeTeamId,
-      awayTeamId,
       venueId,
       startsAt: instant(p, "startsAt", "Start"),
       status,
       stage: text(p, "stage", "Stage", { max: 120 }) ?? null,
-      homeScore: homeScore ?? null,
-      awayScore: awayScore ?? null,
+      sideAScore: sideAScore ?? null,
+      sideBScore: sideBScore ?? null,
       liveDetail: status === "LIVE" ? (text(p, "liveDetail", "Live detail", { max: 60 }) ?? null) : null,
     }
 
-    // Referential rules the schema cannot express: teams and season belong to the match's league.
-    const [teams, season] = await Promise.all([
-      db.team.findMany({ where: { id: { in: [homeTeamId, awayTeamId] } }, select: { id: true, leagueId: true } }),
+    // Referential rules the schema cannot express: team participants and the season belong to the
+    // match's league; player participants must exist (they need no team).
+    const teamIds = participants.flatMap((x) => (x.teamId ? [x.teamId] : []))
+    const playerIds = participants.flatMap((x) => (x.playerId ? [x.playerId] : []))
+    const [teams, players, season] = await Promise.all([
+      teamIds.length ? db.team.findMany({ where: { id: { in: teamIds } }, select: { id: true, leagueId: true } }) : [],
+      playerIds.length ? db.player.findMany({ where: { id: { in: playerIds } }, select: { id: true } }) : [],
       db.season.findUnique({ where: { id: seasonId }, select: { leagueId: true } }),
     ])
-    if (teams.length !== 2) throw new AdminError("One of the selected teams does not exist.")
-    if (teams.some((team) => team.leagueId !== leagueId)) throw new AdminError("Both teams must belong to the match's league.")
+    if (teams.length !== teamIds.length) throw new AdminError("One of the selected teams does not exist.")
+    if (teams.some((team) => team.leagueId !== leagueId)) throw new AdminError("Every team must belong to the match's league.")
+    if (players.length !== playerIds.length) throw new AdminError("One of the selected players does not exist.")
     if (!season) throw new AdminError("The selected season does not exist.")
     if (season.leagueId !== leagueId) throw new AdminError("The season must belong to the match's league.")
 
-    await write(() => db.match.upsert({ where: { id: matchId }, create: { id: matchId, ...data }, update: data }), {
-      reference: "The selected league, season, team, or venue does not exist.",
-    })
+    await write(
+      () =>
+        db.$transaction([
+          db.match.upsert({ where: { id: matchId }, create: { id: matchId, ...data }, update: data }),
+          db.matchParticipant.deleteMany({ where: { matchId } }),
+          db.matchParticipant.createMany({ data: participants.map((x) => ({ matchId, side: x.side, order: x.order, teamId: x.teamId ?? null, playerId: x.playerId ?? null })) }),
+        ]),
+      { reference: "The selected league, season, team, player, or venue does not exist." }
+    )
   },
 
   async saveDataSource(input: unknown): Promise<void> {
@@ -411,14 +416,13 @@ export const adminRepository = {
   },
 
   /**
-   * The schema would set players' team to null; the domain Player requires a
-   * team, so refuse instead of silently orphaning roster rows. Matches block
-   * at the database. Follows cascade.
+   * Refuse while the team has players or match participations, rather than
+   * orphaning roster rows or losing match history. Follows cascade.
    */
   async deleteTeam(teamId: string): Promise<void> {
     const [players, matches] = await Promise.all([
       db.player.count({ where: { teamId } }),
-      db.match.count({ where: { OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }] } }),
+      db.matchParticipant.count({ where: { teamId } }),
     ])
     if (players > 0 || matches > 0) {
       throw new AdminError("This team still has players or matches. Reassign or delete them first.")
@@ -426,9 +430,12 @@ export const adminRepository = {
     await write(() => db.team.delete({ where: { id: teamId } }), { missing: "This team was already deleted." })
   },
 
-  /** Follows cascade. */
+  /** Follows cascade; match participations block at the database (history is kept). */
   async deletePlayer(playerId: string): Promise<void> {
-    await write(() => db.player.delete({ where: { id: playerId } }), { missing: "This player was already deleted." })
+    await write(() => db.player.delete({ where: { id: playerId } }), {
+      reference: "This player has taken part in matches and cannot be deleted. Set the status to inactive instead.",
+      missing: "This player was already deleted.",
+    })
   },
 
   /** Matches at the venue keep no venue (SetNull). */

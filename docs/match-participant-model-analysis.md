@@ -399,3 +399,48 @@ Do not implement this until the first individual sport (or its provider) is actu
 4. Table tennis and badminton team events: represent as team participants (simple) or as player participants with a team attribution (needs a `teamId` on a player participant, which section 16's kind rule currently forbids)?
 5. Provider ordering: is "side A is the provider's home side" a safe universal convention, or will some feed require an explicit home flag per match (section 14's deferred boolean)?
 6. Delete policy change for players with history (`Restrict`) needs a product decision, since it changes Admin behaviour from Phase 3.
+
+---
+
+## 26. Implementation (Phase 5, implemented 2026-09-15)
+
+The model from sections 11 and 12 is now in the schema and the code. This section records what was built and where it deviates from the recommendation above.
+
+### What was built
+
+| Area | Implementation |
+|---|---|
+| Schema | `enum MatchSide { A B }`; `model MatchParticipant { id, matchId, side, order, teamId?, playerId? }` with `@@unique([matchId, side, order])`, `@@unique([matchId, teamId])`, `@@unique([matchId, playerId])`, indexes on `matchId`, `teamId`, `playerId`; `Match.sideAScore` / `Match.sideBScore` replace `homeScore` / `awayScore`; `Match.homeTeamId` / `awayTeamId` and the `HomeTeam` / `AwayTeam` relations are gone. No `MatchSide` table, no `Pair`, no `PAIR` kind, no tournament model. |
+| Database CHECKs (migration SQL) | `Match_scores_paired` (both scores null or both set), `MatchParticipant_one_ref` (exactly one of `teamId` / `playerId`), `MatchParticipant_order_positive` (`order >= 1`). |
+| Migrations | `20260915061141_match_participants` (additive: enum, table, score columns, legacy columns made nullable, backfill `homeTeamId → A/1`, `awayTeamId → B/1`, scores copied, CHECKs) and `20260915063143_drop_legacy_match_sides` (a `DO $$` guard that aborts unless every legacy side and score is mirrored, then drops the columns, relations and indexes). Backfilled participant ids are `'mp_' \|\| md5(matchId \|\| ':A:1')`, deterministic and preserved by the seed. |
+| Domain types (`lib/data/types.ts`) | `MatchSide`, `MatchParticipant`, `MatchParticipantView = MatchParticipant & { team?; player? }`, `Match.participants`, `MatchScore { a, b }`, `MatchView = Match & { league; participants: MatchParticipantView[] }`, `Player.teamId?` optional, `PlayerView.team?` / `league?` optional (league derived from the team or from the latest participation's match). |
+| Shared validation (`lib/data/match-participants.ts`) | `validateParticipants`: both sides non-empty, exactly one reference per row, positions integers from 1 and unique per side, a team or player at most once per match, homogeneous sides, one team per team side, any number of players per player side. Used by the admin repository, the sync service and the seed. |
+| Presentation (`lib/matches.ts`) | `sideParticipants`, `sideRole` (Home/Away from `hasHomeAdvantage`, else none), `participantName`, `sideName` (doubles join with " / "), `matchTitle`, `sideScore`, `winnerSide`, `sideOf`, `matchInvolvesTeam` / `matchInvolvesPlayer`, `participantSearchTerms`. Components render `SIDES.map(...)`; none reads a sport id. |
+| Repositories | `matchInclude` loads `participants` with `team` and `player`, ordered by side then position (one query per list, no N+1). `MatchQuery.teamIds` / `playerIds` / `followed.playerIds` filter through `participants: { some: ... }`. Team next-match and player fixtures go through participants. Player repository no longer filters team-less players. Admin `saveMatch` validates participants, checks team participants and the season belong to the league, checks player participants exist, and writes the match plus a full participant replacement in one transaction. `deletePlayer` maps the FK restriction to a clear message. |
+| Sync | `lib/data/sync/participants.ts` reduces `NormalizedMatch` (home → side A, away → side B) and `NormalizedIndividualMatch` to one persistable form and resolves external ids to internal ids through the maps the service built. `syncRepository.upsertMatch` takes participants and reconciles them as a set (unchanged sets untouched, changed sets replaced in the match's transaction). The tennis "not stored" blocker is removed; nothing in the service is tennis-specific. |
+| UI | `components/matches/side-participants.tsx` (`SideName`, `ParticipantAvatars`), match rows, scoreboard, team rows, history search, followed-team card, match page title, player card and player page (team-less players show "Independent" and their own matches). Admin match form is a participant editor: per side a list of team-or-player selects, add/remove, options exclude anything already picked, validation messages from the shared module, side labels Home/Away or Side A/Side B from the registry. Admin players allow "No team (individual)". |
+| Seed | Every mock match carries `participants`; participants are upserted by `(matchId, side, order)` so backfilled ids survive. New deterministic tennis data: league `wimbledon` (sport `tennis`), season `s-wim-2026`, venue `v-centre-court`, six team-less players, one finished singles (`m-wim-alcaraz-sinner`, 3–1), one upcoming singles, one upcoming doubles (`m-wim-doubles-final`). The demo user follows `alcaraz`. |
+| Tests | `tests/domain/match-participants.test.ts` (rules, mock dataset invariants, no fake tennis teams), `tests/domain/matches.test.ts` (Home/Away from the registry, team behaviour unchanged, singles and doubles rendering, search terms), `tests/sync/participants.test.ts` (team and player side conversion, lone scores, unknown references, shared rules). The 17 tennis-provider tests are unchanged. |
+
+### Deviations from the recommendation
+
+- `Sport.participantKind` and `Sport.maxPerSide` (section 12) were **not** added. The side-shape rule that matters today, "a team side holds one team, a player side holds one or more players", is sport-independent and lives in `validateParticipants`. A per-sport limit (badminton doubles = exactly 2) can be added to the registry later without a schema change.
+- Score columns are named `sideAScore` / `sideBScore` (open question 1 resolved: rename, with side-neutral names).
+- The two "nice to have" items, CHECK constraints and a shared `matchInvolves*` helper, are in.
+- Migration 2 was applied in the same phase rather than after a stable release; the additive migration and a fidelity guard inside the drop migration cover the data-safety concern at this data volume.
+
+### Open questions, resolved
+
+1. Score naming: `sideAScore` / `sideBScore`.
+2. Followed players' own matches appear in the dashboard "followed" queries (today's matches and upcoming), alongside followed teams and leagues.
+3. Team-less players are first-class on user-facing pages: listed, followable, with their league derived from their matches, and shown as "Independent".
+4. Table tennis / badminton team events: still deferred; would be team participants.
+5. Provider ordering: "provider home → side A" is the convention for every adapter; no explicit home flag was needed.
+
+### Badminton readiness
+
+Adding badminton is: a `badminton` entry in `lib/sports.ts` with `homeAway: false`, a `Sport` row, and an adapter that emits `NormalizedIndividualMatch` with one or two players per side. No schema, repository, query, or component change.
+
+### Not verified
+
+A real Sportradar tennis sync could not be run in this environment because `SPORTRADAR_API_KEY` is not configured. The persistence path is covered by the sync participant tests and the seeded tennis matches; the end-to-end feed run is pending a key.

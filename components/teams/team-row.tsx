@@ -6,6 +6,7 @@ import { LiveDot, liveTextClassName } from "@/components/matches/match-status-ba
 import { TeamLogo } from "@/components/matches/team-logo"
 import type { TeamView } from "@/lib/data/types"
 import { formatDayLabel, formatTime } from "@/lib/format"
+import { otherSide, sideName, sideOf } from "@/lib/matches"
 import { hasHomeAdvantage } from "@/lib/sports"
 
 type TeamRowProps = {
@@ -17,13 +18,10 @@ type TeamRowProps = {
 /** Compact team row for dashboard lists, linking to the team page. */
 export function TeamRow({ team, now = new Date(), className }: TeamRowProps) {
   const next = team.nextMatch
-  const opponent = next
-    ? next.homeTeamId === team.id
-      ? next.awayTeam
-      : next.homeTeam
-    : undefined
-  // "at" only makes sense where the opponent hosts; esports have no home venue.
-  const away = !!next && next.homeTeamId !== team.id && hasHomeAdvantage(next.league.sport)
+  const ownSide = next ? sideOf(next, { teamId: team.id }) : undefined
+  const opponent = next && ownSide ? sideName(next, otherSide(ownSide), "code") : undefined
+  // "at" only makes sense where the opponent hosts; esports and individual sports have no home venue.
+  const away = !!next && ownSide === "B" && hasHomeAdvantage(next.league.sport)
   const versus = away ? "at" : "vs"
 
   return (
@@ -49,13 +47,13 @@ export function TeamRow({ team, now = new Date(), className }: TeamRowProps) {
                 Live now
               </div>
               <div className="text-muted-foreground">
-                {versus} {opponent.code}
+                {versus} {opponent}
               </div>
             </>
           ) : (
             <>
               <div className="font-medium">
-                {versus} {opponent.code}
+                {versus} {opponent}
               </div>
               <time
                 dateTime={next.startsAt}

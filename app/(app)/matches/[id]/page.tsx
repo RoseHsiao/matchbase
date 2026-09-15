@@ -13,6 +13,7 @@ import { WatchlistButton } from "@/components/watchlist/watchlist-button";
 import { buttonVariants } from "@/components/ui/button";
 import { getMatchById, getRelatedMatches } from "@/lib/data/queries";
 import { formatKickoff, formatLongDate, formatTime } from "@/lib/format";
+import { matchTitle } from "@/lib/matches";
 import { categoryLabel, sportCategory, sportLabel } from "@/lib/sports";
 
 type MatchPageProps = {
@@ -25,9 +26,7 @@ export async function generateMetadata({
   const { id } = await params;
   const match = await getMatchById(id);
   return {
-    title: match
-      ? `${match.homeTeam.shortName} vs ${match.awayTeam.shortName}`
-      : "Match",
+    title: match ? matchTitle(match, "short") : "Match",
     description: match
       ? `${match.league.name} · ${formatKickoff(match.startsAt)}`
       : undefined,
@@ -65,7 +64,7 @@ export default async function MatchPage({ params }: MatchPageProps) {
           Back to schedule
         </Link>
         <PageHeader
-          title={`${match.homeTeam.name} vs ${match.awayTeam.name}`}
+          title={matchTitle(match)}
           description={[
             categoryLabel(sportCategory(league.sport)),
             sportLabel(league.sport),

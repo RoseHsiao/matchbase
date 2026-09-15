@@ -1,6 +1,7 @@
 import "server-only"
 
 import { syncRepository } from "@/lib/data/repositories/sync-repository"
+import { resolveSides, toPersistable } from "@/lib/data/sync/participants"
 import { resolveProvider } from "@/lib/data/sync/providers/registry"
 import type {
   NormalizedMatch,
@@ -164,6 +165,7 @@ export async function syncDataSource(dataSourceId: string, options: SyncOptions 
   }
 
   // 5. Players. A player without a team (individual sports) is stored with no team.
+  const playerIds = new Map<string, string>()
   for (const player of snapshot.players) {
     try {
       let teamId: string | null = null
@@ -172,65 +174,54 @@ export async function syncDataSource(dataSourceId: string, options: SyncOptions 
         if (!teamId) throw new Error(`Team ${player.teamExternalId} was not synced.`)
       }
       const result = await syncRepository.upsertPlayer(dataSourceId, teamId, player)
+      playerIds.set(player.externalId, result.id)
       record("players", result.created)
     } catch (error) {
       failRecord("players", "player", player.externalId, error)
     }
   }
 
-  // 6. Matches. The provider's status wins; an unknown status keeps what is stored.
-  for (const match of snapshot.matches) {
+  // 6. Matches, team-vs-team and player-vs-player alike: each side's participants are
+  //    resolved through the team and player maps built above, then the row and its
+  //    participant set are written. The provider's status wins; unknown keeps what is stored.
+  const resolvers = { teamIds, playerIds }
+  const all = [...snapshot.matches, ...(snapshot.individualMatches ?? [])].map(toPersistable)
+  for (const match of all) {
     try {
       const leagueId = leagueIds.get(match.leagueExternalId)
       const seasonId = seasonIds.get(match.seasonExternalId)
-      const homeTeamId = teamIds.get(match.homeTeamExternalId)
-      const awayTeamId = teamIds.get(match.awayTeamExternalId)
       if (!leagueId) throw new Error(`League ${match.leagueExternalId} was not synced.`)
       if (!seasonId) throw new Error(`Season ${match.seasonExternalId} was not synced.`)
-      if (!homeTeamId) throw new Error(`Home team ${match.homeTeamExternalId} was not synced.`)
-      if (!awayTeamId) throw new Error(`Away team ${match.awayTeamExternalId} was not synced.`)
-      if (homeTeamId === awayTeamId) throw new Error("Both sides are the same team.")
       const venueId = match.venueExternalId === undefined ? null : (venueIds.get(match.venueExternalId) ?? null)
       if (match.venueExternalId !== undefined && venueId === null) {
         issues.push({ level: "warning", entity: "match", externalId: match.externalId, message: `Venue ${match.venueExternalId} was not synced; stored without a venue.` })
       }
       const startsAt = new Date(match.startsAt)
       if (Number.isNaN(startsAt.getTime())) throw new Error(`Invalid start time "${match.startsAt}".`)
-      const paired = match.homeScore !== undefined && match.awayScore !== undefined
-      if ((match.homeScore !== undefined) !== (match.awayScore !== undefined)) {
+      if (match.loneScore) {
         issues.push({ level: "warning", entity: "match", externalId: match.externalId, message: "Only one score was provided; both scores were dropped." })
       }
-      const result = await syncRepository.upsertMatch(dataSourceId, match.externalId, {
-        leagueId,
-        seasonId,
-        homeTeamId,
-        awayTeamId,
-        venueId,
-        startsAt,
-        status: match.status === "unknown" ? null : matchStatus[match.status],
-        stage: match.stage ?? null,
-        homeScore: paired ? (match.homeScore as number) : null,
-        awayScore: paired ? (match.awayScore as number) : null,
-        liveDetail: match.status === "live" ? (match.liveDetail ?? null) : null,
-      })
+      const sides = resolveSides(match.sides, resolvers)
+      const result = await syncRepository.upsertMatch(
+        dataSourceId,
+        match.externalId,
+        {
+          leagueId,
+          seasonId,
+          venueId,
+          startsAt,
+          status: match.status === "unknown" ? null : matchStatus[match.status],
+          stage: match.stage ?? null,
+          sideAScore: sides.sideAScore ?? null,
+          sideBScore: sides.sideBScore ?? null,
+          liveDetail: match.status === "live" ? (match.liveDetail ?? null) : null,
+        },
+        sides.participants
+      )
       record("matches", result.created)
     } catch (error) {
       failRecord("matches", "match", match.externalId, error)
     }
-  }
-
-  // 7. Player-vs-player matches: normalized in full, but the current Match row
-  //    needs a team on each side, so they cannot be written yet. Count them as
-  //    failed records with one summarising issue instead of dropping them silently.
-  const individual = snapshot.individualMatches ?? []
-  if (individual.length > 0) {
-    const doubles = individual.filter((m) => m.sides.some((side) => side.participants.length > 1)).length
-    counts.matches.failed += individual.length
-    issues.push({
-      level: "error",
-      entity: "match",
-      message: `${individual.length} matches with player participants (${individual.length - doubles} singles, ${doubles} doubles) were not stored: the current Match model only holds team sides. See docs/tennis-provider.md.`,
-    })
   }
 
   const records = Object.values(counts).reduce((sum, c) => sum + c.created + c.updated, 0)

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react"
+import { PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react"
 
 import { useAdminCollection, useAdminLookups, useAdminNow } from "@/components/admin/admin-data-provider"
 import { AdminDataTable, type AdminColumn } from "@/components/admin/admin-data-table"
@@ -15,14 +15,18 @@ import { useEntityEditor } from "@/components/admin/use-entity-editor"
 import { CategoryBadge } from "@/components/category-badge"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { MatchStatusBadge } from "@/components/matches/match-status-badge"
-import { TeamLogo } from "@/components/matches/team-logo"
+import { ParticipantAvatars } from "@/components/matches/side-participants"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
 import { statusMeta } from "@/lib/admin/status"
 import { newId } from "@/lib/collection-store"
-import type { Match, MatchStatus, Season } from "@/lib/data/types"
+import { participantsFromSides, validateParticipants, type ParticipantRef } from "@/lib/data/match-participants"
+import type { Match, MatchParticipantView, MatchSide, MatchStatus, Player, Season, Team } from "@/lib/data/types"
 import { formatDateTime, isSameDay, toDateTimeLocal } from "@/lib/format"
+import { SIDES, sideName, sideParticipants, sideRole } from "@/lib/matches"
+import { playerDisplayName } from "@/lib/players"
 import { ALL } from "@/lib/schedule"
-import { hasHomeAdvantage, sportCategory, sportLabel } from "@/lib/sports"
+import { sportCategory, sportLabel } from "@/lib/sports"
 
 const matchStatusOptions: { value: MatchStatus; label: string }[] = [
   { value: "upcoming", label: "Upcoming" },
@@ -39,23 +43,35 @@ const dateOptions = [
 /** Select value for "no venue"; the stored field is null. */
 const NO_VENUE = "none"
 
+/** A participant slot in the form: "team:<id>", "player:<id>", or "" while unselected. */
+type ParticipantKey = string
+
 type Draft = {
   leagueId: string
   seasonId: string
-  homeTeamId: string
-  awayTeamId: string
+  sides: Record<MatchSide, ParticipantKey[]>
   startsAt: string
   status: MatchStatus
   stage: string
   venueId: string
-  homeScore: number | ""
-  awayScore: number | ""
+  sideAScore: number | ""
+  sideBScore: number | ""
   liveDetail: string
 }
 
-const emptyDraft: Draft = { leagueId: "", seasonId: "", homeTeamId: "", awayTeamId: "", startsAt: "", status: "upcoming", stage: "", venueId: NO_VENUE, homeScore: "", awayScore: "", liveDetail: "" }
+const emptyDraft: Draft = { leagueId: "", seasonId: "", sides: { A: [""], B: [""] }, startsAt: "", status: "upcoming", stage: "", venueId: NO_VENUE, sideAScore: "", sideBScore: "", liveDetail: "" }
 
 const SEASON_ORDER: Record<Season["status"], number> = { current: 0, upcoming: 1, completed: 2 }
+
+function keyOf(participant: { teamId?: string; playerId?: string }): ParticipantKey {
+  return participant.teamId ? `team:${participant.teamId}` : participant.playerId ? `player:${participant.playerId}` : ""
+}
+
+function refOf(key: ParticipantKey): ParticipantRef | undefined {
+  const [kind, id] = key.split(":", 2)
+  if (!id) return undefined
+  return kind === "team" ? { teamId: id } : kind === "player" ? { playerId: id } : undefined
+}
 
 export function AdminMatchesView() {
   const now = useAdminNow()
@@ -63,12 +79,23 @@ export function AdminMatchesView() {
   const { items: leagues } = useAdminCollection("leagues")
   const { items: seasons } = useAdminCollection("seasons")
   const { items: teams } = useAdminCollection("teams")
+  const { items: players } = useAdminCollection("players")
   const { items: venues } = useAdminCollection("venues")
   const { leagueById, teamById, venueById } = useAdminLookups()
+  const playerById = React.useMemo(() => new Map(players.map((p) => [p.id, p])), [players])
   const hierarchy = useHierarchyFilters({ category: ALL, sport: ALL, leagueId: ALL, status: ALL, date: ALL }, leagues)
   const { filters, update } = hierarchy
   const editor = useEntityEditor<Draft>(emptyDraft)
+  const [formError, setFormError] = React.useState<string | null>(null)
   const [deleting, setDeleting] = React.useState<Match | null>(null)
+
+  /** Join a stored match with its teams and players for display, from the admin collections. */
+  const withParticipants = React.useCallback(
+    (match: Match): { participants: MatchParticipantView[] } => ({
+      participants: match.participants.map((p) => ({ ...p, team: p.teamId ? teamById.get(p.teamId) : undefined, player: p.playerId ? playerById.get(p.playerId) : undefined })),
+    }),
+    [teamById, playerById]
+  )
 
   const rows = matches.filter((match) => {
     const league = leagueById.get(match.leagueId)
@@ -96,77 +123,123 @@ export function AdminMatchesView() {
       key: "participants",
       header: "Participants",
       cell: (row) => {
-        const home = teamById.get(row.homeTeamId)
-        const away = teamById.get(row.awayTeamId)
+        const view = withParticipants(row)
         const league = leagueOf(row)
-        const sides = league ? hasHomeAdvantage(league.sport) : false
+        const roles = league ? SIDES.map((side) => sideRole(league.sport, side)).filter(Boolean) : []
         return (
           <span className="grid gap-0.5 leading-tight">
             <span className="flex items-center gap-1.5">
-              {home ? <TeamLogo team={home} size="xs" /> : null}
-              <span className="font-medium">{home?.name ?? row.homeTeamId}</span>
+              <ParticipantAvatars participants={sideParticipants(view, "A")} size="xs" />
+              <span className="font-medium">{sideName(view, "A")}</span>
               <span className="text-muted-foreground">vs</span>
-              {away ? <TeamLogo team={away} size="xs" /> : null}
-              <span className="font-medium">{away?.name ?? row.awayTeamId}</span>
+              <ParticipantAvatars participants={sideParticipants(view, "B")} size="xs" />
+              <span className="font-medium">{sideName(view, "B")}</span>
             </span>
             <span className="text-xs text-muted-foreground">
-              {sides ? "Home · Away" : row.stage ?? "Series"}
+              {roles.length ? roles.join(" · ") : row.stage ?? "Side A · Side B"}
             </span>
           </span>
         )
       },
     },
     { key: "status", header: "Status", cell: (row) => <MatchStatusBadge status={row.status} liveDetail={row.liveDetail} />, sortValue: (row) => row.status },
-    { key: "score", header: "Score", cell: (row) => (row.score ? `${row.score.home}–${row.score.away}` : "—"), className: "tabular-nums whitespace-nowrap" },
+    { key: "score", header: "Score", cell: (row) => (row.score ? `${row.score.a}–${row.score.b}` : "—"), className: "tabular-nums whitespace-nowrap" },
   ]
 
   const draftLeague = editor.draft.leagueId ? leagueById.get(editor.draft.leagueId) : undefined
-  const draftTeams = teams.filter((t) => t.leagueId === editor.draft.leagueId)
   const draftSeasons = seasons
     .filter((s) => s.leagueId === editor.draft.leagueId)
     .sort((a, b) => SEASON_ORDER[a.status] - SEASON_ORDER[b.status] || b.startsAt.localeCompare(a.startsAt))
-  const draftSides = draftLeague ? hasHomeAdvantage(draftLeague.sport) : true
   const showScore = editor.draft.status !== "upcoming"
+  const roleA = draftLeague ? sideRole(draftLeague.sport, "A") : undefined
+  const roleB = draftLeague ? sideRole(draftLeague.sport, "B") : undefined
+  const sideLabel = (side: MatchSide) => (side === "A" ? (roleA ?? "Side A") : (roleB ?? "Side B"))
+
+  /**
+   * Participant choices for the selected league: its teams, the players on
+   * those teams, and every player without a team (individual athletes).
+   */
+  const participantOptions = React.useMemo(() => {
+    if (!editor.draft.leagueId) return []
+    const leagueTeams = teams.filter((t) => t.leagueId === editor.draft.leagueId)
+    const teamIds = new Set(leagueTeams.map((t) => t.id))
+    const eligible = players.filter((p) => p.teamId === undefined || teamIds.has(p.teamId))
+    return [
+      ...leagueTeams.map((t: Team) => ({ value: `team:${t.id}`, label: `Team · ${t.name}` })),
+      ...eligible.map((p: Player) => ({ value: `player:${p.id}`, label: `Player · ${playerDisplayName(p)}${p.teamId ? ` (${teamById.get(p.teamId)?.code ?? ""})` : ""}` })),
+    ]
+  }, [editor.draft.leagueId, teams, players, teamById])
 
   /** Default a new match to the league's current season (first in the ordered list). */
   function selectLeague(leagueId: string) {
     const first = seasons
       .filter((s) => s.leagueId === leagueId)
       .sort((a, b) => SEASON_ORDER[a.status] - SEASON_ORDER[b.status] || b.startsAt.localeCompare(a.startsAt))[0]
-    editor.patch({ leagueId, seasonId: first?.id ?? "", homeTeamId: "", awayTeamId: "" })
+    editor.patch({ leagueId, seasonId: first?.id ?? "", sides: { A: [""], B: [""] } })
+    setFormError(null)
+  }
+
+  function setSlot(side: MatchSide, index: number, key: ParticipantKey) {
+    const next = editor.draft.sides[side].map((k, i) => (i === index ? key : k))
+    editor.patch({ sides: { ...editor.draft.sides, [side]: next } })
+    setFormError(null)
+  }
+  function addSlot(side: MatchSide) {
+    editor.patch({ sides: { ...editor.draft.sides, [side]: [...editor.draft.sides[side], ""] } })
+  }
+  function removeSlot(side: MatchSide, index: number) {
+    const next = editor.draft.sides[side].filter((_, i) => i !== index)
+    editor.patch({ sides: { ...editor.draft.sides, [side]: next.length ? next : [""] } })
   }
 
   function submit() {
-    const { leagueId, seasonId, homeTeamId, awayTeamId, startsAt } = editor.draft
-    if (!leagueId || !seasonId || !homeTeamId || !awayTeamId || !startsAt || homeTeamId === awayTeamId) return
-    const homeScore = editor.draft.homeScore
-    const awayScore = editor.draft.awayScore
+    const { leagueId, seasonId, startsAt } = editor.draft
+    if (!leagueId || !seasonId) return
+    const refs = (side: MatchSide) => editor.draft.sides[side].map(refOf).filter((r): r is ParticipantRef => r !== undefined)
+    const validation = validateParticipants(participantsFromSides({ A: refs("A"), B: refs("B") }))
+    if (!validation.ok) {
+      setFormError(validation.error)
+      return
+    }
+    if (!startsAt) {
+      setFormError("Pick a start date and time.")
+      return
+    }
+    const a = editor.draft.sideAScore
+    const b = editor.draft.sideBScore
+    if (showScore && (a === "") !== (b === "")) {
+      setFormError("Enter both scores or neither.")
+      return
+    }
     const venueId = editor.draft.venueId === NO_VENUE ? undefined : editor.draft.venueId
+    const id = editor.editingId ?? newId("match")
     upsert({
-      id: editor.editingId ?? newId("match"),
+      id,
       leagueId,
       seasonId,
-      homeTeamId,
-      awayTeamId,
+      participants: validation.participants.map((p) => ({ id: `${id}-${p.side}${p.order}`, side: p.side, order: p.order, teamId: p.teamId, playerId: p.playerId })),
       startsAt: new Date(startsAt).toISOString(),
       status: editor.draft.status,
       stage: editor.draft.stage.trim() || undefined,
       venueId,
       venue: venueId ? venueById.get(venueId)?.name : undefined,
-      score: showScore && homeScore !== "" && awayScore !== "" ? { home: homeScore, away: awayScore } : undefined,
+      score: showScore && a !== "" && b !== "" ? { a, b } : undefined,
       liveDetail: editor.draft.status === "live" && editor.draft.liveDetail.trim() ? editor.draft.liveDetail.trim() : undefined,
     })
+    setFormError(null)
     editor.close()
   }
 
-  const matchName = (match: Match) =>
-    `${teamById.get(match.homeTeamId)?.name ?? match.homeTeamId} vs ${teamById.get(match.awayTeamId)?.name ?? match.awayTeamId}`
+  const matchName = (match: Match) => {
+    const view = withParticipants(match)
+    return `${sideName(view, "A")} vs ${sideName(view, "B")}`
+  }
 
   return (
     <AdminPage
       title="Matches"
-      description="Fixtures, live matches, and results across sports and esports. The same records power Schedule, Match Detail, and the Dashboard."
-      actions={<Button className="cursor-pointer" onClick={editor.openCreate}><PlusIcon data-icon="inline-start" />Add match</Button>}
+      description="Fixtures, live matches, and results across sports and esports. Each side holds a team, a player, or a doubles pair. The same records power Schedule, Match Detail, and the Dashboard."
+      actions={<Button className="cursor-pointer" onClick={() => { setFormError(null); editor.openCreate() }}><PlusIcon data-icon="inline-start" />Add match</Button>}
     >
       <AdminToolbar activeCount={hierarchy.activeCount} onReset={hierarchy.reset}>
         <HierarchyFilterSelects idPrefix="admin-matches" filters={filters} update={update} sportOptions={hierarchy.sportOptions} leagueOptions={hierarchy.leagueOptions} />
@@ -183,7 +256,28 @@ export function AdminMatchesView() {
         pageSize={12}
         defaultSort={{ key: "start", direction: "asc" }}
         rowActions={[
-          { label: "Edit", icon: PencilIcon, onSelect: (row) => editor.openEdit(row.id, { leagueId: row.leagueId, seasonId: row.seasonId ?? "", homeTeamId: row.homeTeamId, awayTeamId: row.awayTeamId, startsAt: toDateTimeLocal(row.startsAt), status: row.status, stage: row.stage ?? "", venueId: row.venueId ?? NO_VENUE, homeScore: row.score?.home ?? "", awayScore: row.score?.away ?? "", liveDetail: row.liveDetail ?? "" }) },
+          {
+            label: "Edit",
+            icon: PencilIcon,
+            onSelect: (row) => {
+              setFormError(null)
+              editor.openEdit(row.id, {
+                leagueId: row.leagueId,
+                seasonId: row.seasonId ?? "",
+                sides: {
+                  A: sideParticipants(row, "A").map(keyOf).concat(sideParticipants(row, "A").length ? [] : [""]),
+                  B: sideParticipants(row, "B").map(keyOf).concat(sideParticipants(row, "B").length ? [] : [""]),
+                },
+                startsAt: toDateTimeLocal(row.startsAt),
+                status: row.status,
+                stage: row.stage ?? "",
+                venueId: row.venueId ?? NO_VENUE,
+                sideAScore: row.score?.a ?? "",
+                sideBScore: row.score?.b ?? "",
+                liveDetail: row.liveDetail ?? "",
+              })
+            },
+          },
           { label: "Delete", icon: Trash2Icon, destructive: true, onSelect: setDeleting },
         ]}
         emptyTitle="No matches match"
@@ -193,28 +287,63 @@ export function AdminMatchesView() {
 
       <AdminFormDialog
         open={editor.open}
-        onOpenChange={editor.setOpen}
+        onOpenChange={(open) => { if (!open) setFormError(null); editor.setOpen(open) }}
         title={editor.editingId ? "Edit match" : "Add match"}
-        description={draftLeague ? `${sportLabel(draftLeague.sport)} · ${draftLeague.name}` : "Pick a league first; seasons and teams are limited to that league."}
+        description={draftLeague ? `${sportLabel(draftLeague.sport)} · ${draftLeague.name}` : "Pick a league first; seasons, teams, and players are limited to that league."}
         submitLabel={editor.editingId ? "Save changes" : "Add match"}
         onSubmit={submit}
       >
-        <SelectField id="match-league" label="League" value={editor.draft.leagueId} onChange={selectLeague} options={leagues.map((l) => ({ value: l.id, label: `${l.name} · ${sportLabel(l.sport)}` }))} />
-        <SelectField id="match-season" label="Season" value={editor.draft.seasonId} onChange={(seasonId) => editor.patch({ seasonId })} options={draftSeasons.map((s) => ({ value: s.id, label: `${s.name} · ${statusMeta[s.status].label}` }))} placeholder={draftLeague ? (draftSeasons.length ? "Select season" : "No seasons for this league") : "Pick a league first"} />
-        <SelectField id="match-home" label={draftSides ? "Home team" : "Team A"} value={editor.draft.homeTeamId} onChange={(homeTeamId) => editor.patch({ homeTeamId })} options={draftTeams.map((t) => ({ value: t.id, label: t.name }))} placeholder={draftLeague ? "Select team" : "Pick a league first"} />
-        <SelectField id="match-away" label={draftSides ? "Away team" : "Team B"} value={editor.draft.awayTeamId} onChange={(awayTeamId) => editor.patch({ awayTeamId })} options={draftTeams.filter((t) => t.id !== editor.draft.homeTeamId).map((t) => ({ value: t.id, label: t.name }))} placeholder={draftLeague ? "Select team" : "Pick a league first"} />
+        <SelectField id="match-league" label="League" value={editor.draft.leagueId} onChange={selectLeague} options={leagues.map((l) => ({ value: l.id, label: `${l.name} · ${sportLabel(l.sport)}` }))} full />
+        <SelectField id="match-season" label="Season" value={editor.draft.seasonId} onChange={(seasonId) => editor.patch({ seasonId })} options={draftSeasons.map((s) => ({ value: s.id, label: `${s.name} · ${statusMeta[s.status].label}` }))} placeholder={draftLeague ? (draftSeasons.length ? "Select season" : "No seasons for this league") : "Pick a league first"} full />
+
+        {SIDES.map((side) => (
+          <div key={side} className="grid gap-1.5" data-side={side}>
+            <Label>{sideLabel(side)}</Label>
+            {editor.draft.sides[side].map((key, index) => {
+              const taken = new Set([...editor.draft.sides.A, ...editor.draft.sides.B].filter((k) => k && k !== key))
+              return (
+                <div key={`${side}-${index}`} className="flex items-center gap-1.5">
+                  <div className="min-w-0 flex-1">
+                    <SelectField
+                      id={`match-side-${side.toLowerCase()}-${index + 1}`}
+                      label={`${sideLabel(side)} participant ${index + 1}`}
+                      value={key}
+                      onChange={(value) => setSlot(side, index, value)}
+                      options={participantOptions.filter((o) => !taken.has(o.value))}
+                      placeholder={draftLeague ? "Select team or player" : "Pick a league first"}
+                      hideLabel
+                    />
+                  </div>
+                  {editor.draft.sides[side].length > 1 ? (
+                    <Button type="button" variant="ghost" size="icon-sm" className="cursor-pointer" aria-label={`Remove ${sideLabel(side)} participant ${index + 1}`} onClick={() => removeSlot(side, index)}>
+                      <XIcon />
+                    </Button>
+                  ) : null}
+                </div>
+              )
+            })}
+            <Button type="button" variant="outline" size="sm" className="w-fit cursor-pointer" onClick={() => addSlot(side)} disabled={!draftLeague}>
+              <PlusIcon data-icon="inline-start" />
+              Add participant
+            </Button>
+          </div>
+        ))}
+
         <DateTimeField id="match-start" label="Start" value={editor.draft.startsAt} onChange={(startsAt) => editor.patch({ startsAt })} />
         <SelectField id="match-status" label="Status" value={editor.draft.status} onChange={(status) => editor.patch({ status: status as MatchStatus })} options={matchStatusOptions} />
-        <TextField id="match-stage" label="Stage" value={editor.draft.stage} onChange={(stage) => editor.patch({ stage })} placeholder="e.g. Matchweek 5 or Playoffs · Final" />
-        <SelectField id="match-venue" label="Venue" value={editor.draft.venueId} onChange={(venueId) => editor.patch({ venueId })} options={[{ value: NO_VENUE, label: "No venue" }, ...venues.map((v) => ({ value: v.id, label: v.name }))]} hint={draftSides ? "Physical venue." : "Optional. Esports matches may be studio or online."} />
+        <TextField id="match-stage" label="Stage" value={editor.draft.stage} onChange={(stage) => editor.patch({ stage })} placeholder="e.g. Matchweek 5 or Quarterfinal" />
+        <SelectField id="match-venue" label="Venue" value={editor.draft.venueId} onChange={(venueId) => editor.patch({ venueId })} options={[{ value: NO_VENUE, label: "No venue" }, ...venues.map((v) => ({ value: v.id, label: v.name }))]} hint="Optional. Esports and many individual events have no physical venue." />
         {showScore ? (
           <>
-            <NumberField id="match-home-score" label={draftSides ? "Home score" : "Team A score"} value={editor.draft.homeScore} onChange={(homeScore) => editor.patch({ homeScore })} min={0} />
-            <NumberField id="match-away-score" label={draftSides ? "Away score" : "Team B score"} value={editor.draft.awayScore} onChange={(awayScore) => editor.patch({ awayScore })} min={0} />
+            <NumberField id="match-side-a-score" label={`${sideLabel("A")} score`} value={editor.draft.sideAScore} onChange={(sideAScore) => editor.patch({ sideAScore })} min={0} />
+            <NumberField id="match-side-b-score" label={`${sideLabel("B")} score`} value={editor.draft.sideBScore} onChange={(sideBScore) => editor.patch({ sideBScore })} min={0} />
           </>
         ) : null}
         {editor.draft.status === "live" ? (
-          <TextField id="match-live" label="Live detail" value={editor.draft.liveDetail} onChange={(liveDetail) => editor.patch({ liveDetail })} placeholder="e.g. 67' or Map 3" full />
+          <TextField id="match-live" label="Live detail" value={editor.draft.liveDetail} onChange={(liveDetail) => editor.patch({ liveDetail })} placeholder="e.g. 67', Map 3, or Set 2" full />
+        ) : null}
+        {formError ? (
+          <p role="alert" className="text-sm text-destructive sm:col-span-2">{formError}</p>
         ) : null}
       </AdminFormDialog>
 
@@ -222,7 +351,7 @@ export function AdminMatchesView() {
         open={deleting !== null}
         onOpenChange={(open) => { if (!open) setDeleting(null) }}
         name={deleting ? matchName(deleting) : "match"}
-        description="Watchlist entries for this match are removed with it."
+        description="Participants and watchlist entries for this match are removed with it."
         onConfirm={() => { if (deleting) remove(deleting.id) }}
       />
     </AdminPage>

@@ -3,9 +3,10 @@ import { cn } from "cn"
 
 import { CategoryBadge } from "@/components/category-badge"
 import { MatchStatusBadge } from "@/components/matches/match-status-badge"
-import { TeamLogo } from "@/components/matches/team-logo"
-import type { MatchView, Team } from "@/lib/data/types"
+import { ParticipantAvatars, SideName } from "@/components/matches/side-participants"
+import type { MatchSide, MatchView } from "@/lib/data/types"
 import { formatDayLabel, formatTime } from "@/lib/format"
+import { SIDES, sideParticipants, sideScore, winnerSide } from "@/lib/matches"
 import { hierarchyLabel, sportCategory, sportLabel } from "@/lib/sports"
 
 type MatchRowProps = {
@@ -25,10 +26,10 @@ type MatchRowProps = {
 }
 
 /**
- * One match in a list. The row links to the match page; the league label is a
- * separate link to the league page, and `action` renders a control beside it.
- * The match link is "stretched" over the row so the whole row stays clickable
- * without nesting anchors.
+ * One match in a list: one line per side, in side order. The row links to
+ * the match page; the league label is a separate link to the league page,
+ * and `action` renders a control beside it. The match link is "stretched"
+ * over the row so the whole row stays clickable without nesting anchors.
  */
 export function MatchRow({
   match,
@@ -41,9 +42,7 @@ export function MatchRow({
   className,
 }: MatchRowProps) {
   const finished = match.status === "finished"
-  const score = match.score
-  const homeWon = finished && !!score && score.home > score.away
-  const awayWon = finished && !!score && score.away > score.home
+  const winner = winnerSide(match)
 
   return (
     <div
@@ -70,18 +69,15 @@ export function MatchRow({
         </time>
 
         <div className="grid min-w-0 flex-1 gap-1 overflow-hidden">
-          <TeamLine
-            team={match.homeTeam}
-            score={score?.home}
-            emphasized={homeWon}
-            muted={finished && awayWon}
-          />
-          <TeamLine
-            team={match.awayTeam}
-            score={score?.away}
-            emphasized={awayWon}
-            muted={finished && homeWon}
-          />
+          {SIDES.map((side) => (
+            <SideLine
+              key={side}
+              match={match}
+              side={side}
+              emphasized={winner === side}
+              muted={finished && winner !== undefined && winner !== side}
+            />
+          ))}
         </div>
       </Link>
 
@@ -110,17 +106,18 @@ export function MatchRow({
   )
 }
 
-function TeamLine({
-  team,
-  score,
+function SideLine({
+  match,
+  side,
   emphasized,
   muted,
 }: {
-  team: Team
-  score?: number
+  match: MatchView
+  side: MatchSide
   emphasized?: boolean
   muted?: boolean
 }) {
+  const score = sideScore(match, side)
   return (
     <div
       className={cn(
@@ -128,10 +125,8 @@ function TeamLine({
         muted && "text-muted-foreground"
       )}
     >
-      <TeamLogo team={team} size="sm" />
-      <span className={cn("truncate", emphasized && "font-semibold")}>
-        {team.name}
-      </span>
+      <ParticipantAvatars participants={sideParticipants(match, side)} size="sm" />
+      <SideName match={match} side={side} className={cn("truncate", emphasized && "font-semibold")} />
       {score !== undefined ? (
         <span
           className={cn(

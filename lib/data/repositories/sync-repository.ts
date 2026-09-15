@@ -1,6 +1,7 @@
 import "server-only"
 
 import { db } from "@/lib/data/db"
+import type { ParticipantInput } from "@/lib/data/match-participants"
 import type {
   NormalizedLeague,
   NormalizedPlayer,
@@ -19,10 +20,15 @@ import type { MatchStatus as DbMatchStatus, SeasonStatus as DbSeasonStatus } fro
  * Seasons are the exception: the schema gives them no external identity, so
  * they reconcile by the league-scoped unique key `(leagueId, name)`.
  *
- * Each call is one atomic upsert. There is deliberately no run-wide
- * transaction: a provider snapshot can be large and slow to fetch, and a
- * failed record should not roll back the ones that succeeded. Partial
- * outcomes are recorded as PARTIAL in the sync log instead.
+ * Participants are owned by their match and carry no external identity; a
+ * match write reconciles them as a set (section 18 of the participant-model
+ * analysis): unchanged sets are left alone, changed sets are replaced inside
+ * the match's transaction.
+ *
+ * Each call is one atomic statement or one short transaction. There is
+ * deliberately no run-wide transaction: a provider snapshot can be large and
+ * slow to fetch, and a failed record should not roll back the ones that
+ * succeeded. Partial outcomes are recorded as PARTIAL in the sync log instead.
  */
 
 export type Upserted = { id: string; created: boolean }
@@ -36,6 +42,14 @@ const seasonStatus: Record<NormalizedSeason["status"], DbSeasonStatus> = {
 function isoDate(value: string, label: string): Date {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(`${label} must be YYYY-MM-DD, got "${value}".`)
   return new Date(`${value}T00:00:00.000Z`)
+}
+
+function sameParticipants(existing: { side: string; order: number; teamId: string | null; playerId: string | null }[], next: ParticipantInput[]): boolean {
+  if (existing.length !== next.length) return false
+  const key = (p: { side: string; order: number; teamId?: string | null; playerId?: string | null }) => `${p.side}:${p.order}:${p.teamId ?? ""}:${p.playerId ?? ""}`
+  const a = existing.map(key).sort()
+  const b = next.map(key).sort()
+  return a.every((value, index) => value === b[index])
 }
 
 export const syncRepository = {
@@ -81,7 +95,7 @@ export const syncRepository = {
     return { id: row.id, created: !existing }
   },
 
-  /** `teamId` null for individual-sport athletes (schema allows it; user-facing reads currently skip them). */
+  /** `teamId` null for individual-sport athletes. */
   async upsertPlayer(dataSourceId: string, teamId: string | null, player: NormalizedPlayer): Promise<Upserted> {
     const where = { dataSourceId_externalId: { dataSourceId, externalId: player.externalId } }
     const existing = await db.player.findUnique({ where, select: { id: true } })
@@ -98,38 +112,51 @@ export const syncRepository = {
     return { id: row.id, created: !existing }
   },
 
-  async existingMatch(dataSourceId: string, externalId: string): Promise<{ id: string; status: DbMatchStatus } | null> {
-    return db.match.findUnique({ where: { dataSourceId_externalId: { dataSourceId, externalId } }, select: { id: true, status: true } })
-  },
-
-  /** `status` null keeps the stored status (used when the provider's status is unknown). */
+  /**
+   * Upsert the match row by external identity, then reconcile its
+   * participants. `status` null keeps the stored status (unknown provider
+   * status); a new row defaults to UPCOMING.
+   */
   async upsertMatch(
     dataSourceId: string,
     externalId: string,
     data: {
       leagueId: string
       seasonId: string
-      homeTeamId: string
-      awayTeamId: string
       venueId: string | null
       startsAt: Date
       status: DbMatchStatus | null
       stage: string | null
-      homeScore: number | null
-      awayScore: number | null
+      sideAScore: number | null
+      sideBScore: number | null
       liveDetail: string | null
-    }
+    },
+    participants: ParticipantInput[]
   ): Promise<Upserted> {
     const where = { dataSourceId_externalId: { dataSourceId, externalId } }
-    const existing = await db.match.findUnique({ where, select: { id: true } })
+    const existing = await db.match.findUnique({ where, select: { id: true, participants: { select: { side: true, order: true, teamId: true, playerId: true } } } })
     const { status, ...rest } = data
-    const row = await db.match.upsert({
-      where,
-      create: { ...rest, status: status ?? "UPCOMING", dataSourceId, externalId },
-      update: { ...rest, ...(status ? { status } : {}) },
-      select: { id: true },
-    })
-    return { id: row.id, created: !existing }
+    const rows = participants.map((p) => ({ side: p.side, order: p.order, teamId: p.teamId ?? null, playerId: p.playerId ?? null }))
+
+    if (!existing) {
+      const row = await db.match.create({
+        data: { ...rest, status: status ?? "UPCOMING", dataSourceId, externalId, participants: { create: rows } },
+        select: { id: true },
+      })
+      return { id: row.id, created: true }
+    }
+
+    const update = db.match.update({ where: { id: existing.id }, data: { ...rest, ...(status ? { status } : {}) }, select: { id: true } })
+    if (sameParticipants(existing.participants, participants)) {
+      await update
+    } else {
+      await db.$transaction([
+        update,
+        db.matchParticipant.deleteMany({ where: { matchId: existing.id } }),
+        db.matchParticipant.createMany({ data: rows.map((r) => ({ ...r, matchId: existing.id })) }),
+      ])
+    }
+    return { id: existing.id, created: false }
   },
 
   async startSyncLog(dataSourceId: string, entity: string, startedAt: Date): Promise<string> {

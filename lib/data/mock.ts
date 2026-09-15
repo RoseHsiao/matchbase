@@ -3,6 +3,7 @@ import type {
   DataSource,
   League,
   Match,
+  MatchParticipant,
   Player,
   Season,
   SyncLog,
@@ -25,6 +26,8 @@ export const leagues: League[] = [
   { id: "lck", name: "LCK", shortName: "LCK", sport: "lol", region: "South Korea", season: "2026 Season" },
   { id: "vct", name: "VCT Champions", shortName: "VCT", sport: "valorant", region: "International", season: "Champions 2026" },
   { id: "esl", name: "ESL Pro League", shortName: "ESL", sport: "cs2", region: "International", season: "Season 22" },
+  // Individual sport: no teams; matches are between players (singles) or pairs (doubles).
+  { id: "wimbledon", name: "The Championships, Wimbledon", shortName: "Wimbledon", sport: "tennis", region: "United Kingdom", season: "2026" },
 ]
 
 export const teams: Team[] = [
@@ -91,6 +94,13 @@ export const players: Player[] = [
   { id: "zywoo", name: "Mathieu Herbaut", handle: "ZywOo", teamId: "vitality", role: "AWPer", nationality: "France" },
   { id: "donk", name: "Danil Kryshkovets", handle: "donk", teamId: "spirit", role: "Rifler", nationality: "Russia" },
   { id: "ropz", name: "Robin Kool", handle: "ropz", teamId: "faze", role: "Rifler", nationality: "Estonia" },
+  // Tennis: individual athletes belong to no team.
+  { id: "alcaraz", name: "Carlos Alcaraz", role: "Singles", nationality: "Spain" },
+  { id: "sinner", name: "Jannik Sinner", role: "Singles", nationality: "Italy" },
+  { id: "hsieh", name: "Hsieh Su-wei", role: "Doubles", nationality: "Chinese Taipei" },
+  { id: "ostapenko", name: "Jeļena Ostapenko", role: "Doubles", nationality: "Latvia" },
+  { id: "siniakova", name: "Kateřina Siniaková", role: "Doubles", nationality: "Czechia" },
+  { id: "townsend", name: "Taylor Townsend", role: "Doubles", nationality: "United States" },
 ]
 
 /** Build an ISO timestamp `dayOffset` days from today at the given local time. */
@@ -106,61 +116,71 @@ function fromNow(minutes: number): string {
   return new Date(Date.now() + minutes * 60_000).toISOString()
 }
 
+/** One team per side: side A first. Participant ids are derived from the match id so they stay stable. */
+function teamSides(matchId: string, sideA: string, sideB: string): MatchParticipant[] {
+  return [
+    { id: `${matchId}-A1`, side: "A", order: 1, teamId: sideA },
+    { id: `${matchId}-B1`, side: "B", order: 1, teamId: sideB },
+  ]
+}
+
+/** Player sides for individual sports: one player for singles, two for doubles, in listed order. */
+function playerSides(matchId: string, sideA: string[], sideB: string[]): MatchParticipant[] {
+  const side = (key: "A" | "B", ids: string[]) =>
+    ids.map((playerId, index) => ({ id: `${matchId}-${key}${index + 1}`, side: key, order: index + 1, playerId }))
+  return [...side("A", sideA), ...side("B", sideB)]
+}
+
 export const matches: Match[] = [
   // Today: finished
   {
     id: "m-lec-g2-fnc",
     leagueId: "lec",
-    homeTeamId: "g2",
-    awayTeamId: "fnatic",
+    participants: teamSides("m-lec-g2-fnc", "g2", "fnatic"),
     startsAt: fromNow(-240),
     status: "finished",
     stage: "Playoffs · Upper final",
     venue: "LEC Studio, Berlin",
-    score: { home: 3, away: 1 },
+    score: { a: 3, b: 1 },
   },
   {
     id: "m-esl-navi-faze",
     leagueId: "esl",
-    homeTeamId: "navi",
-    awayTeamId: "faze",
+    participants: teamSides("m-esl-navi-faze", "navi", "faze"),
     startsAt: fromNow(-180),
     status: "finished",
     stage: "Group A · Round 3",
     venue: "ESL Studios, Stockholm",
-    score: { home: 2, away: 0 },
+    score: { a: 2, b: 0 },
   },
   // Today: live
   {
     id: "m-epl-ars-che",
     leagueId: "epl",
-    homeTeamId: "arsenal",
-    awayTeamId: "chelsea",
+    participants: teamSides("m-epl-ars-che", "arsenal", "chelsea"),
     startsAt: fromNow(-67),
     status: "live",
     stage: "Matchweek 4",
     venue: "Emirates Stadium",
-    score: { home: 2, away: 1 },
+    score: { a: 2, b: 1 },
     liveDetail: "67'",
   },
   {
     id: "m-vct-sen-prx",
     leagueId: "vct",
-    homeTeamId: "sentinels",
-    awayTeamId: "prx",
+    participants: teamSides("m-vct-sen-prx", "sentinels", "prx"),
     startsAt: fromNow(-45),
     status: "live",
     stage: "Quarterfinal",
     venue: "Accor Arena, Paris",
-    score: { home: 1, away: 1 },
+    score: { a: 1, b: 1 },
     liveDetail: "Map 3",
   },
   // Today: upcoming
   {
     id: "m-epl-liv-mci",
     leagueId: "epl",
-    homeTeamId: "liverpool",
-    awayTeamId: "man-city",
+    participants: teamSides("m-epl-liv-mci", "liverpool", "man-city"),
     startsAt: fromNow(150),
     status: "upcoming",
     stage: "Matchweek 4",
@@ -169,8 +189,7 @@ export const matches: Match[] = [
   {
     id: "m-esl-vit-spi",
     leagueId: "esl",
-    homeTeamId: "vitality",
-    awayTeamId: "spirit",
+    participants: teamSides("m-esl-vit-spi", "vitality", "spirit"),
     startsAt: fromNow(210),
     status: "upcoming",
     stage: "Group B · Round 3",
@@ -179,8 +198,7 @@ export const matches: Match[] = [
   {
     id: "m-nba-lal-bos",
     leagueId: "nba",
-    homeTeamId: "lakers",
-    awayTeamId: "celtics",
+    participants: teamSides("m-nba-lal-bos", "lakers", "celtics"),
     startsAt: fromNow(330),
     status: "upcoming",
     stage: "Regular season",
@@ -190,8 +208,7 @@ export const matches: Match[] = [
   {
     id: "m-ucl-rma-fcb",
     leagueId: "ucl",
-    homeTeamId: "real-madrid",
-    awayTeamId: "bayern",
+    participants: teamSides("m-ucl-rma-fcb", "real-madrid", "bayern"),
     startsAt: at(1, 21, 0),
     status: "upcoming",
     stage: "Group stage · Matchday 1",
@@ -200,8 +217,7 @@ export const matches: Match[] = [
   {
     id: "m-lec-kc-mad",
     leagueId: "lec",
-    homeTeamId: "kc",
-    awayTeamId: "mad",
+    participants: teamSides("m-lec-kc-mad", "kc", "mad"),
     startsAt: at(1, 18, 0),
     status: "upcoming",
     stage: "Playoffs · Lower final",
@@ -210,8 +226,7 @@ export const matches: Match[] = [
   {
     id: "m-nba-gsw-den",
     leagueId: "nba",
-    homeTeamId: "warriors",
-    awayTeamId: "nuggets",
+    participants: teamSides("m-nba-gsw-den", "warriors", "nuggets"),
     startsAt: at(1, 19, 30),
     status: "upcoming",
     stage: "Regular season",
@@ -221,8 +236,7 @@ export const matches: Match[] = [
   {
     id: "m-vct-fut-loud",
     leagueId: "vct",
-    homeTeamId: "fut",
-    awayTeamId: "loud",
+    participants: teamSides("m-vct-fut-loud", "fut", "loud"),
     startsAt: at(2, 17, 0),
     status: "upcoming",
     stage: "Quarterfinal",
@@ -231,8 +245,7 @@ export const matches: Match[] = [
   {
     id: "m-epl-tot-ars",
     leagueId: "epl",
-    homeTeamId: "tottenham",
-    awayTeamId: "arsenal",
+    participants: teamSides("m-epl-tot-ars", "tottenham", "arsenal"),
     startsAt: at(3, 16, 30),
     status: "upcoming",
     stage: "Matchweek 5",
@@ -241,8 +254,7 @@ export const matches: Match[] = [
   {
     id: "m-esl-faze-vit",
     leagueId: "esl",
-    homeTeamId: "faze",
-    awayTeamId: "vitality",
+    participants: teamSides("m-esl-faze-vit", "faze", "vitality"),
     startsAt: at(4, 20, 0),
     status: "upcoming",
     stage: "Playoffs · Quarterfinal",
@@ -251,8 +263,7 @@ export const matches: Match[] = [
   {
     id: "m-lec-g2-kc",
     leagueId: "lec",
-    homeTeamId: "g2",
-    awayTeamId: "kc",
+    participants: teamSides("m-lec-g2-kc", "g2", "kc"),
     startsAt: at(6, 17, 0),
     status: "upcoming",
     stage: "Playoffs · Grand final",
@@ -262,8 +273,7 @@ export const matches: Match[] = [
   {
     id: "m-lck-t1-geng",
     leagueId: "lck",
-    homeTeamId: "t1",
-    awayTeamId: "geng",
+    participants: teamSides("m-lck-t1-geng", "t1", "geng"),
     startsAt: fromNow(90),
     status: "upcoming",
     stage: "Regular season · Week 6",
@@ -272,8 +282,7 @@ export const matches: Match[] = [
   {
     id: "m-lck-hle-dk",
     leagueId: "lck",
-    homeTeamId: "hle",
-    awayTeamId: "dk",
+    participants: teamSides("m-lck-hle-dk", "hle", "dk"),
     startsAt: at(1, 17, 0),
     status: "upcoming",
     stage: "Regular season · Week 6",
@@ -282,8 +291,7 @@ export const matches: Match[] = [
   {
     id: "m-lck-geng-dk",
     leagueId: "lck",
-    homeTeamId: "geng",
-    awayTeamId: "dk",
+    participants: teamSides("m-lck-geng-dk", "geng", "dk"),
     startsAt: at(3, 17, 0),
     status: "upcoming",
     stage: "Regular season · Week 7",
@@ -292,40 +300,66 @@ export const matches: Match[] = [
   {
     id: "m-lck-t1-hle",
     leagueId: "lck",
-    homeTeamId: "t1",
-    awayTeamId: "hle",
+    participants: teamSides("m-lck-t1-hle", "t1", "hle"),
     startsAt: at(-1, 17, 0),
     status: "finished",
     stage: "Regular season · Week 5",
     venue: "LoL Park, Seoul",
-    score: { home: 2, away: 0 },
+    score: { a: 2, b: 0 },
   },
   // Recent history
   {
     id: "m-epl-mci-tot",
     leagueId: "epl",
-    homeTeamId: "man-city",
-    awayTeamId: "tottenham",
+    participants: teamSides("m-epl-mci-tot", "man-city", "tottenham"),
     startsAt: at(-2, 20, 0),
     status: "finished",
     stage: "Matchweek 3",
-    score: { home: 1, away: 1 },
+    score: { a: 1, b: 1 },
   },
   {
     id: "m-nba-bos-gsw",
     leagueId: "nba",
-    homeTeamId: "celtics",
-    awayTeamId: "warriors",
+    participants: teamSides("m-nba-bos-gsw", "celtics", "warriors"),
     startsAt: at(-1, 19, 30),
     status: "finished",
     stage: "Regular season",
-    score: { home: 112, away: 104 },
+    score: { a: 112, b: 104 },
+  },
+  // Tennis: singles (one player per side) and doubles (two players per side). No Home/Away.
+  {
+    id: "m-wim-alcaraz-sinner",
+    leagueId: "wimbledon",
+    participants: playerSides("m-wim-alcaraz-sinner", ["alcaraz"], ["sinner"]),
+    startsAt: at(-1, 14, 0),
+    status: "finished",
+    stage: "Gentlemen's singles · Final",
+    venue: "Centre Court, Wimbledon",
+    score: { a: 3, b: 1 },
+  },
+  {
+    id: "m-wim-sinner-alcaraz-exh",
+    leagueId: "wimbledon",
+    participants: playerSides("m-wim-sinner-alcaraz-exh", ["sinner"], ["alcaraz"]),
+    startsAt: at(3, 15, 0),
+    status: "upcoming",
+    stage: "Exhibition",
+    venue: "Centre Court, Wimbledon",
+  },
+  {
+    id: "m-wim-doubles-final",
+    leagueId: "wimbledon",
+    participants: playerSides("m-wim-doubles-final", ["hsieh", "ostapenko"], ["siniakova", "townsend"]),
+    startsAt: at(2, 13, 0),
+    status: "upcoming",
+    stage: "Ladies' doubles · Final",
+    venue: "Centre Court, Wimbledon",
   },
 ]
 
 export const currentUserFollows: UserFollows = {
   teamIds: ["arsenal", "liverpool", "celtics", "g2", "t1", "sentinels", "vitality"],
-  playerIds: ["saka", "salah", "tatum", "caps", "faker", "tenz", "zywoo"],
+  playerIds: ["saka", "salah", "tatum", "caps", "faker", "tenz", "zywoo", "alcaraz"],
   leagueIds: ["epl", "nba", "lec", "lck", "vct"],
   watchlistMatchIds: [
     "m-epl-ars-che",
@@ -349,6 +383,7 @@ export const seasons: Season[] = [
   { id: "s-lck-2027", leagueId: "lck", name: "2027 Season", startsAt: "2027-01-13", endsAt: "2027-09-26", status: "upcoming" },
   { id: "s-vct-champ26", leagueId: "vct", name: "Champions 2026", startsAt: "2026-08-28", endsAt: "2026-09-20", status: "current" },
   { id: "s-esl-22", leagueId: "esl", name: "Season 22", startsAt: "2026-09-01", endsAt: "2026-09-27", status: "current" },
+  { id: "s-wim-2026", leagueId: "wimbledon", name: "2026", startsAt: "2026-06-29", endsAt: "2026-07-12", status: "current" },
 ]
 
 /** Venues are matched to `Match.venue` by name until matches carry a venue id. */
@@ -363,6 +398,7 @@ export const venues: Venue[] = [
   { id: "v-lecstudio", name: "LEC Studio, Berlin", city: "Berlin", country: "Germany", capacity: 300, status: "active" },
   { id: "v-uber", name: "Uber Arena, Berlin", city: "Berlin", country: "Germany", capacity: 17000, status: "active" },
   { id: "v-accor", name: "Accor Arena, Paris", city: "Paris", country: "France", capacity: 20300, status: "active" },
+  { id: "v-centre-court", name: "Centre Court, Wimbledon", city: "London", country: "England", capacity: 14979, status: "active" },
   { id: "v-esl", name: "ESL Studios, Stockholm", city: "Stockholm", country: "Sweden", capacity: 200, status: "active" },
   { id: "v-oldtrafford", name: "Old Trafford", city: "Manchester", country: "England", capacity: 74310, status: "inactive" },
 ]

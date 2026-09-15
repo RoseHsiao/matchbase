@@ -79,6 +79,13 @@ enum SyncStatus {
   FAILED
 }
 
+/// The two sides of a match. Side A is the home side when Sport.homeAway is
+/// true; otherwise the sides are simply first and second (decisions §6).
+enum MatchSide {
+  A
+  B
+}
+
 // ---------------------------------------------------------------------------
 // Catalogue: Sport -> League -> Season / Team -> Player
 // ---------------------------------------------------------------------------
@@ -164,10 +171,9 @@ model Team {
   league     League      @relation(fields: [leagueId], references: [id], onDelete: Restrict)
   dataSource DataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
 
-  players     Player[]
-  homeMatches Match[]          @relation("HomeTeam")
-  awayMatches Match[]          @relation("AwayTeam")
-  follows     UserTeamFollow[]
+  players        Player[]
+  participations MatchParticipant[]
+  follows        UserTeamFollow[]
   // leagueId lookups are served by the leading column of the unique index above.
 
   @@unique([leagueId, code])
@@ -195,7 +201,8 @@ model Player {
   team       Team?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
   dataSource DataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
 
-  follows UserPlayerFollow[]
+  participations MatchParticipant[]
+  follows        UserPlayerFollow[]
 
   @@unique([dataSourceId, externalId])
   @@index([teamId])
@@ -228,12 +235,10 @@ model Venue {
 /// mean Home / Away when Sport.homeAway is true and first / second side
 /// otherwise; the column names stay positional on purpose (decisions §6).
 model Match {
-  id         String  @id @default(cuid())
-  leagueId   String
-  seasonId   String
-  homeTeamId String
-  awayTeamId String
-  venueId    String?
+  id       String  @id @default(cuid())
+  leagueId String
+  seasonId String
+  venueId  String?
 
   /// Absolute instant, stored in UTC.
   startsAt   DateTime    @db.Timestamptz(3)
@@ -241,9 +246,10 @@ model Match {
   status     MatchStatus @default(UPCOMING)
   /// Round, week, or playoff stage label ("Matchweek 4", "Playoffs · Final").
   stage      String?
-  /// Both null (not started) or both set. Enforced by the repository layer.
-  homeScore  Int?
-  awayScore  Int?
+  /// Aggregate result per side in the sport's natural unit (points, sets,
+  /// games, maps). Both null or both set: CHECK "Match_scores_paired".
+  sideAScore Int?
+  sideBScore Int?
   /// Live-only detail such as "67'" or "Map 3".
   liveDetail String?
 
@@ -252,11 +258,10 @@ model Match {
 
   league     League      @relation(fields: [leagueId], references: [id], onDelete: Restrict)
   season     Season      @relation(fields: [seasonId], references: [id], onDelete: Restrict)
-  homeTeam   Team        @relation("HomeTeam", fields: [homeTeamId], references: [id], onDelete: Restrict)
-  awayTeam   Team        @relation("AwayTeam", fields: [awayTeamId], references: [id], onDelete: Restrict)
   venue      Venue?      @relation(fields: [venueId], references: [id], onDelete: SetNull)
   dataSource DataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
 
+  participants  MatchParticipant[]
   watchlistedBy UserWatchlistMatch[]
 
   @@unique([dataSourceId, externalId])
@@ -268,11 +273,34 @@ model Match {
   @@index([leagueId, startsAt])
   // Season results and standings.
   @@index([seasonId])
-  // Team fixtures and results (home OR away).
-  @@index([homeTeamId, startsAt])
-  @@index([awayTeamId, startsAt])
+  // Team and player fixtures go through MatchParticipant (its teamId / playerId indexes).
   // Admin venue usage counts.
   @@index([venueId])
+}
+
+/// One competitor on one side of a match: a team, or a single player (two
+/// player rows on a side make a doubles pair). Exactly one of teamId /
+/// playerId is set: CHECK "MatchParticipant_one_ref". A team or player
+/// appears at most once per match, which also keeps the two sides disjoint.
+model MatchParticipant {
+  id       String    @id @default(cuid())
+  matchId  String
+  side     MatchSide
+  /// Position within the side, from 1. Doubles pairs use 1 and 2.
+  order    Int       @default(1)
+  teamId   String?
+  playerId String?
+
+  match  Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  team   Team?   @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  player Player? @relation(fields: [playerId], references: [id], onDelete: Restrict)
+
+  @@unique([matchId, side, order])
+  @@unique([matchId, teamId])
+  @@unique([matchId, playerId])
+  @@index([matchId])
+  @@index([teamId])
+  @@index([playerId])
 }
 
 // ---------------------------------------------------------------------------

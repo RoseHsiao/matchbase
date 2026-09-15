@@ -6,6 +6,7 @@ import { StatCard } from "@/components/dashboard/stat-card"
 import { useFollows } from "@/components/teams/follows-provider"
 import type { MatchView, TeamView } from "@/lib/data/types"
 import { isSameDay } from "@/lib/format"
+import { matchInvolvesTeam } from "@/lib/matches"
 
 type FollowedTeamsStatCardProps = {
   teams: TeamView[]
@@ -24,9 +25,7 @@ export function FollowedTeamsStatCard({
   const followed = teams.filter((team) => ids.has(team.id))
   const playingToday = followed.filter((team) =>
     matches.some(
-      (match) =>
-        isSameDay(match.startsAt, nowIso) &&
-        (match.homeTeamId === team.id || match.awayTeamId === team.id)
+      (match) => isSameDay(match.startsAt, nowIso) && matchInvolvesTeam(match, team.id)
     )
   ).length
 

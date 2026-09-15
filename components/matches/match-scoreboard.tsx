@@ -4,11 +4,12 @@ import { cn } from "cn"
 
 import { CategoryBadge } from "@/components/category-badge"
 import { MatchStatusBadge } from "@/components/matches/match-status-badge"
-import { TeamLogo } from "@/components/matches/team-logo"
+import { ParticipantAvatars } from "@/components/matches/side-participants"
 import { Card, CardContent } from "@/components/ui/card"
-import type { MatchView, Team } from "@/lib/data/types"
+import type { MatchParticipantView, MatchView } from "@/lib/data/types"
 import { formatDayLabel, formatKickoff, formatTime } from "@/lib/format"
-import { hasHomeAdvantage, sportCategory, sportLabel } from "@/lib/sports"
+import { participantName, sideParticipants, sideRole, winnerSide } from "@/lib/matches"
+import { sportCategory, sportLabel } from "@/lib/sports"
 
 type MatchScoreboardProps = {
   match: MatchView
@@ -16,15 +17,13 @@ type MatchScoreboardProps = {
   className?: string
 }
 
-/** Hero panel for the match detail page. Adapts to upcoming, live, and finished. */
+/** Hero panel for the match detail page. Adapts to upcoming, live, and finished, and to teams or players per side. */
 export function MatchScoreboard({ match, now, className }: MatchScoreboardProps) {
   const { status, score } = match
   const finished = status === "finished"
   const live = status === "live"
-  const homeWon = finished && !!score && score.home > score.away
-  const awayWon = finished && !!score && score.away > score.home
+  const winner = winnerSide(match)
   const sport = match.league.sport
-  const sides = hasHomeAdvantage(sport)
 
   return (
     <Card className={cn(live && "ring-red-500/30", className)}>
@@ -47,23 +46,23 @@ export function MatchScoreboard({ match, now, className }: MatchScoreboardProps)
           ) : null}
         </div>
 
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-6">
-          <TeamBlock
-            team={match.homeTeam}
-            role={sides ? "Home" : undefined}
-            emphasized={homeWon}
-            muted={finished && awayWon}
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-6">
+          <SideBlock
+            participants={sideParticipants(match, "A")}
+            role={sideRole(sport, "A")}
+            emphasized={winner === "A"}
+            muted={finished && winner === "B"}
           />
 
-          <div className="grid justify-items-center gap-2">
+          <div className="grid shrink-0 justify-items-center gap-2">
             {score ? (
-              <div className="flex items-baseline gap-2 text-4xl font-semibold tabular-nums sm:gap-3 sm:text-5xl">
-                <span className={cn(finished && awayWon && "text-muted-foreground")}>
-                  {score.home}
+              <div className="flex items-baseline gap-2 text-3xl font-semibold tabular-nums sm:gap-3 sm:text-5xl">
+                <span className={cn(finished && winner === "B" && "text-muted-foreground")}>
+                  {score.a}
                 </span>
                 <span className="text-2xl text-muted-foreground sm:text-3xl">–</span>
-                <span className={cn(finished && homeWon && "text-muted-foreground")}>
-                  {score.away}
+                <span className={cn(finished && winner === "A" && "text-muted-foreground")}>
+                  {score.b}
                 </span>
               </div>
             ) : (
@@ -71,7 +70,7 @@ export function MatchScoreboard({ match, now, className }: MatchScoreboardProps)
                 dateTime={match.startsAt}
                 className="grid justify-items-center leading-tight"
               >
-                <span className="text-3xl font-semibold tabular-nums sm:text-4xl">
+                <span className="text-2xl font-semibold tabular-nums sm:text-4xl">
                   {formatTime(match.startsAt)}
                 </span>
                 <span className="text-sm text-muted-foreground">
@@ -82,11 +81,11 @@ export function MatchScoreboard({ match, now, className }: MatchScoreboardProps)
             <MatchStatusBadge status={status} liveDetail={match.liveDetail} />
           </div>
 
-          <TeamBlock
-            team={match.awayTeam}
-            role={sides ? "Away" : undefined}
-            emphasized={awayWon}
-            muted={finished && homeWon}
+          <SideBlock
+            participants={sideParticipants(match, "B")}
+            role={sideRole(sport, "B")}
+            emphasized={winner === "B"}
+            muted={finished && winner === "A"}
           />
         </div>
 
@@ -106,40 +105,68 @@ export function MatchScoreboard({ match, now, className }: MatchScoreboardProps)
   )
 }
 
-function TeamBlock({
-  team,
+/**
+ * One side: a team block linking to the team page, or one link per player
+ * (a doubles pair stacks two). The role label appears only for sports with
+ * home advantage.
+ */
+function SideBlock({
+  participants,
   role,
   emphasized,
   muted,
 }: {
-  team: Team
-  /** Shown only for sports with a home venue. */
+  participants: MatchParticipantView[]
   role?: "Home" | "Away"
   emphasized?: boolean
   muted?: boolean
 }) {
-  return (
-    <Link
-      href={`/teams/${team.id}`}
-      className={cn(
-        "grid min-w-0 justify-items-center gap-2 rounded-lg p-2 text-center outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50",
-        muted && "text-muted-foreground"
-      )}
-    >
-      <TeamLogo team={team} size="xl" />
+  const single = participants.length === 1 ? participants[0] : undefined
+  const href = single?.team ? `/teams/${single.team.id}` : single?.player ? `/players/${single.player.id}` : undefined
+  const subline = single?.team ? single.team.code : undefined
+
+  const body = (
+    <>
+      {/* A pair shows two portraits; step down one size so both sides and the centre fit at phone width. */}
+      <ParticipantAvatars participants={participants} size={participants.length > 1 ? "lg" : "xl"} />
       <span className="grid min-w-0 justify-items-center leading-tight">
-        <span
-          className={cn(
-            "max-w-full truncate text-sm sm:text-lg",
-            emphasized ? "font-semibold" : "font-medium"
-          )}
-        >
-          {team.name}
-        </span>
-        <span className="text-xs text-muted-foreground">
-          {role ? `${team.code} · ${role}` : team.code}
-        </span>
+        {participants.map((p) => (
+          <span
+            key={p.id}
+            className={cn(
+              "max-w-full truncate text-sm sm:text-lg",
+              emphasized ? "font-semibold" : "font-medium"
+            )}
+          >
+            {href ? participantName(p) : (
+              <Link
+                href={p.team ? `/teams/${p.team.id}` : `/players/${p.player?.id ?? ""}`}
+                className="rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                {participantName(p)}
+              </Link>
+            )}
+          </span>
+        ))}
+        {subline || role ? (
+          <span className="text-xs text-muted-foreground">
+            {[subline, role].filter(Boolean).join(" · ")}
+          </span>
+        ) : null}
       </span>
+    </>
+  )
+
+  const className = cn(
+    "grid min-w-0 justify-items-center gap-2 rounded-lg p-2 text-center outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+    href && "hover:bg-muted/60",
+    muted && "text-muted-foreground"
+  )
+  return href ? (
+    <Link href={href} className={className}>
+      {body}
     </Link>
+  ) : (
+    <div className={className}>{body}</div>
   )
 }

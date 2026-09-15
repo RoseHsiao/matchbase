@@ -7,6 +7,7 @@ import type {
   Team,
 } from "@/lib/data/types"
 import { dayKey, startOfDay } from "@/lib/format"
+import { matchInvolvesTeam, participantSearchTerms } from "@/lib/matches"
 import { categoryLabel, sportCategory, sportLabel, sports } from "@/lib/sports"
 
 /**
@@ -46,9 +47,7 @@ export function filterMatches(
         sportCategory(match.league.sport) === filters.category) &&
       (filters.sport === ALL || match.league.sport === filters.sport) &&
       (filters.leagueId === ALL || match.leagueId === filters.leagueId) &&
-      (filters.teamId === ALL ||
-        match.homeTeamId === filters.teamId ||
-        match.awayTeamId === filters.teamId) &&
+      (filters.teamId === ALL || matchInvolvesTeam(match, filters.teamId)) &&
       (filters.status === ALL || match.status === filters.status)
   )
 }
@@ -150,14 +149,9 @@ export function sortMatchesForOverview(matches: MatchView[]): MatchView[] {
 export function matchesSearch(match: MatchView, query: string): boolean {
   const needle = query.trim().toLowerCase()
   if (!needle) return true
-  const { homeTeam, awayTeam, league } = match
+  const { league } = match
   return [
-    homeTeam.name,
-    homeTeam.shortName,
-    homeTeam.code,
-    awayTeam.name,
-    awayTeam.shortName,
-    awayTeam.code,
+    ...participantSearchTerms(match),
     league.name,
     league.shortName,
     sportLabel(league.sport),

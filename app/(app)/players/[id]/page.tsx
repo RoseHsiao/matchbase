@@ -13,6 +13,8 @@ import { PlayerFollowButton } from "@/components/players/player-follow-button";
 import { buttonVariants } from "@/components/ui/button";
 import {
   getPlayerById,
+  getPlayerFixtures,
+  getPlayerResults,
   getTeamFixtures,
   getTeamResults,
 } from "@/lib/data/queries";
@@ -31,31 +33,41 @@ export async function generateMetadata({
   return {
     title: player ? playerDisplayName(player) : "Player",
     description: player
-      ? `${player.role} · ${player.team.name} · ${player.league.name}`
+      ? [player.role, player.team?.name, player.league?.name].filter(Boolean).join(" · ")
       : undefined,
   };
 }
 
+/**
+ * Team players show their team's fixtures; individual athletes (no team)
+ * show the matches they take part in directly.
+ */
 export default async function PlayerPage({ params }: PlayerPageProps) {
   const { id } = await params;
   const player = await getPlayerById(id);
   if (!player) notFound();
 
   const now = new Date();
-  const [fixtures, results] = await Promise.all([
-    getTeamFixtures(player.team.id, now),
-    getTeamResults(player.team.id),
-  ]);
+  const team = player.team;
+  const [fixtures, results] = await Promise.all(
+    team
+      ? [getTeamFixtures(team.id, now), getTeamResults(team.id)]
+      : [getPlayerFixtures(player.id, now), getPlayerResults(player.id)]
+  );
   const displayName = playerDisplayName(player);
+  const subject = team ? team.shortName : displayName;
+  const league = player.league;
 
-  const teamLink = (
+  const teamLink = team ? (
     <Link
-      href={`/teams/${player.team.id}`}
+      href={`/teams/${team.id}`}
       className="inline-flex items-center gap-1.5 rounded-md outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
     >
-      <TeamLogo team={player.team} size="xs" />
-      {player.team.name}
+      <TeamLogo team={team} size="xs" />
+      {team.name}
     </Link>
+  ) : (
+    <span className="text-muted-foreground">Independent</span>
   );
 
   return (
@@ -79,9 +91,9 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
             title={displayName}
             description={[
               player.handle ? player.name : null,
-              player.role,
-              player.team.name,
-              player.league.name,
+              player.role || null,
+              team?.name ?? null,
+              league?.name ?? null,
             ]
               .filter(Boolean)
               .join(" · ")}
@@ -101,17 +113,21 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
         <DetailList
           items={[
             { label: "Team", value: teamLink },
-            { label: "Role", value: player.role },
-            { label: "Category", value: categoryLabel(sportCategory(player.league.sport)) },
-            { label: "Sport / Game", value: sportLabel(player.league.sport) },
-            {
-              label: "League",
-              value: (
-                <Link href={`/leagues/${player.league.id}`} className="rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50">
-                  {player.league.name}
-                </Link>
-              ),
-            },
+            ...(player.role ? [{ label: "Role", value: player.role }] : []),
+            ...(league
+              ? [
+                  { label: "Category", value: categoryLabel(sportCategory(league.sport)) },
+                  { label: "Sport / Game", value: sportLabel(league.sport) },
+                  {
+                    label: "League",
+                    value: (
+                      <Link href={`/leagues/${league.id}`} className="rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50">
+                        {league.name}
+                      </Link>
+                    ),
+                  },
+                ]
+              : []),
             ...(player.nationality
               ? [{ label: "Nationality", value: player.nationality }]
               : []),
@@ -125,28 +141,28 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
 
       <div className="grid gap-6 xl:grid-cols-2">
         <SectionCard
-          title={`Upcoming for ${player.team.shortName}`}
-          description="Live and scheduled fixtures for the player's team"
-          href={`/teams/${player.team.id}`}
-          actionLabel="Team page"
+          title={`Upcoming for ${subject}`}
+          description={team ? "Live and scheduled fixtures for the player's team" : "Live and scheduled matches"}
+          href={team ? `/teams/${team.id}` : undefined}
+          actionLabel={team ? "Team page" : undefined}
         >
           <MatchList
             matches={fixtures}
             now={now}
             emptyTitle="No upcoming matches"
-            emptyDescription={`Nothing is scheduled for ${player.team.name} right now.`}
+            emptyDescription={`Nothing is scheduled for ${subject} right now.`}
           />
         </SectionCard>
 
         <SectionCard
-          title={`Recent results for ${player.team.shortName}`}
+          title={`Recent results for ${subject}`}
           description="Most recent first"
         >
           <MatchList
             matches={results}
             now={now}
             emptyTitle="No results yet"
-            emptyDescription={`Finished matches for ${player.team.name} will appear here.`}
+            emptyDescription={`Finished matches for ${subject} will appear here.`}
           />
         </SectionCard>
       </div>

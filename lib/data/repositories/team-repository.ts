@@ -29,8 +29,8 @@ async function nextMatchByTeam(teamIds: string[], now: Date): Promise<Map<string
     startsAt: { gt: new Date(now.getTime() - NEXT_MATCH_GRACE_MS) },
   })
   for (const match of candidates) {
-    for (const teamId of [match.homeTeamId, match.awayTeamId]) {
-      if (!next.has(teamId)) next.set(teamId, match)
+    for (const participant of match.participants) {
+      if (participant.teamId !== undefined && !next.has(participant.teamId)) next.set(participant.teamId, match)
     }
   }
   return next

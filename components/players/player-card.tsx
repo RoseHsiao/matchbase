@@ -17,10 +17,12 @@ type PlayerCardProps = {
 
 /**
  * Grid card for browsing players. Name links to the player page and the team
- * links to the team page; the follow button is a separate control.
+ * (when the player has one) links to the team page; the follow button is a
+ * separate control. Individual athletes show their competition instead.
  */
 export function PlayerCard({ player, className }: PlayerCardProps) {
   const displayName = playerDisplayName(player)
+  const { team, league } = player
 
   return (
     <Card size="sm" className={cn("min-w-0", className)}>
@@ -42,28 +44,34 @@ export function PlayerCard({ player, className }: PlayerCardProps) {
               {displayName}
             </Link>
             <span className="truncate text-xs text-muted-foreground">
-              {player.handle ? `${player.name} · ${player.role}` : player.role}
+              {[player.handle ? player.name : null, player.role || null].filter(Boolean).join(" · ") || "Player"}
             </span>
           </div>
-          <Link
-            href={`/teams/${player.team.id}`}
-            className="flex w-fit min-w-0 items-center gap-1.5 rounded-md text-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
-          >
-            <TeamLogo team={player.team} size="xs" />
-            <span className="truncate">{player.team.name}</span>
-          </Link>
-          <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-            <CategoryBadge category={sportCategory(player.league.sport)} size="sm" />
-            <span className="truncate">
-              {sportLabel(player.league.sport)} ·{" "}
-              <Link
-                href={`/leagues/${player.league.id}`}
-                className="rounded-sm outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
-              >
-                {player.league.name}
-              </Link>
-            </span>
-          </div>
+          {team ? (
+            <Link
+              href={`/teams/${team.id}`}
+              className="flex w-fit min-w-0 items-center gap-1.5 rounded-md text-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <TeamLogo team={team} size="xs" />
+              <span className="truncate">{team.name}</span>
+            </Link>
+          ) : (
+            <span className="text-xs text-muted-foreground">Independent</span>
+          )}
+          {league ? (
+            <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <CategoryBadge category={sportCategory(league.sport)} size="sm" />
+              <span className="truncate">
+                {sportLabel(league.sport)} ·{" "}
+                <Link
+                  href={`/leagues/${league.id}`}
+                  className="rounded-sm outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  {league.name}
+                </Link>
+              </span>
+            </div>
+          ) : null}
           <div className="mt-1">
             <PlayerFollowButton playerId={player.id} playerName={displayName} size="sm" />
           </div>

@@ -10,7 +10,7 @@ import type { PlayerView } from "@/lib/data/types"
 export function FollowedPlayersStatCard({ players }: { players: PlayerView[] }) {
   const { ids } = usePlayerFollows()
   const followed = players.filter((player) => ids.has(player.id))
-  const teamCount = new Set(followed.map((player) => player.teamId)).size
+  const teamCount = new Set(followed.map((player) => player.teamId ?? `player:${player.id}`)).size
 
   return (
     <StatCard
