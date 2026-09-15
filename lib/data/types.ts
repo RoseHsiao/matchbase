@@ -171,11 +171,35 @@ export type AdminData = {
   activity: AdminActivity[]
 }
 
+/**
+ * When to remind the user about a watchlisted match, relative to its start.
+ * "off" keeps the match on the watchlist without a reminder.
+ */
+export type WatchlistReminder = "off" | "at_start" | "5m" | "15m" | "30m" | "1h" | "1d"
+
+/** One watchlist row: the saved match and its reminder preference. */
+export type WatchlistEntry = {
+  matchId: string
+  reminder: WatchlistReminder
+}
+
 export type UserFollows = {
   teamIds: string[]
   playerIds: string[]
   leagueIds: string[]
+  /** Saved match ids, in the order they were saved. */
   watchlistMatchIds: string[]
+  /** Reminder per saved match id. Absent ids are "off". */
+  watchlistReminders: Record<string, WatchlistReminder>
+}
+
+/** What the app shell needs about a watchlisted match to show reminders anywhere. */
+export type WatchlistEntryView = WatchlistEntry & {
+  title: string
+  startsAt: string
+  status: MatchStatus
+  leagueShortName: string
+  sport: Sport
 }
 
 /** A participant joined with the team or player it references. */

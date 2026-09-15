@@ -21,8 +21,10 @@ import type {
   Team,
   TeamView,
   UserFollows,
+  WatchlistEntryView,
 } from "@/lib/data/types"
 import { addDays, startOfDay } from "@/lib/format"
+import { matchTitle } from "@/lib/matches"
 
 /**
  * Read-side data access: the application-facing query API.
@@ -130,6 +132,31 @@ export async function getTeamViews(now = new Date()): Promise<TeamView[]> {
 /** Ids the user has saved. Seeds the client watchlist store. */
 export async function getWatchlistIds(): Promise<string[]> {
   return (await getCurrentUserFollows()).watchlistMatchIds
+}
+
+/**
+ * Every saved match with its reminder and the few match facts the shell needs
+ * to show reminders (title, start, status). Seeds the client reminder store.
+ * One query for the watchlist rows plus one for the matches.
+ */
+export async function getWatchlistEntries(): Promise<WatchlistEntryView[]> {
+  const { watchlistMatchIds, watchlistReminders } = await getCurrentUserFollows()
+  if (watchlistMatchIds.length === 0) return []
+  const matches = await matchRepository.findViews({ ids: watchlistMatchIds })
+  const byId = new Map(matches.map((match) => [match.id, match]))
+  return watchlistMatchIds.flatMap((matchId) => {
+    const match = byId.get(matchId)
+    if (!match) return []
+    return [{
+      matchId,
+      reminder: watchlistReminders[matchId] ?? "off",
+      title: matchTitle(match),
+      startsAt: match.startsAt,
+      status: match.status,
+      leagueShortName: match.league.shortName,
+      sport: match.league.sport,
+    }]
+  })
 }
 
 /** Every known match in start order. Client views filter this by saved ids. */

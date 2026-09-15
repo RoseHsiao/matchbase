@@ -3,10 +3,11 @@ import { cn } from "cn"
 
 import { CategoryBadge } from "@/components/category-badge"
 import { TeamLogo } from "@/components/matches/team-logo"
+import { SportLine } from "@/components/sport-icon"
 import { TeamFollowButton } from "@/components/teams/follow-button"
 import { Card, CardContent } from "@/components/ui/card"
 import type { TeamView } from "@/lib/data/types"
-import { sportCategory, sportLabel } from "@/lib/sports"
+import { sportCategory } from "@/lib/sports"
 
 type TeamCardProps = {
   team: TeamView
@@ -41,15 +42,7 @@ export function TeamCard({ team, className }: TeamCardProps) {
           </div>
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
             <CategoryBadge category={sportCategory(team.league.sport)} size="sm" />
-            <span className="truncate">
-              {sportLabel(team.league.sport)} ·{" "}
-              <Link
-                href={`/leagues/${team.league.id}`}
-                className="rounded-sm outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
-              >
-                {team.league.name}
-              </Link>
-            </span>
+            <SportLine sport={team.league.sport} league={{ id: team.league.id, label: team.league.name }} linked size="xs" />
           </div>
           <div className="mt-1">
             <TeamFollowButton teamId={team.id} teamName={team.name} size="sm" />

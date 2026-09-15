@@ -9,6 +9,8 @@ import { SectionCard } from "@/components/layout/section-card";
 import { MatchList } from "@/components/matches/match-list";
 import { MatchScoreboard } from "@/components/matches/match-scoreboard";
 import { MatchStatusBadge } from "@/components/matches/match-status-badge";
+import { SportLine } from "@/components/sport-icon";
+import { ReminderSelect } from "@/components/watchlist/reminder-select";
 import { WatchlistButton } from "@/components/watchlist/watchlist-button";
 import { buttonVariants } from "@/components/ui/button";
 import { getMatchById, getRelatedMatches } from "@/lib/data/queries";
@@ -73,7 +75,10 @@ export default async function MatchPage({ params }: MatchPageProps) {
             formatKickoff(match.startsAt, now),
           ].join(" · ")}
           actions={
-            <WatchlistButton matchId={match.id} status={match.status} />
+            <div className="grid justify-items-start gap-2 sm:justify-items-end">
+              <WatchlistButton matchId={match.id} status={match.status} />
+              <ReminderSelect match={match} now={now} />
+            </div>
           }
         />
       </div>
@@ -94,7 +99,7 @@ export default async function MatchPage({ params }: MatchPageProps) {
         <DetailList
           items={[
             { label: "Category", value: categoryLabel(sportCategory(league.sport)) },
-            { label: "Sport / Game", value: sportLabel(league.sport) },
+            { label: "Sport / Game", value: <SportLine sport={league.sport} /> },
             {
               label: "Competition",
               value: (

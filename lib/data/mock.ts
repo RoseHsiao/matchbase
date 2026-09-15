@@ -370,6 +370,13 @@ export const currentUserFollows: UserFollows = {
     "m-lec-g2-kc",
     "m-esl-faze-vit",
   ],
+  // Demo reminder preferences: only upcoming matches carry one; the rest are off.
+  watchlistReminders: {
+    "m-epl-liv-mci": "15m",
+    "m-ucl-rma-fcb": "1h",
+    "m-lec-g2-kc": "at_start",
+    "m-esl-faze-vit": "1d",
+  },
 }
 
 export const seasons: Season[] = [

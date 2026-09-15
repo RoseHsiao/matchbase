@@ -28,6 +28,8 @@
  * and the mock `currentUserFollows` ids become its follow / watchlist rows,
  * so the dashboard and watchlist show the same demo state as before. Rows the
  * user adds at runtime are kept; the seed only guarantees the demo rows exist.
+ * Watchlist reminders on the demo rows are reset to the mock values, so the
+ * demo state (one match per reminder option) is reproducible.
  *
  * Not seeded: AdminActivity (no table in v1).
  */
@@ -45,6 +47,7 @@ import {
 } from "../lib/generated/prisma/client"
 import { DEMO_USER_EMAIL, DEMO_USER_ID, DEMO_USER_NAME } from "../lib/data/demo-user"
 import { validateParticipants } from "../lib/data/match-participants"
+import { toDbReminder } from "../lib/data/repositories/watchlist-reminder-ops"
 import type * as MockTypes from "../lib/data/types"
 import { sportMeta, sports } from "../lib/sports"
 
@@ -423,9 +426,10 @@ async function main() {
       ...follows.leagueIds.map((leagueId) =>
         prisma.userLeagueFollow.upsert({ where: { userId_leagueId: { userId, leagueId } }, create: { userId, leagueId }, update: {} })
       ),
-      ...follows.watchlistMatchIds.map((matchId) =>
-        prisma.userWatchlistMatch.upsert({ where: { userId_matchId: { userId, matchId } }, create: { userId, matchId }, update: {} })
-      ),
+      ...follows.watchlistMatchIds.map((matchId) => {
+        const reminder = toDbReminder[follows.watchlistReminders[matchId] ?? "off"]
+        return prisma.userWatchlistMatch.upsert({ where: { userId_matchId: { userId, matchId } }, create: { userId, matchId, reminder }, update: { reminder } })
+      }),
     ])
 
     const counts = {

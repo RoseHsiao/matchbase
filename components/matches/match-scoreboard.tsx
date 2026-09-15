@@ -5,6 +5,7 @@ import { cn } from "cn"
 import { CategoryBadge } from "@/components/category-badge"
 import { MatchStatusBadge } from "@/components/matches/match-status-badge"
 import { ParticipantAvatars } from "@/components/matches/side-participants"
+import { SportIcon } from "@/components/sport-icon"
 import { Card, CardContent } from "@/components/ui/card"
 import type { MatchParticipantView, MatchView } from "@/lib/data/types"
 import { formatDayLabel, formatKickoff, formatTime } from "@/lib/format"
@@ -30,7 +31,10 @@ export function MatchScoreboard({ match, now, className }: MatchScoreboardProps)
       <CardContent className="grid gap-6 py-2">
         <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-sm text-muted-foreground">
           <CategoryBadge category={sportCategory(sport)} />
-          <span>{sportLabel(sport)}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <SportIcon sport={sport} size="sm" label="" />
+            {sportLabel(sport)}
+          </span>
           <span aria-hidden>·</span>
           <Link
             href={`/leagues/${match.league.id}`}

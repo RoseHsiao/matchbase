@@ -6,6 +6,7 @@ import { StarIcon } from "lucide-react"
 import { EmptyState } from "@/components/empty-state"
 import { MatchList } from "@/components/matches/match-list"
 import { buttonVariants } from "@/components/ui/button"
+import { ReminderBadge } from "@/components/watchlist/reminder-badge"
 import { useWatchlist } from "@/components/watchlist/watchlist-provider"
 import { WatchlistToggle } from "@/components/watchlist/watchlist-toggle"
 import type { MatchView } from "@/lib/data/types"
@@ -54,6 +55,7 @@ export function WatchlistMatches({
       matches={saved}
       now={new Date(nowIso)}
       compact={compact}
+      renderMeta={(match) => <ReminderBadge match={match} showTime={!compact} />}
       renderAction={(match) => <WatchlistToggle matchId={match.id} />}
     />
   )

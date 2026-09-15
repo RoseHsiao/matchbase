@@ -5,10 +5,11 @@ import { CategoryBadge } from "@/components/category-badge"
 import { TeamLogo } from "@/components/matches/team-logo"
 import { PlayerAvatar } from "@/components/players/player-avatar"
 import { PlayerFollowButton } from "@/components/players/player-follow-button"
+import { SportLine } from "@/components/sport-icon"
 import { Card, CardContent } from "@/components/ui/card"
 import type { PlayerView } from "@/lib/data/types"
 import { playerDisplayName } from "@/lib/players"
-import { sportCategory, sportLabel } from "@/lib/sports"
+import { sportCategory } from "@/lib/sports"
 
 type PlayerCardProps = {
   player: PlayerView
@@ -61,15 +62,7 @@ export function PlayerCard({ player, className }: PlayerCardProps) {
           {league ? (
             <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               <CategoryBadge category={sportCategory(league.sport)} size="sm" />
-              <span className="truncate">
-                {sportLabel(league.sport)} ·{" "}
-                <Link
-                  href={`/leagues/${league.id}`}
-                  className="rounded-sm outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
-                >
-                  {league.name}
-                </Link>
-              </span>
+              <SportLine sport={league.sport} league={{ id: league.id, label: league.name }} linked size="xs" />
             </div>
           ) : null}
           <div className="mt-1">

@@ -7,6 +7,7 @@ import { useBreadcrumbData } from "@/components/layout/breadcrumb-data-provider"
 import { ADMIN_ROOT, findAdminNavItem, isAdminPath } from "@/lib/admin/navigation"
 import { findNavItem } from "@/lib/navigation"
 import { categoryLabel, sportCategory, sportLabel } from "@/lib/sports"
+import { ReminderIndicator } from "@/components/reminders/reminder-indicator"
 import { ThemeToggle } from "@/components/theme/theme-toggle"
 import {
   Breadcrumb,
@@ -83,6 +84,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
       </Breadcrumb>
       <div className="ml-auto flex items-center gap-1">
         {children}
+        <ReminderIndicator />
         <ThemeToggle />
       </div>
     </header>

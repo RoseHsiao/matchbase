@@ -15,6 +15,7 @@ import { SelectField, TextField } from "@/components/admin/form-fields"
 import { HierarchyFilterSelects, useHierarchyFilters } from "@/components/filters/hierarchy-filters"
 import { useEntityEditor } from "@/components/admin/use-entity-editor"
 import { CategoryBadge } from "@/components/category-badge"
+import { SportLine } from "@/components/sport-icon"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { Button } from "@/components/ui/button"
 import { entityStatusOptions } from "@/lib/admin/status"
@@ -79,7 +80,7 @@ export function AdminLeaguesView() {
       cell: (row) => <CategoryBadge category={sportCategory(row.sport)} />,
       sortValue: (row) => sportCategory(row.sport),
     },
-    { key: "sport", header: "Sport / Game", cell: (row) => sportLabel(row.sport), sortValue: (row) => sportLabel(row.sport) },
+    { key: "sport", header: "Sport / Game", cell: (row) => <SportLine sport={row.sport} />, sortValue: (row) => sportLabel(row.sport) },
     // Derived from the league's seasons; managed on the Seasons page.
     { key: "season", header: "Season", cell: (row) => row.season || "—", sortValue: (row) => row.season },
     { key: "teams", header: "Teams", cell: (row) => teamCount(row.id), sortValue: (row) => teamCount(row.id), className: "tabular-nums" },

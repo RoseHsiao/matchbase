@@ -16,6 +16,7 @@ import { CategoryBadge } from "@/components/category-badge"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { MatchStatusBadge } from "@/components/matches/match-status-badge"
 import { ParticipantAvatars } from "@/components/matches/side-participants"
+import { SportLine } from "@/components/sport-icon"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { statusMeta } from "@/lib/admin/status"
@@ -117,7 +118,7 @@ export function AdminMatchesView() {
   const columns: AdminColumn<Match>[] = [
     { key: "start", header: "Date / Time", cell: (row) => <time dateTime={row.startsAt} className="tabular-nums">{formatDateTime(row.startsAt)}</time>, sortValue: (row) => row.startsAt, className: "whitespace-nowrap" },
     { key: "category", header: "Category", cell: (row) => { const l = leagueOf(row); return l ? <CategoryBadge category={sportCategory(l.sport)} /> : "—" } },
-    { key: "sport", header: "Sport / Game", cell: (row) => { const l = leagueOf(row); return l ? sportLabel(l.sport) : "—" }, sortValue: (row) => { const l = leagueOf(row); return l ? sportLabel(l.sport) : "" } },
+    { key: "sport", header: "Sport / Game", cell: (row) => { const l = leagueOf(row); return l ? <SportLine sport={l.sport} /> : "—" }, sortValue: (row) => { const l = leagueOf(row); return l ? sportLabel(l.sport) : "" } },
     { key: "league", header: "League", cell: (row) => leagueOf(row)?.shortName ?? "—", sortValue: (row) => leagueOf(row)?.name ?? "" },
     {
       key: "participants",

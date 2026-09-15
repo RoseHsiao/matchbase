@@ -5,16 +5,19 @@ import { BreadcrumbDataProvider } from "@/components/layout/breadcrumb-data-prov
 import { PlayerFollowsProvider } from "@/components/players/player-follows-provider";
 import { FollowsProvider } from "@/components/teams/follows-provider";
 import { WatchlistProvider } from "@/components/watchlist/watchlist-provider";
+import { WatchlistRemindersProvider } from "@/components/watchlist/watchlist-reminders-provider";
 import {
   getFollowedPlayerIds,
   getFollowedTeamIds,
   getLeagues,
+  getWatchlistEntries,
   getWatchlistIds,
 } from "@/lib/data/queries";
 import {
   setMatchWatchlisted,
   setPlayerFollowed,
   setTeamFollowed,
+  setWatchlistReminder,
 } from "@/lib/data/user-state-actions";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
@@ -28,10 +31,11 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [cookieStore, watchlistIds, followedTeamIds, followedPlayerIds, leagues] =
+  const [cookieStore, watchlistIds, watchlistEntries, followedTeamIds, followedPlayerIds, leagues] =
     await Promise.all([
       cookies(),
       getWatchlistIds(),
+      getWatchlistEntries(),
       getFollowedTeamIds(),
       getFollowedPlayerIds(),
       getLeagues(),
@@ -41,13 +45,15 @@ export default async function AppLayout({
 
   return (
     <WatchlistProvider initialIds={watchlistIds} persist={setMatchWatchlisted}>
-      <FollowsProvider initialIds={followedTeamIds} persist={setTeamFollowed}>
-        <PlayerFollowsProvider initialIds={followedPlayerIds} persist={setPlayerFollowed}>
-          <BreadcrumbDataProvider leagues={leagueCrumbs}>
-            <AppShell defaultOpen={defaultOpen}>{children}</AppShell>
-          </BreadcrumbDataProvider>
-        </PlayerFollowsProvider>
-      </FollowsProvider>
+      <WatchlistRemindersProvider initialEntries={watchlistEntries} persist={setWatchlistReminder}>
+        <FollowsProvider initialIds={followedTeamIds} persist={setTeamFollowed}>
+          <PlayerFollowsProvider initialIds={followedPlayerIds} persist={setPlayerFollowed}>
+            <BreadcrumbDataProvider leagues={leagueCrumbs}>
+              <AppShell defaultOpen={defaultOpen}>{children}</AppShell>
+            </BreadcrumbDataProvider>
+          </PlayerFollowsProvider>
+        </FollowsProvider>
+      </WatchlistRemindersProvider>
     </WatchlistProvider>
   );
 }

@@ -4,6 +4,8 @@ import { refresh } from "next/cache"
 
 import { getCurrentUserId } from "@/lib/data/current-user"
 import { userStateRepository } from "@/lib/data/repositories/user-state-repository"
+import { ReminderError } from "@/lib/data/repositories/watchlist-reminder-ops"
+import type { WatchlistReminder } from "@/lib/data/types"
 
 /**
  * Server actions that persist the current user's follows and watchlist.
@@ -54,4 +56,25 @@ export async function setMatchWatchlisted(matchId: string, watchlisted: boolean)
   if (watchlisted) await userStateRepository.addToWatchlist(userId, id)
   else await userStateRepository.removeFromWatchlist(userId, id)
   refresh()
+}
+
+export type ReminderActionResult = { ok: true; reminder: WatchlistReminder } | { ok: false; error: string }
+
+/**
+ * Store the reminder for a watchlisted match. Returns a result rather than
+ * throwing so the client can show the rule that was violated (match already
+ * started, not on the watchlist) and roll back its optimistic value. "off"
+ * keeps the match on the watchlist; removing the match removes the reminder.
+ */
+export async function setWatchlistReminder(matchId: string, reminder: WatchlistReminder): Promise<ReminderActionResult> {
+  const id = assertId(matchId, "match id")
+  const userId = await getCurrentUserId()
+  try {
+    const stored = await userStateRepository.setWatchlistReminder(userId, id, reminder)
+    refresh()
+    return { ok: true, reminder: stored }
+  } catch (error) {
+    if (error instanceof ReminderError) return { ok: false, error: error.message }
+    throw error
+  }
 }

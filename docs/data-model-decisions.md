@@ -227,6 +227,8 @@ User follows and watchlist entries are relational data, not fields on Team, Play
 
 Each row carries `createdAt`. Follow state is never duplicated inside domain entities (no `isFollowed` or follower counts on Team, Player, League, or Match in v1).
 
+`UserWatchlistMatch` also carries the user's reminder preference for that match (`reminder WatchlistReminder @default(OFF)`, Phase 6A): the reminder is a property of the watchlist relationship, so it lives on that row rather than in a separate table. Removing the match from the watchlist removes the reminder; `OFF` keeps the match saved. Delivery infrastructure (scheduler, notification log, push subscriptions) is deliberately absent; see `docs/watchlist-reminders.md`.
+
 `UserLeagueFollow` is created even though no league follow button exists yet, because the dashboard queries already depend on followed leagues.
 
 ---
@@ -656,6 +658,10 @@ See `docs/tennis-provider.md`. The sport registry and `Sport` union gained `tenn
 ### MatchParticipant (Phase 5, implemented 2026-09-15)
 
 See section 6 (revised) and `docs/match-participant-model-analysis.md` §26. Two migrations: `20260915061141_match_participants` (additive: enum, table, side scores, backfill from `homeTeamId` / `awayTeamId` / `homeScore` / `awayScore`, CHECK constraints) and `20260915063143_drop_legacy_match_sides` (guarded drop of the legacy columns, relations and indexes). All 28 existing match ids, 7 watchlist rows, and provider external ids were preserved; the 56 backfilled participant rows keep their ids across seeds because the seed reconciles participants by `(matchId, side, order)`. Domain `Player.teamId` became optional and team-less players are shown as "Independent". Seed adds a Wimbledon league with six team-less players, one finished singles, one upcoming singles, and one upcoming doubles match.
+
+### Watchlist reminders (Phase 6A, implemented 2026-09-15)
+
+See `docs/watchlist-reminders.md`. Migration `20260915084918_watchlist_reminders` adds `enum WatchlistReminder` and `UserWatchlistMatch.reminder` with default `OFF` (existing rows untouched). Rules (`lib/watchlist/reminder-rules.ts`): only a saved, upcoming match takes a reminder; `off` is always allowed; live and finished matches reject anything else. Server action `setWatchlistReminder`; the layout seeds a client reminder store from `getWatchlistEntries()`. Notification delivery is deferred until authentication and background execution exist. The same phase added the sport visual registry (`lib/sport-icons.tsx`, `components/sport-icon.tsx`): every sport and category has one icon definition, rendered through `SportIcon` / `CategoryIcon` / `SportLine`; esports logos are registry `asset` slots, no brand artwork is bundled.
 
 ### Deferred (unchanged from section 16)
 

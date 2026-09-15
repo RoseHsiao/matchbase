@@ -4,6 +4,7 @@ import { cn } from "cn"
 import { CategoryBadge } from "@/components/category-badge"
 import { MatchStatusBadge } from "@/components/matches/match-status-badge"
 import { ParticipantAvatars, SideName } from "@/components/matches/side-participants"
+import { SportIcon } from "@/components/sport-icon"
 import type { MatchSide, MatchView } from "@/lib/data/types"
 import { formatDayLabel, formatTime } from "@/lib/format"
 import { SIDES, sideParticipants, sideScore, winnerSide } from "@/lib/matches"
@@ -22,6 +23,8 @@ type MatchRowProps = {
   showCategory?: boolean
   /** Control rendered beside the row, outside the link (e.g. a watchlist star). */
   action?: React.ReactNode
+  /** Secondary line under the status (e.g. a reminder). */
+  meta?: React.ReactNode
   className?: string
 }
 
@@ -39,6 +42,7 @@ export function MatchRow({
   compact = false,
   showCategory = false,
   action,
+  meta,
   className,
 }: MatchRowProps) {
   const finished = match.status === "finished"
@@ -88,6 +92,7 @@ export function MatchRow({
             {showCategory ? (
               <CategoryBadge category={sportCategory(match.league.sport)} size="sm" />
             ) : null}
+            <SportIcon sport={match.league.sport} size="xs" label="" className="text-muted-foreground" />
             <Link
               href={`/leagues/${match.league.id}`}
               className="relative z-[2] truncate rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -99,6 +104,7 @@ export function MatchRow({
             </Link>
           </span>
         ) : null}
+        {meta ? <span className="relative z-[2] max-w-40 truncate">{meta}</span> : null}
       </div>
 
       {action ? <div className="relative z-[2] shrink-0">{action}</div> : null}

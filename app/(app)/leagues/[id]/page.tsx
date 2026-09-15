@@ -9,6 +9,7 @@ import { DetailList } from "@/components/detail-list";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { SectionCard } from "@/components/layout/section-card";
+import { SportIcon } from "@/components/sport-icon";
 import { MatchList } from "@/components/matches/match-list";
 import { TeamRow } from "@/components/teams/team-row";
 import { buttonVariants } from "@/components/ui/button";
@@ -71,6 +72,7 @@ export default async function LeaguePage({ params }: LeaguePageProps) {
           actions={
             <div className="flex items-center gap-2">
               <CategoryBadge category={category} />
+              <SportIcon sport={league.sport} size="lg" className="text-muted-foreground" />
               <AdminStatusBadge status={status} />
             </div>
           }

@@ -14,6 +14,8 @@ const dbStatus: Record<MatchStatus, DbMatchStatus> = {
 
 /** Declarative filter for match reads. Every field narrows; omitted fields do not filter. */
 export type MatchQuery = {
+  /** Only these matches (e.g. the watchlist). Empty matches nothing. */
+  ids?: readonly string[]
   leagueId?: string
   /** Matches where any of these teams participates, on either side. */
   teamIds?: readonly string[]
@@ -42,6 +44,7 @@ function involves(ref: { teamIds?: readonly string[]; playerIds?: readonly strin
 
 function toWhere(query: MatchQuery): MatchWhereInput {
   const and: MatchWhereInput[] = []
+  if (query.ids !== undefined) and.push({ id: { in: [...query.ids] } })
   if (query.leagueId !== undefined) and.push({ leagueId: query.leagueId })
   const participation = involves(query)
   if (participation.length > 0) and.push({ OR: participation })
