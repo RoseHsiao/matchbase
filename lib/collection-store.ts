@@ -10,6 +10,8 @@ export type CollectionStore<T extends { id: string }> = {
   subscribe: (listener: () => void) => () => void
   upsert: (item: T) => void
   remove: (id: string) => void
+  /** Replace every item, e.g. with a fresh snapshot from the server. */
+  reset: (items: readonly T[]) => void
 }
 
 export function createCollectionStore<T extends { id: string }>(
@@ -40,6 +42,9 @@ export function createCollectionStore<T extends { id: string }>(
     remove(id) {
       if (!items.some((entry) => entry.id === id)) return
       set(items.filter((entry) => entry.id !== id))
+    },
+    reset(next) {
+      set([...next])
     },
   }
 }

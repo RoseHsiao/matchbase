@@ -177,6 +177,7 @@ const dataSourceStatus: Record<MockTypes.DataSourceStatus, DataSourceStatus> = {
 }
 
 const syncStatus: Record<MockTypes.SyncStatus, SyncStatus> = {
+  running: SyncStatus.RUNNING,
   success: SyncStatus.SUCCESS,
   partial: SyncStatus.PARTIAL,
   failed: SyncStatus.FAILED,

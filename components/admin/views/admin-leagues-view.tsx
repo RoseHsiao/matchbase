@@ -28,11 +28,10 @@ type Draft = {
   shortName: string
   sport: Sport | ""
   region: string
-  season: string
   status: EntityStatus
 }
 
-const emptyDraft: Draft = { name: "", shortName: "", sport: "", region: "", season: "", status: "active" }
+const emptyDraft: Draft = { name: "", shortName: "", sport: "", region: "", status: "active" }
 
 export function AdminLeaguesView() {
   const { items: leagues, upsert, remove } = useAdminCollection("leagues")
@@ -81,20 +80,23 @@ export function AdminLeaguesView() {
       sortValue: (row) => sportCategory(row.sport),
     },
     { key: "sport", header: "Sport / Game", cell: (row) => sportLabel(row.sport), sortValue: (row) => sportLabel(row.sport) },
-    { key: "season", header: "Season", cell: (row) => row.season, sortValue: (row) => row.season },
+    // Derived from the league's seasons; managed on the Seasons page.
+    { key: "season", header: "Season", cell: (row) => row.season || "—", sortValue: (row) => row.season },
     { key: "teams", header: "Teams", cell: (row) => teamCount(row.id), sortValue: (row) => teamCount(row.id), className: "tabular-nums" },
     { key: "status", header: "Status", cell: (row) => <AdminStatusBadge status={row.status ?? "active"} /> },
   ]
 
   function submit() {
     if (!editor.draft.sport) return
+    const existing = editor.editingId ? leagues.find((l) => l.id === editor.editingId) : undefined
     upsert({
       id: editor.editingId ?? newId("league"),
       name: editor.draft.name.trim(),
       shortName: editor.draft.shortName.trim() || editor.draft.name.trim(),
       sport: editor.draft.sport,
       region: editor.draft.region.trim(),
-      season: editor.draft.season.trim(),
+      // The season label comes from Season records, never from this form.
+      season: existing?.season ?? "",
       status: editor.draft.status,
     })
     editor.close()
@@ -127,7 +129,7 @@ export function AdminLeaguesView() {
         noun="league"
         defaultSort={{ key: "name", direction: "asc" }}
         rowActions={[
-          { label: "Edit", icon: PencilIcon, onSelect: (row) => editor.openEdit(row.id, { name: row.name, shortName: row.shortName, sport: row.sport, region: row.region, season: row.season, status: row.status ?? "active" }) },
+          { label: "Edit", icon: PencilIcon, onSelect: (row) => editor.openEdit(row.id, { name: row.name, shortName: row.shortName, sport: row.sport, region: row.region, status: row.status ?? "active" }) },
           { label: "Delete", icon: Trash2Icon, destructive: true, onSelect: setDeleting },
         ]}
         emptyTitle="No leagues match"
@@ -147,15 +149,14 @@ export function AdminLeaguesView() {
         <TextField id="league-short" label="Short name" value={editor.draft.shortName} onChange={(shortName) => editor.patch({ shortName })} placeholder="e.g. NBA" />
         <SelectField id="league-sport" label="Sport / Game" value={editor.draft.sport} onChange={(sport) => editor.patch({ sport: sport as Sport })} options={sports.map((s) => ({ value: s, label: `${sportLabel(s)} · ${categoryLabel(sportCategory(s))}` }))} />
         <TextField id="league-region" label="Region" value={editor.draft.region} onChange={(region) => editor.patch({ region })} />
-        <TextField id="league-season" label="Current season" value={editor.draft.season} onChange={(season) => editor.patch({ season })} placeholder="e.g. 2026-27" />
-        <SelectField id="league-status" label="Status" value={editor.draft.status} onChange={(status) => editor.patch({ status: status as EntityStatus })} options={entityStatusOptions} />
+        <SelectField id="league-status" label="Status" value={editor.draft.status} onChange={(status) => editor.patch({ status: status as EntityStatus })} options={entityStatusOptions} hint="Seasons, including the current one, are managed on the Seasons page." />
       </AdminFormDialog>
 
       <AdminDeleteDialog
         open={deleting !== null}
         onOpenChange={(open) => { if (!open) setDeleting(null) }}
         name={deleting?.name ?? "league"}
-        description={deleting ? `${teamCount(deleting.id)} teams reference this league. They will keep their league id until reassigned.` : undefined}
+        description={deleting ? `${teamCount(deleting.id)} teams reference this league. A league with seasons, teams, or matches cannot be deleted until they are removed or reassigned.` : undefined}
         onConfirm={() => { if (deleting) remove(deleting.id) }}
       />
     </AdminPage>

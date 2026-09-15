@@ -615,6 +615,32 @@ Server Component (dashboard, layout seeds)
 - **Seed robustness.** Every seed transaction now carries a 60-second timeout; the default 5 seconds was exceeded by a 26-row batch over the remote connection.
 - No schema change and no migration were needed: the join tables already existed.
 
+### Admin persistence (Phase 3, implemented 2026-09-15)
+
+Admin CRUD now writes to PostgreSQL. Admin and the user-facing pages operate on the same rows: renaming a team in Admin renames it on the team page, changing a match's stage or venue changes the match page, and follow and watchlist rows stay attached because ids never change.
+
+```
+Admin view (client)
+  ↓ useAdminCollection().upsert / remove          (components/admin/admin-data-provider.tsx)
+  ↓ optimistic change to the CollectionStore cache, then
+  ↓ saveAdminRecord / deleteAdminRecord           (lib/data/admin-actions.ts, Server Actions)
+  ↓ adminRepository.save* / delete*               (lib/data/repositories/admin-repository.ts)
+  ↓ lib/data/db.ts → Prisma → Neon PostgreSQL
+  ↓ refresh() → admin layout re-reads getAdminData() → stores reset to the database snapshot
+
+Admin layout (server)
+  ↓ getAdminData() → adminRepository.getAll()     (one batched query per collection)
+```
+
+- **`lib/collection-store.ts`** stays as the client cache behind the admin tables, dialogs, and filters. It is no longer a source of truth: the layout re-seeds every store from the database on each render, and a rejected write rolls the store back and shows an inline alert. It gained a `reset` method for that.
+- **Validation and errors.** Every write validates the untrusted form payload on the server (required text, enum values, integers, dates, ids), then upserts by id. Prisma unique (P2002), foreign-key (P2003), and missing-row (P2025) errors become plain `AdminError` messages; nothing else reaches the UI. Match writes also enforce the rules the schema cannot: distinct teams, paired scores, and teams and season belonging to the match's league. Season writes enforce one CURRENT season per league at the repository level (the partial unique index remains deferred).
+- **Delete semantics** follow the schema: League and Season deletes are blocked by the database while dependants exist and surface as clean errors; Team deletes are refused while the team has players or matches (the schema would set players' team to null, but the domain Player requires a team); Player and Match deletes cascade their follow and watchlist rows; Venue deletes set matches' venue to null. Delete-dialog wording was updated to match.
+- **Sports & Games.** `Sport.status` is persisted; the catalogue itself, labels, category, and Home/Away wording still come from `lib/sports.ts` (decisions §2). Admin edits status only, as before.
+- **Form changes forced by the schema.** The League form no longer has a "Current season" text field: the label is derived from Season rows and managed on the Seasons page. The Match form gained a Season select (required, defaulting to the league's current season) and replaced the free-text venue with a Venue select. The domain `Match` type gained optional `seasonId` and `venueId` so the admin UI can carry them.
+- **Data sources.** Stored status is `ACTIVE | INACTIVE`; the "Needs attention" state shown in Admin is derived from the latest sync log (FAILED or PARTIAL), so it reproduces the previous mock display. Sync logs are read-only in Admin, read from the database; the domain `SyncStatus` gained `running`.
+- **Still deferred:** AdminActivity remains the mock demo feed on the Admin landing page (no audit table); authentication; external API fetching and sync jobs. No schema change, migration, or new dependency was needed. Existing ids are preserved on update; new records keep the client-generated `newId()` convention so the optimistic row and the database row share an id.
+- **Timezone:** unchanged. The Match form converts its local `datetime-local` value with `new Date(value).toISOString()` exactly as before.
+
 ### Deferred (unchanged from section 16)
 
 `LeagueTeam`, `TeamMembership`, `MatchParticipant`, `MatchPeriod`, a Category table, `ExternalIdentity`, `AuditLog`, and analytics models are not in the schema.

@@ -57,6 +57,8 @@ export type MatchScore = {
 export type Match = {
   id: string
   leagueId: string
+  /** Season the match belongs to. Always set for database-backed matches. */
+  seasonId?: string
   homeTeamId: string
   awayTeamId: string
   /** ISO 8601 timestamp. */
@@ -64,7 +66,9 @@ export type Match = {
   status: MatchStatus
   /** Round, week, or playoff stage label. */
   stage?: string
+  /** Venue name for display, resolved from `venueId`. */
   venue?: string
+  venueId?: string
   score?: MatchScore
   /** Live-only detail such as "67'" or "Map 2". */
   liveDetail?: string
@@ -103,7 +107,7 @@ export type DataSource = {
   lastSyncedAt?: string
 }
 
-export type SyncStatus = "success" | "failed" | "partial"
+export type SyncStatus = "running" | "success" | "failed" | "partial"
 export type SyncEntity = "matches" | "teams" | "players" | "leagues"
 
 export type SyncLog = {

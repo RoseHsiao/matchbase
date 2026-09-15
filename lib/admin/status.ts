@@ -19,6 +19,7 @@ export const statusMeta: Record<AdminStatus, { label: string; tone: StatusTone }
   connected: { label: "Connected", tone: "success" },
   disconnected: { label: "Disconnected", tone: "danger" },
   attention: { label: "Needs attention", tone: "warning" },
+  running: { label: "Running", tone: "info" },
   success: { label: "Success", tone: "success" },
   failed: { label: "Failed", tone: "danger" },
   partial: { label: "Partial", tone: "warning" },
@@ -42,6 +43,7 @@ export const dataSourceStatusOptions: { value: DataSourceStatus; label: string }
 ]
 
 export const syncStatusOptions: { value: SyncStatus; label: string }[] = [
+  { value: "running", label: "Running" },
   { value: "success", label: "Success" },
   { value: "partial", label: "Partial" },
   { value: "failed", label: "Failed" },

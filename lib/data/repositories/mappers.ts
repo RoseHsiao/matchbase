@@ -97,18 +97,18 @@ export function toSport(id: string): Sport {
   return id as Sport
 }
 
-const entityStatus: Record<DbEntityStatus, EntityStatus> = {
+export const entityStatus: Record<DbEntityStatus, EntityStatus> = {
   ACTIVE: "active",
   INACTIVE: "inactive",
 }
 
-const matchStatus: Record<DbMatchStatus, MatchStatus> = {
+export const matchStatus: Record<DbMatchStatus, MatchStatus> = {
   UPCOMING: "upcoming",
   LIVE: "live",
   FINISHED: "finished",
 }
 
-const seasonStatus: Record<DbSeasonStatus, SeasonStatus> = {
+export const seasonStatus: Record<DbSeasonStatus, SeasonStatus> = {
   CURRENT: "current",
   UPCOMING: "upcoming",
   COMPLETED: "completed",
@@ -211,12 +211,14 @@ export function toMatch(record: MatchRecord): Match {
   return {
     id: record.id,
     leagueId: record.leagueId,
+    seasonId: record.seasonId,
     homeTeamId: record.homeTeamId,
     awayTeamId: record.awayTeamId,
     startsAt: record.startsAt.toISOString(),
     status: matchStatus[record.status],
     stage: orUndefined(record.stage),
     venue: record.venue?.name,
+    venueId: orUndefined(record.venueId),
     score: hasScore ? { home: record.homeScore as number, away: record.awayScore as number } : undefined,
     liveDetail: orUndefined(record.liveDetail),
   }

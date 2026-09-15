@@ -138,7 +138,7 @@ export function AdminTeamsView() {
         open={deleting !== null}
         onOpenChange={(open) => { if (!open) setDeleting(null) }}
         name={deleting?.name ?? "team"}
-        description={deleting ? `${playerCount(deleting.id)} players and any matches referencing this team keep its id until reassigned.` : undefined}
+        description={deleting ? `${playerCount(deleting.id)} players are on this team. A team with players or matches cannot be deleted until they are reassigned or removed.` : undefined}
         onConfirm={() => { if (deleting) remove(deleting.id) }}
       />
     </AdminPage>

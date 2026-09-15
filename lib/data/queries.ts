@@ -1,17 +1,7 @@
 import { cache } from "react"
 
 import { getCurrentUserId } from "@/lib/data/current-user"
-import {
-  adminActivity,
-  dataSources,
-  leagues as mockLeagues,
-  matches as mockMatches,
-  players as mockPlayers,
-  seasons as mockSeasons,
-  syncLogs,
-  teams as mockTeams,
-  venues,
-} from "@/lib/data/mock"
+import { adminRepository } from "@/lib/data/repositories/admin-repository"
 import { leagueRepository } from "@/lib/data/repositories/league-repository"
 import { matchRepository } from "@/lib/data/repositories/match-repository"
 import { playerRepository } from "@/lib/data/repositories/player-repository"
@@ -33,19 +23,16 @@ import type {
   UserFollows,
 } from "@/lib/data/types"
 import { addDays, startOfDay } from "@/lib/format"
-import { sports } from "@/lib/sports"
 
 /**
  * Read-side data access: the application-facing query API.
  *
- * Catalogue reads (leagues, seasons, teams, players, matches) and the current
- * user's follows and watchlist go through the repositories in
- * lib/data/repositories, which query PostgreSQL through Prisma. Pages and
- * server components call these functions; nothing outside lib/data touches
- * Prisma. Writes to user state live in lib/data/user-state-actions.ts.
- *
- * Still served from lib/data/mock.ts, by design: `getAdminData`, because
- * Admin persistence is a separate phase.
+ * Catalogue reads (leagues, seasons, teams, players, matches), the current
+ * user's follows and watchlist, and the admin snapshot all go through the
+ * repositories in lib/data/repositories, which query PostgreSQL through
+ * Prisma. Pages and server components call these functions; nothing outside
+ * lib/data touches Prisma. Writes live in lib/data/user-state-actions.ts and
+ * lib/data/admin-actions.ts.
  *
  * Day boundaries ("today", the schedule window) are computed with the shared
  * helpers in lib/format.ts, exactly as before, so the database filters use
@@ -258,21 +245,9 @@ export async function getTeamPlayers(teamId: string): Promise<Player[]> {
 }
 
 /**
- * Everything the admin area manages, as plain records. Seeds the admin client
- * store. Still mock-backed: Admin persistence is a separate phase, and it is
- * migrated as a whole rather than one collection at a time.
+ * Everything the admin area manages, as plain records from the database.
+ * Seeds the admin client store; the same rows back the user-facing pages.
  */
 export async function getAdminData(): Promise<AdminData> {
-  return {
-    sports: sports.map((id) => ({ id, status: "active" })),
-    leagues: [...mockLeagues],
-    seasons: [...mockSeasons],
-    teams: [...mockTeams],
-    players: [...mockPlayers],
-    matches: [...mockMatches],
-    venues: [...venues],
-    dataSources: [...dataSources],
-    syncLogs: [...syncLogs],
-    activity: [...adminActivity],
-  }
+  return adminRepository.getAll()
 }

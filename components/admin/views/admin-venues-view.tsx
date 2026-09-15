@@ -36,7 +36,7 @@ export function AdminVenuesView() {
       (status === ALL || venue.status === status) &&
       (!needle || [venue.name, venue.city, venue.country].some((v) => v.toLowerCase().includes(needle)))
   )
-  const matchCount = (venue: Venue) => matches.filter((m) => m.venue === venue.name).length
+  const matchCount = (venue: Venue) => matches.filter((m) => m.venueId === venue.id).length
   const activeCount = (needle ? 1 : 0) + (status === ALL ? 0 : 1)
 
   const columns: AdminColumn<Venue>[] = [
@@ -106,7 +106,7 @@ export function AdminVenuesView() {
         open={deleting !== null}
         onOpenChange={(open) => { if (!open) setDeleting(null) }}
         name={deleting?.name ?? "venue"}
-        description={deleting ? `${matchCount(deleting)} matches list this venue by name; they keep the text until edited.` : undefined}
+        description={deleting ? `${matchCount(deleting)} matches are at this venue; they will have no venue afterwards.` : undefined}
         onConfirm={() => { if (deleting) remove(deleting.id) }}
       />
     </AdminPage>
