@@ -19,7 +19,8 @@ import {
   getTeamResults,
 } from "@/lib/data/queries";
 import { playerDisplayName } from "@/lib/players";
-import { categoryLabel, sportCategory, sportLabel } from "@/lib/sports";
+import { CategoryLine, SportHierarchy, SportLine } from "@/components/sport-icon";
+import { sportCategory } from "@/lib/sports";
 
 type PlayerPageProps = {
   params: Promise<{ id: string }>;
@@ -89,14 +90,22 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
           <PageHeader
             className="min-w-0 flex-1"
             title={displayName}
-            description={[
-              player.handle ? player.name : null,
-              player.role || null,
-              team?.name ?? null,
-              league?.name ?? null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
+            description={
+              <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                {[player.handle ? player.name : null, player.role || null, team?.name ?? null].filter(Boolean).map((part, index) => (
+                  <span key={part} className="contents">
+                    {index > 0 ? <span aria-hidden>·</span> : null}
+                    <span>{part}</span>
+                  </span>
+                ))}
+                {league ? (
+                  <>
+                    <span aria-hidden>·</span>
+                    <SportHierarchy sport={league.sport} league={{ id: league.id, label: league.name }} linked />
+                  </>
+                ) : null}
+              </span>
+            }
             actions={
               <PlayerFollowButton
                 playerId={player.id}
@@ -116,8 +125,8 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
             ...(player.role ? [{ label: "Role", value: player.role }] : []),
             ...(league
               ? [
-                  { label: "Category", value: categoryLabel(sportCategory(league.sport)) },
-                  { label: "Sport / Game", value: sportLabel(league.sport) },
+                  { label: "Category", value: <CategoryLine category={sportCategory(league.sport)} size="sm" className="text-foreground" /> },
+                  { label: "Sport / Game", value: <SportLine sport={league.sport} /> },
                   {
                     label: "League",
                     value: (

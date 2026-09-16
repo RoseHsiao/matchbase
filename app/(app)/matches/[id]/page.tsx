@@ -9,14 +9,14 @@ import { SectionCard } from "@/components/layout/section-card";
 import { MatchList } from "@/components/matches/match-list";
 import { MatchScoreboard } from "@/components/matches/match-scoreboard";
 import { MatchStatusBadge } from "@/components/matches/match-status-badge";
-import { SportLine } from "@/components/sport-icon";
+import { CategoryLine, SportHierarchy, SportLine } from "@/components/sport-icon";
 import { ReminderSelect } from "@/components/watchlist/reminder-select";
 import { WatchlistButton } from "@/components/watchlist/watchlist-button";
 import { buttonVariants } from "@/components/ui/button";
 import { getMatchById, getRelatedMatches } from "@/lib/data/queries";
 import { formatKickoff, formatLongDate, formatTime } from "@/lib/format";
 import { matchTitle } from "@/lib/matches";
-import { categoryLabel, sportCategory, sportLabel } from "@/lib/sports";
+import { sportCategory } from "@/lib/sports";
 
 type MatchPageProps = {
   params: Promise<{ id: string }>;
@@ -67,13 +67,15 @@ export default async function MatchPage({ params }: MatchPageProps) {
         </Link>
         <PageHeader
           title={matchTitle(match)}
-          description={[
-            categoryLabel(sportCategory(league.sport)),
-            sportLabel(league.sport),
-            league.name,
-            league.season,
-            formatKickoff(match.startsAt, now),
-          ].join(" · ")}
+          description={
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <SportHierarchy sport={league.sport} league={{ id: league.id, label: league.name }} linked />
+              <span aria-hidden>·</span>
+              <span>{league.season}</span>
+              <span aria-hidden>·</span>
+              <span>{formatKickoff(match.startsAt, now)}</span>
+            </span>
+          }
           actions={
             <div className="grid justify-items-start gap-2 sm:justify-items-end">
               <WatchlistButton matchId={match.id} status={match.status} />
@@ -98,7 +100,7 @@ export default async function MatchPage({ params }: MatchPageProps) {
       >
         <DetailList
           items={[
-            { label: "Category", value: categoryLabel(sportCategory(league.sport)) },
+            { label: "Category", value: <CategoryLine category={sportCategory(league.sport)} size="sm" className="text-foreground" /> },
             { label: "Sport / Game", value: <SportLine sport={league.sport} /> },
             {
               label: "Competition",

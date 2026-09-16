@@ -2,15 +2,13 @@ import Link from "next/link"
 import { MapPinIcon } from "lucide-react"
 import { cn } from "cn"
 
-import { CategoryBadge } from "@/components/category-badge"
 import { MatchStatusBadge } from "@/components/matches/match-status-badge"
 import { ParticipantAvatars } from "@/components/matches/side-participants"
-import { SportIcon } from "@/components/sport-icon"
+import { SportHierarchy } from "@/components/sport-icon"
 import { Card, CardContent } from "@/components/ui/card"
 import type { MatchParticipantView, MatchView } from "@/lib/data/types"
 import { formatDayLabel, formatKickoff, formatTime } from "@/lib/format"
 import { participantName, sideParticipants, sideRole, winnerSide } from "@/lib/matches"
-import { sportCategory, sportLabel } from "@/lib/sports"
 
 type MatchScoreboardProps = {
   match: MatchView
@@ -30,18 +28,7 @@ export function MatchScoreboard({ match, now, className }: MatchScoreboardProps)
     <Card className={cn(live && "ring-red-500/30", className)}>
       <CardContent className="grid gap-6 py-2">
         <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-sm text-muted-foreground">
-          <CategoryBadge category={sportCategory(sport)} />
-          <span className="inline-flex items-center gap-1.5">
-            <SportIcon sport={sport} size="sm" label="" />
-            {sportLabel(sport)}
-          </span>
-          <span aria-hidden>·</span>
-          <Link
-            href={`/leagues/${match.league.id}`}
-            className="rounded-sm outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
-          >
-            {match.league.name}
-          </Link>
+          <SportHierarchy sport={sport} league={{ id: match.league.id, label: match.league.name }} linked />
           {match.stage ? (
             <>
               <span aria-hidden>·</span>

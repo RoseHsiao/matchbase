@@ -11,7 +11,7 @@ import { AdminStatusBadge } from "@/components/admin/admin-status-badge"
 import { AdminToolbar } from "@/components/admin/admin-toolbar"
 import { SelectField } from "@/components/admin/form-fields"
 import { useEntityEditor } from "@/components/admin/use-entity-editor"
-import { CategoryBadge } from "@/components/category-badge"
+import { CategoryLine, SportLine } from "@/components/sport-icon"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { entityStatusOptions } from "@/lib/admin/status"
 import type { EntityStatus, SportRecord } from "@/lib/data/types"
@@ -44,14 +44,14 @@ export function AdminSportsView() {
     {
       key: "category",
       header: "Category",
-      cell: (row) => <CategoryBadge category={sportCategory(row.id)} />,
+      cell: (row) => <CategoryLine category={sportCategory(row.id)} size="sm" />,
       // Registry order (Sports, then Esports) rather than alphabetical.
       sortValue: (row) => categories.indexOf(sportCategory(row.id)),
     },
     {
       key: "sport",
       header: "Sport / Game",
-      cell: (row) => <span className="font-medium">{sportLabel(row.id)}</span>,
+      cell: (row) => <SportLine sport={row.id} className="font-medium" />,
       sortValue: (row) => sportLabel(row.id),
     },
     {

@@ -1,10 +1,9 @@
 import Link from "next/link"
 import { cn } from "cn"
 
-import { CategoryBadge } from "@/components/category-badge"
 import { MatchStatusBadge } from "@/components/matches/match-status-badge"
 import { ParticipantAvatars, SideName } from "@/components/matches/side-participants"
-import { SportIcon } from "@/components/sport-icon"
+import { CategoryIcon, SportIcon } from "@/components/sport-icon"
 import type { MatchSide, MatchView } from "@/lib/data/types"
 import { formatDayLabel, formatTime } from "@/lib/format"
 import { SIDES, sideParticipants, sideScore, winnerSide } from "@/lib/matches"
@@ -88,23 +87,25 @@ export function MatchRow({
       <div className="flex shrink-0 flex-col items-end gap-1 text-right">
         <MatchStatusBadge status={match.status} liveDetail={match.liveDetail} />
         {showLeague ? (
-          <span className="hidden max-w-48 items-center gap-1.5 sm:flex">
+          <span className="flex max-w-48 items-center gap-1.5">
             {showCategory ? (
-              <CategoryBadge category={sportCategory(match.league.sport)} size="sm" />
+              <CategoryIcon category={sportCategory(match.league.sport)} size="xs" className="hidden sm:inline-flex" />
             ) : null}
-            <SportIcon sport={match.league.sport} size="xs" label="" className="text-muted-foreground" />
+            <SportIcon sport={match.league.sport} size="xs" label={sportLabel(match.league.sport)} className="text-muted-foreground" />
             <Link
               href={`/leagues/${match.league.id}`}
               className="relative z-[2] truncate rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
               title={hierarchyLabel(match.league.sport, match.league.name)}
             >
-              {compact
-                ? match.league.shortName
-                : `${sportLabel(match.league.sport)} · ${match.league.shortName}`}
+              {/* Phones and compact columns show the league code; wider rows spell out the sport too. */}
+              <span className={compact ? undefined : "sm:hidden"}>{match.league.shortName}</span>
+              {!compact ? (
+                <span className="hidden sm:inline">{`${sportLabel(match.league.sport)} · ${match.league.shortName}`}</span>
+              ) : null}
             </Link>
           </span>
         ) : null}
-        {meta ? <span className="relative z-[2] max-w-40 truncate">{meta}</span> : null}
+        {meta ? <span className="relative z-[2] max-w-28 truncate sm:max-w-40">{meta}</span> : null}
       </div>
 
       {action ? <div className="relative z-[2] shrink-0">{action}</div> : null}

@@ -1,4 +1,4 @@
-import { Crosshair, Gamepad2, Swords, Target, Trophy, type LucideIcon } from "lucide-react"
+import { Crosshair, Gamepad2, Swords, Target, Trophy, Volleyball, type LucideIcon } from "lucide-react"
 import type { ComponentType, SVGProps } from "react"
 
 import type { Category, Sport } from "@/lib/data/types"
@@ -111,10 +111,25 @@ export const sportVisuals: Record<Sport, SportVisual> = {
   cs2: { icon: Target },
 }
 
+const BaseballGlyph = glyph(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M6.2 5.5c1.6 1.4 2.6 3.9 2.6 6.5s-1 5.1-2.6 6.5" />
+    <path d="M17.8 5.5c-1.6 1.4-2.6 3.9-2.6 6.5s1 5.1 2.6 6.5" />
+    <path d="M7.4 8.4 8.8 9" />
+    <path d="M7.4 15.6 8.8 15" />
+    <path d="m16.6 8.4-1.4.6" />
+    <path d="m16.6 15.6-1.4-.6" />
+  </>,
+  "BaseballGlyph"
+)
+
 /** Glyphs ready for sports not yet in the registry, so adding one is a one-line change. */
 export const reservedSportVisuals = {
   tabletennis: { icon: TableTennisGlyph },
   badminton: { icon: BadmintonGlyph },
+  volleyball: { icon: Volleyball },
+  baseball: { icon: BaseballGlyph },
 } satisfies Record<string, SportVisual>
 
 export const categoryVisuals: Record<Category, SportVisual> = {

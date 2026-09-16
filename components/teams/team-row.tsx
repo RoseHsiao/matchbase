@@ -4,6 +4,7 @@ import { cn } from "cn"
 import { ListRowLink } from "@/components/list-row-link"
 import { LiveDot, liveTextClassName } from "@/components/matches/match-status-badge"
 import { TeamLogo } from "@/components/matches/team-logo"
+import { SportLine } from "@/components/sport-icon"
 import type { TeamView } from "@/lib/data/types"
 import { formatDayLabel, formatTime } from "@/lib/format"
 import { otherSide, sideName, sideOf } from "@/lib/matches"
@@ -29,9 +30,7 @@ export function TeamRow({ team, now = new Date(), className }: TeamRowProps) {
       <TeamLogo team={team} size="lg" />
       <div className="grid min-w-0 flex-1 overflow-hidden">
         <span className="truncate text-sm font-medium">{team.name}</span>
-        <span className="truncate text-xs text-muted-foreground">
-          {team.league.name}
-        </span>
+        <SportLine sport={team.league.sport} league={{ id: team.league.id, label: team.league.name }} showSport={false} size="xs" className="text-xs text-muted-foreground" />
       </div>
       <div className="shrink-0 text-right text-xs">
         {next && opponent ? (

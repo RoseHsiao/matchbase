@@ -1,15 +1,13 @@
 import Link from "next/link"
 import { cn } from "cn"
 
-import { CategoryBadge } from "@/components/category-badge"
 import { TeamLogo } from "@/components/matches/team-logo"
 import { PlayerAvatar } from "@/components/players/player-avatar"
 import { PlayerFollowButton } from "@/components/players/player-follow-button"
-import { SportLine } from "@/components/sport-icon"
+import { SportHierarchy } from "@/components/sport-icon"
 import { Card, CardContent } from "@/components/ui/card"
 import type { PlayerView } from "@/lib/data/types"
 import { playerDisplayName } from "@/lib/players"
-import { sportCategory } from "@/lib/sports"
 
 type PlayerCardProps = {
   player: PlayerView
@@ -60,10 +58,7 @@ export function PlayerCard({ player, className }: PlayerCardProps) {
             <span className="text-xs text-muted-foreground">Independent</span>
           )}
           {league ? (
-            <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-              <CategoryBadge category={sportCategory(league.sport)} size="sm" />
-              <SportLine sport={league.sport} league={{ id: league.id, label: league.name }} linked size="xs" />
-            </div>
+            <SportHierarchy sport={league.sport} league={{ id: league.id, label: league.name }} linked layout="stacked" size="xs" className="text-xs text-muted-foreground" />
           ) : null}
           <div className="mt-1">
             <PlayerFollowButton playerId={player.id} playerName={displayName} size="sm" />

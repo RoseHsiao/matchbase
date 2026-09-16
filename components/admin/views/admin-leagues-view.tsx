@@ -14,8 +14,7 @@ import { AdminToolbar } from "@/components/admin/admin-toolbar"
 import { SelectField, TextField } from "@/components/admin/form-fields"
 import { HierarchyFilterSelects, useHierarchyFilters } from "@/components/filters/hierarchy-filters"
 import { useEntityEditor } from "@/components/admin/use-entity-editor"
-import { CategoryBadge } from "@/components/category-badge"
-import { SportLine } from "@/components/sport-icon"
+import { CategoryLine, SportLine } from "@/components/sport-icon"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { Button } from "@/components/ui/button"
 import { entityStatusOptions } from "@/lib/admin/status"
@@ -77,7 +76,7 @@ export function AdminLeaguesView() {
     {
       key: "category",
       header: "Category",
-      cell: (row) => <CategoryBadge category={sportCategory(row.sport)} />,
+      cell: (row) => <CategoryLine category={sportCategory(row.sport)} size="sm" />,
       sortValue: (row) => sportCategory(row.sport),
     },
     { key: "sport", header: "Sport / Game", cell: (row) => <SportLine sport={row.sport} />, sortValue: (row) => sportLabel(row.sport) },

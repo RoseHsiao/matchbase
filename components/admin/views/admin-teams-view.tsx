@@ -13,7 +13,7 @@ import { AdminToolbar } from "@/components/admin/admin-toolbar"
 import { SelectField, TextField } from "@/components/admin/form-fields"
 import { HierarchyFilterSelects, useHierarchyFilters } from "@/components/filters/hierarchy-filters"
 import { useEntityEditor } from "@/components/admin/use-entity-editor"
-import { CategoryBadge } from "@/components/category-badge"
+import { CategoryLine, SportLine } from "@/components/sport-icon"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { TeamLogo } from "@/components/matches/team-logo"
 import { Button } from "@/components/ui/button"
@@ -66,8 +66,8 @@ export function AdminTeamsView() {
       ),
       sortValue: (row) => row.name,
     },
-    { key: "category", header: "Category", cell: (row) => { const l = leagueOf(row); return l ? <CategoryBadge category={sportCategory(l.sport)} /> : "—" }, sortValue: (row) => { const l = leagueOf(row); return l ? sportCategory(l.sport) : "" } },
-    { key: "sport", header: "Sport / Game", cell: (row) => { const l = leagueOf(row); return l ? sportLabel(l.sport) : "—" }, sortValue: (row) => { const l = leagueOf(row); return l ? sportLabel(l.sport) : "" } },
+    { key: "category", header: "Category", cell: (row) => { const l = leagueOf(row); return l ? <CategoryLine category={sportCategory(l.sport)} size="sm" /> : "—" }, sortValue: (row) => { const l = leagueOf(row); return l ? sportCategory(l.sport) : "" } },
+    { key: "sport", header: "Sport / Game", cell: (row) => { const l = leagueOf(row); return l ? <SportLine sport={l.sport} /> : "—" }, sortValue: (row) => { const l = leagueOf(row); return l ? sportLabel(l.sport) : "" } },
     { key: "league", header: "League", cell: (row) => leagueOf(row)?.name ?? "—", sortValue: (row) => leagueOf(row)?.name ?? "" },
     { key: "status", header: "Status", cell: (row) => <AdminStatusBadge status={row.status ?? "active"} /> },
     { key: "players", header: "Players", cell: (row) => playerCount(row.id), sortValue: (row) => playerCount(row.id), className: "tabular-nums" },

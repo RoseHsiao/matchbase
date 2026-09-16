@@ -13,7 +13,7 @@ import { AdminToolbar } from "@/components/admin/admin-toolbar"
 import { NumberField, SelectField, TextField } from "@/components/admin/form-fields"
 import { HierarchyFilterSelects, useHierarchyFilters } from "@/components/filters/hierarchy-filters"
 import { useEntityEditor } from "@/components/admin/use-entity-editor"
-import { CategoryBadge } from "@/components/category-badge"
+import { CategoryLine, SportLine } from "@/components/sport-icon"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { PlayerAvatar } from "@/components/players/player-avatar"
 import { Button } from "@/components/ui/button"
@@ -22,7 +22,7 @@ import { newId } from "@/lib/collection-store"
 import type { EntityStatus, Player } from "@/lib/data/types"
 import { playerDisplayName } from "@/lib/players"
 import { ALL } from "@/lib/schedule"
-import { sportCategory, sportLabel } from "@/lib/sports"
+import { sportCategory } from "@/lib/sports"
 
 /** Select value for "no team"; the stored field is null (individual athletes). */
 const NO_TEAM = "none"
@@ -75,8 +75,8 @@ export function AdminPlayersView() {
       sortValue: (row) => playerDisplayName(row),
     },
     { key: "team", header: "Team", cell: (row) => context(row).team?.name ?? <span className="text-muted-foreground">Independent</span>, sortValue: (row) => context(row).team?.name ?? "" },
-    { key: "category", header: "Category", cell: (row) => { const l = context(row).league; return l ? <CategoryBadge category={sportCategory(l.sport)} /> : "—" } },
-    { key: "sport", header: "Sport / Game", cell: (row) => { const l = context(row).league; return l ? sportLabel(l.sport) : "—" } },
+    { key: "category", header: "Category", cell: (row) => { const l = context(row).league; return l ? <CategoryLine category={sportCategory(l.sport)} size="sm" /> : "—" } },
+    { key: "sport", header: "Sport / Game", cell: (row) => { const l = context(row).league; return l ? <SportLine sport={l.sport} /> : "—" } },
     { key: "league", header: "League", cell: (row) => context(row).league?.name ?? "—", sortValue: (row) => context(row).league?.name ?? "" },
     { key: "status", header: "Status", cell: (row) => <AdminStatusBadge status={row.status ?? "active"} /> },
   ]

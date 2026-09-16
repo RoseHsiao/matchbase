@@ -12,7 +12,7 @@ import { AdminToolbar } from "@/components/admin/admin-toolbar"
 import { SelectField, TextField } from "@/components/admin/form-fields"
 import { HierarchyFilterSelects, useHierarchyFilters } from "@/components/filters/hierarchy-filters"
 import { useEntityEditor } from "@/components/admin/use-entity-editor"
-import { CategoryBadge } from "@/components/category-badge"
+import { CategoryLine, SportLine } from "@/components/sport-icon"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { dataSourceStatusOptions } from "@/lib/admin/status"
 import { runDataSourceSync } from "@/lib/data/admin-actions"
@@ -86,8 +86,8 @@ export function AdminDataSourcesView() {
 
   const columns: AdminColumn<DataSource>[] = [
     { key: "name", header: "Source", cell: (row) => <span className="font-medium">{row.name}</span>, sortValue: (row) => row.name },
-    { key: "category", header: "Category", cell: (row) => (row.sport ? <CategoryBadge category={sportCategory(row.sport)} /> : <span className="text-muted-foreground">All</span>) },
-    { key: "sport", header: "Sport / Game", cell: (row) => (row.sport ? sportLabel(row.sport) : <span className="text-muted-foreground">Cross-discipline</span>), sortValue: (row) => (row.sport ? sportLabel(row.sport) : "") },
+    { key: "category", header: "Category", cell: (row) => (row.sport ? <CategoryLine category={sportCategory(row.sport)} size="sm" /> : <span className="text-muted-foreground">All</span>) },
+    { key: "sport", header: "Sport / Game", cell: (row) => (row.sport ? <SportLine sport={row.sport} /> : <span className="text-muted-foreground">Cross-discipline</span>), sortValue: (row) => (row.sport ? sportLabel(row.sport) : "") },
     {
       key: "provider",
       header: "Provider",

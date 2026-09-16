@@ -14,14 +14,14 @@ export async function WatchlistPreview({
   return (
     <SectionCard
       title="Watchlist"
-      description="Matches you've saved to watch"
+      description="Saved matches and their reminders"
       href="/watchlist"
+      actionLabel="Manage"
     >
       <WatchlistMatches
         matches={matches}
         now={now.toISOString()}
         limit={limit}
-        compact
       />
     </SectionCard>
   )

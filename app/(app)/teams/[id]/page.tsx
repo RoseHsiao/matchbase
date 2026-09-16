@@ -17,7 +17,8 @@ import {
   getTeamPlayers,
   getTeamResults,
 } from "@/lib/data/queries";
-import { categoryLabel, sportCategory, sportLabel } from "@/lib/sports";
+import { CategoryLine, SportHierarchy, SportLine } from "@/components/sport-icon";
+import { sportCategory, sportLabel } from "@/lib/sports";
 
 type TeamPageProps = {
   params: Promise<{ id: string }>;
@@ -65,7 +66,13 @@ export default async function TeamPage({ params }: TeamPageProps) {
           <PageHeader
             className="min-w-0 flex-1"
             title={team.name}
-            description={`${team.code} · ${categoryLabel(sportCategory(team.league.sport))} · ${sportLabel(team.league.sport)} · ${team.league.name}`}
+            description={
+              <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <span className="font-medium text-foreground">{team.code}</span>
+                <span aria-hidden>·</span>
+                <SportHierarchy sport={team.league.sport} league={{ id: team.league.id, label: team.league.name }} linked />
+              </span>
+            }
             actions={
               <TeamFollowButton
                 teamId={team.id}
@@ -82,8 +89,8 @@ export default async function TeamPage({ params }: TeamPageProps) {
         <DetailList
           items={[
             { label: "Abbreviation", value: team.code },
-            { label: "Category", value: categoryLabel(sportCategory(team.league.sport)) },
-            { label: "Sport / Game", value: sportLabel(team.league.sport) },
+            { label: "Category", value: <CategoryLine category={sportCategory(team.league.sport)} size="sm" className="text-foreground" /> },
+            { label: "Sport / Game", value: <SportLine sport={team.league.sport} /> },
             {
               label: "League",
               value: (

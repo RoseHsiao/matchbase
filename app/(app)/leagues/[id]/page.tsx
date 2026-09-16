@@ -4,12 +4,11 @@ import { notFound } from "next/navigation";
 import { ArrowLeftIcon, UsersIcon } from "lucide-react";
 
 import { AdminStatusBadge } from "@/components/admin/admin-status-badge";
-import { CategoryBadge } from "@/components/category-badge";
 import { DetailList } from "@/components/detail-list";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { SectionCard } from "@/components/layout/section-card";
-import { SportIcon } from "@/components/sport-icon";
+import { CategoryLine, SportHierarchy, SportLine } from "@/components/sport-icon";
 import { MatchList } from "@/components/matches/match-list";
 import { TeamRow } from "@/components/teams/team-row";
 import { buttonVariants } from "@/components/ui/button";
@@ -68,22 +67,22 @@ export default async function LeaguePage({ params }: LeaguePageProps) {
         </Link>
         <PageHeader
           title={league.name}
-          description={`${league.shortName} · ${categoryLabel(category)} · ${sportLabel(league.sport)} · ${league.region}`}
-          actions={
-            <div className="flex items-center gap-2">
-              <CategoryBadge category={category} />
-              <SportIcon sport={league.sport} size="lg" className="text-muted-foreground" />
-              <AdminStatusBadge status={status} />
-            </div>
+          description={
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <SportHierarchy sport={league.sport} league={{ id: league.id, label: league.shortName }} />
+              <span aria-hidden>·</span>
+              <span>{league.region}</span>
+            </span>
           }
+          actions={<AdminStatusBadge status={status} />}
         />
       </div>
 
       <SectionCard title="League information" contentClassName="px-4">
         <DetailList
           items={[
-            { label: "Category", value: categoryLabel(category) },
-            { label: "Sport / Game", value: sportLabel(league.sport) },
+            { label: "Category", value: <CategoryLine category={category} size="sm" className="text-foreground" /> },
+            { label: "Sport / Game", value: <SportLine sport={league.sport} /> },
             { label: "Abbreviation", value: league.shortName },
             { label: "Region", value: league.region },
             { label: "Current season", value: currentSeason?.name ?? league.season },

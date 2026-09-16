@@ -13,7 +13,7 @@ import { AdminToolbar } from "@/components/admin/admin-toolbar"
 import { DateField, SelectField, TextField } from "@/components/admin/form-fields"
 import { HierarchyFilterSelects, useHierarchyFilters } from "@/components/filters/hierarchy-filters"
 import { useEntityEditor } from "@/components/admin/use-entity-editor"
-import { CategoryBadge } from "@/components/category-badge"
+import { CategoryLine, SportLine } from "@/components/sport-icon"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { Button } from "@/components/ui/button"
 import { seasonStatusOptions } from "@/lib/admin/status"
@@ -50,8 +50,8 @@ export function AdminSeasonsView() {
   const columns: AdminColumn<Season>[] = [
     { key: "name", header: "Season", cell: (row) => <span className="font-medium">{row.name}</span>, sortValue: (row) => row.name },
     { key: "league", header: "League", cell: (row) => leagueOf(row)?.name ?? "—", sortValue: (row) => leagueOf(row)?.name ?? "" },
-    { key: "sport", header: "Sport / Game", cell: (row) => { const l = leagueOf(row); return l ? sportLabel(l.sport) : "—" } },
-    { key: "category", header: "Category", cell: (row) => { const l = leagueOf(row); return l ? <CategoryBadge category={sportCategory(l.sport)} /> : "—" } },
+    { key: "category", header: "Category", cell: (row) => { const l = leagueOf(row); return l ? <CategoryLine category={sportCategory(l.sport)} size="sm" /> : "—" } },
+    { key: "sport", header: "Sport / Game", cell: (row) => { const l = leagueOf(row); return l ? <SportLine sport={l.sport} /> : "—" } },
     { key: "start", header: "Start", cell: (row) => <time dateTime={row.startsAt}>{formatDate(row.startsAt)}</time>, sortValue: (row) => row.startsAt, className: "whitespace-nowrap" },
     { key: "end", header: "End", cell: (row) => <time dateTime={row.endsAt}>{formatDate(row.endsAt)}</time>, sortValue: (row) => row.endsAt, className: "whitespace-nowrap" },
     { key: "status", header: "Status", cell: (row) => <AdminStatusBadge status={row.status} /> },
