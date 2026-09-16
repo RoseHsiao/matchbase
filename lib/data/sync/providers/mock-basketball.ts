@@ -151,6 +151,8 @@ export const mockBasketballProvider: Provider<MockBasketballPayload> = {
   key: "mock-basketball",
   name: "Mock Basketball Feed",
   sport: "basketball",
+  kind: "mock",
+  checkConfiguration: () => ({ configured: true }),
 
   async fetch(context: SyncContext) {
     const all = gamesRelativeTo(context.now)

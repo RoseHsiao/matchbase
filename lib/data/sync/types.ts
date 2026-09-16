@@ -150,7 +150,8 @@ export type NormalizedSnapshot = {
 /**
  * Thrown by an adapter's `fetch` when it cannot even attempt a request:
  * missing credentials, rejected key, bad configuration. The sync service
- * records it as a FAILED run with the message.
+ * records it as a FAILED run with the message. The message must never
+ * contain the credential itself.
  */
 export class ProviderConfigurationError extends Error {
   constructor(message: string) {
@@ -158,6 +159,28 @@ export class ProviderConfigurationError extends Error {
     this.name = "ProviderConfigurationError"
   }
 }
+
+/** Whether an adapter has what it needs to run, checked without any request. */
+export type ProviderConfigurationStatus = { configured: true } | { configured: false; error: string }
+
+/**
+ * Where a run failed or what went wrong, for the sync log and the admin UI.
+ * A `configuration` failure means the operator must act (set a key); the
+ * transient kinds mean try again later; `malformed` means the provider's
+ * response did not match the adapter's expectations.
+ */
+export type SyncErrorKind =
+  | "configuration"
+  | "auth"
+  | "rate-limit"
+  | "server"
+  | "client"
+  | "timeout"
+  | "network"
+  | "malformed"
+  | "no-provider"
+  | "records"
+  | "unknown"
 
 // ---------------------------------------------------------------------------
 // Provider adapter
@@ -184,6 +207,10 @@ export type Provider<Raw = unknown> = {
   name: string
   /** MatchBase sport code this adapter produces data for. */
   sport: string
+  /** "live" talks to an external service; "mock" serves deterministic fixtures. Never confuse the two in the UI. */
+  kind: "live" | "mock"
+  /** Cheap readiness check (credentials present, options parse). No request is made. */
+  checkConfiguration?(): ProviderConfigurationStatus
   fetch(context: SyncContext): Promise<Raw>
   normalize(raw: Raw, context: SyncContext): NormalizedSnapshot
 }
@@ -210,4 +237,6 @@ export type SyncResult = {
   syncLogId: string | null
   /** Fatal error message when the run could not complete. */
   error?: string
+  /** Classification of `error`, so callers can tell "set the key" from "try later". */
+  errorKind?: SyncErrorKind
 }

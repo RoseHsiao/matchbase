@@ -12,7 +12,7 @@ import {
   type SyncContext,
   type SyncIssue,
 } from "@/lib/data/sync/types"
-import { HttpError, RateLimiter, fetchJson } from "@/lib/data/sync/utils/http"
+import { HttpError, RateLimiter, fetchJson, redactSecrets } from "@/lib/data/sync/utils/http"
 
 /**
  * Sportradar Tennis API v3 adapter (https://developer.sportradar.com/tennis).
@@ -28,13 +28,14 @@ import { HttpError, RateLimiter, fetchJson } from "@/lib/data/sync/utils/http"
  * - competitor / doubles competitor.players[] -> Player (no team)
  * - sport_event.venue -> Venue
  * - sport_event -> NormalizedIndividualMatch with two sides (home, away)
- *   holding one player (singles) or two players (doubles) each. These are
- *   not storable in the current Match row; the sync service reports them.
+ *   holding one player (singles) or two players (doubles) each; the sync
+ *   service stores each as MatchParticipant rows on side A / side B.
  *
  * Requests: x-api-key header, JSON, paginated with start/limit and the
  * X-Max-Results header, rate-limited to one request per configured interval,
- * retried on 429/5xx by the shared utility. HTTP 401/403 is a configuration
- * error, not a retry.
+ * retried on 429/502/503/504 and timeouts by the shared utility. HTTP 401/403
+ * is a configuration error, not a retry. The API key never appears in a URL,
+ * a log line, or an error message (messages are redacted as a safeguard).
  */
 
 // ---------------------------------------------------------------------------
@@ -76,6 +77,24 @@ export function readSportradarTennisConfig(env: Record<string, string | undefine
     competitionIds: list(env.SPORTRADAR_TENNIS_COMPETITIONS),
     requestIntervalMs: Number(env.SPORTRADAR_TENNIS_REQUEST_INTERVAL_MS) || 1100,
   }
+}
+
+/**
+ * Validates a configuration without making a request. Every problem is
+ * reported in one message so the operator fixes them together. The key's
+ * value is never included.
+ */
+export function validateSportradarTennisConfig(config: SportradarTennisConfig): { configured: true } | { configured: false; error: string } {
+  const problems: string[] = []
+  if (!config.apiKey) problems.push("SPORTRADAR_API_KEY is not set")
+  if (!["trial", "production"].includes(config.accessLevel)) problems.push(`SPORTRADAR_TENNIS_ACCESS_LEVEL must be "trial" or "production" (got "${config.accessLevel}")`)
+  if (!/^https?:\/\//.test(config.baseUrl)) problems.push("SPORTRADAR_TENNIS_BASE_URL must be an http(s) URL")
+  if (!/^[a-z]{2}(_[a-z]{2})?$/i.test(config.language)) problems.push(`SPORTRADAR_TENNIS_LANGUAGE "${config.language}" is not a language code`)
+  if (config.year !== undefined && (config.year < 1968 || config.year > 2100)) problems.push(`SPORTRADAR_TENNIS_SEASON_YEAR ${config.year} is out of range`)
+  if (!config.competitionIds && config.levels.length === 0) problems.push("SPORTRADAR_TENNIS_LEVELS or SPORTRADAR_TENNIS_COMPETITIONS must select something")
+  if (!(config.requestIntervalMs >= 0)) problems.push("SPORTRADAR_TENNIS_REQUEST_INTERVAL_MS must be a non-negative number")
+  if (problems.length === 0) return { configured: true }
+  return { configured: false, error: `${problems.join("; ")}. The Sportradar tennis provider cannot run.` }
 }
 
 // ---------------------------------------------------------------------------
@@ -160,13 +179,19 @@ function defaultRequest(limiter: RateLimiter): JsonRequest {
 }
 
 const PAGE_LIMIT = 200
+/** Hard stop for pagination, so a broken X-Max-Results header can never loop forever. */
+export const MAX_PAGES_PER_SEASON = 50
 
 // ---------------------------------------------------------------------------
 // Normalization helpers
 // ---------------------------------------------------------------------------
 
-/** Provider status -> MatchBase. Anything else is `unknown` and reported. */
-const STATUS_MAP: Record<string, NormalizedMatchStatus> = {
+/**
+ * Provider status -> MatchBase. Anything else is `unknown`: the sync keeps
+ * the stored status (or UPCOMING for a new row) and records a warning.
+ * Documented in docs/live-data-integration.md; every entry is covered by a test.
+ */
+export const STATUS_MAP: Record<string, NormalizedMatchStatus> = {
   not_started: "upcoming",
   match_about_to_start: "upcoming",
   delayed: "upcoming",
@@ -175,7 +200,16 @@ const STATUS_MAP: Record<string, NormalizedMatchStatus> = {
   interrupted: "live",
   ended: "finished",
   closed: "finished",
-  // cancelled, abandoned, suspended, postponed: deliberately unmapped (never "finished").
+  // cancelled, abandoned, suspended, postponed, retired, walkover: deliberately unmapped.
+  // Some of these end a match, but without a score model for them a safe non-finished
+  // state plus a warning is preferable to claiming a result.
+}
+
+/** Provider instants carry an offset (e.g. "+00:00" or "+02:00"); store the absolute instant in UTC. */
+export function toInstant(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const ms = Date.parse(value)
+  return Number.isNaN(ms) ? undefined : new Date(ms).toISOString()
 }
 
 const TYPE_CODE: Record<string, string> = { singles: "S", doubles: "D", mixed_doubles: "XD" }
@@ -230,23 +264,34 @@ export function createSportradarTennisProvider(options: SportradarTennisOptions 
     key: "sportradar-tennis",
     name: "Sportradar Tennis",
     sport: "tennis",
+    kind: "live",
+
+    checkConfiguration() {
+      return validateSportradarTennisConfig(readConfig())
+    },
 
     async fetch(context: SyncContext): Promise<SportradarTennisPayload> {
       const config = readConfig()
-      if (!config.apiKey) {
-        throw new ProviderConfigurationError("SPORTRADAR_API_KEY is not set; the Sportradar tennis provider cannot authenticate.")
-      }
+      const readiness = validateSportradarTennisConfig(config)
+      if (!readiness.configured) throw new ProviderConfigurationError(readiness.error)
+      const apiKey = config.apiKey as string
       limiter ??= new RateLimiter(config.requestIntervalMs)
       const request = options.request ?? defaultRequest(limiter)
-      const headers = { accept: "application/json", "x-api-key": config.apiKey }
+      const headers = { accept: "application/json", "x-api-key": apiKey }
       const root = `${config.baseUrl}/${config.accessLevel}/v3/${config.language}`
       const get = async <T>(path: string): Promise<{ body: T; headers: Headers }> => {
         try {
-          return await request<T>(`${root}/${path}`, { headers, signal: context.signal })
+          const response = await request<T>(`${root}/${path}`, { headers, signal: context.signal })
+          if (response.body === null || typeof response.body !== "object") {
+            throw new Error(`Sportradar returned a non-object body for ${path}.`)
+          }
+          return response
         } catch (error) {
           if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
             throw new ProviderConfigurationError(`Sportradar rejected the API key (HTTP ${error.status}). Check SPORTRADAR_API_KEY and SPORTRADAR_TENNIS_ACCESS_LEVEL.`)
           }
+          // Defence in depth: whatever the transport put in the message, the key never leaves this function.
+          if (error instanceof Error && error.message.includes(apiKey)) error.message = redactSecrets(error.message, [apiKey])
           throw error
         }
       }
@@ -267,16 +312,19 @@ export function createSportradarTennisProvider(options: SportradarTennisOptions 
           if (season.disabled || String(season.year) !== year) continue
           seasons.push({ ...season, competition_id: season.competition_id ?? competition.id })
           let start = 0
-          for (;;) {
+          for (let pageNumber = 0; pageNumber < MAX_PAGES_PER_SEASON; pageNumber++) {
             const page = await get<{ summaries?: RawSummary[] }>(`seasons/${season.id}/summaries.json?start=${start}&limit=${PAGE_LIMIT}`)
-            const items = page.body.summaries ?? []
+            const items = Array.isArray(page.body.summaries) ? page.body.summaries : []
             summaries.push(...items)
-            // The documented total lives in X-Max-Results; a page may be shorter than
-            // the requested limit, so only fall back to page size when the header is absent.
-            const max = Number(page.headers.get("x-max-results") ?? "")
             start += items.length
+            // An empty page always ends the season, whatever any header claims.
             if (items.length === 0) break
-            if (Number.isFinite(max) && max > 0) {
+            // The documented total lives in X-Max-Results. A page may be shorter than the
+            // requested limit, so the header decides when present and well-formed; only
+            // without it does a short page mean "last page".
+            const header = page.headers.get("x-max-results")
+            const max = header !== null && /^\d+$/.test(header.trim()) ? Number(header) : undefined
+            if (max !== undefined) {
               if (start >= max) break
             } else if (items.length < PAGE_LIMIT) break
           }
@@ -308,7 +356,11 @@ export function createSportradarTennisProvider(options: SportradarTennisOptions 
       const individualMatches: NormalizedIndividualMatch[] = []
 
       for (const summary of raw.summaries) {
-        const event = summary.sport_event
+        const event = summary?.sport_event
+        if (!event || typeof event.id !== "string") {
+          issues.push({ level: "error", entity: "match", message: "Summary has no sport_event id." })
+          continue
+        }
         const competitionId = event.sport_event_context?.competition?.id
         const seasonId = event.sport_event_context?.season?.id
         if (!competitionId || !seasonId) {
@@ -357,12 +409,17 @@ export function createSportradarTennisProvider(options: SportradarTennisOptions 
         if (status === "unknown") {
           issues.push({ level: "warning", entity: "match", externalId: event.id, message: `Unmapped provider status "${rawStatus || "(empty)"}"; existing status kept or defaulted to upcoming.` })
         }
+        const startsAt = toInstant(event.start_time)
+        if (!startsAt) {
+          issues.push({ level: "error", entity: "match", externalId: event.id, message: `Invalid start time "${event.start_time ?? "(missing)"}".` })
+          continue
+        }
         individualMatches.push({
           externalId: event.id,
           leagueExternalId: competitionId,
           seasonExternalId: seasonId,
           venueExternalId: event.venue?.id,
-          startsAt: event.start_time,
+          startsAt,
           status,
           rawStatus,
           stage: stageLabel(event.sport_event_context?.round),

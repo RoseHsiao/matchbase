@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test \"tests/**/*.test.ts\""
+    "test": "tsx --test \"tests/**/*.test.ts\"",
+    "sync:manual": "tsx scripts/sync-data-source.mts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

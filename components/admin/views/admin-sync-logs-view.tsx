@@ -45,12 +45,25 @@ export function AdminSyncLogsView() {
     { key: "records", header: "Records", cell: (row) => `${row.records} ${row.records === 1 ? "record" : "records"}`, sortValue: (row) => row.records, className: "tabular-nums whitespace-nowrap" },
     { key: "status", header: "Status", cell: (row) => <AdminStatusBadge status={row.status} />, sortValue: (row) => row.status },
     { key: "duration", header: "Duration", cell: (row) => formatDuration(row.durationMs), sortValue: (row) => row.durationMs, className: "tabular-nums whitespace-nowrap" },
+    {
+      key: "detail",
+      header: "Details",
+      cell: (row) =>
+        row.error ? (
+          <span className="block max-w-72 truncate text-xs text-muted-foreground" title={row.error}>
+            {row.error.split("\n")[0]}
+            {row.error.includes("\n") ? ` (+${row.error.split("\n").length - 1} more)` : ""}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
   ]
 
   return (
     <AdminPage
       title="Sync Logs"
-      description="History of synchronisation runs per data source. Read-only; real runs will append here once integrations exist."
+      description="History of synchronisation runs per data source. Every Sync now appends a run; Details shows the failure reason or the issue list, never credentials."
     >
       <AdminToolbar activeCount={activeCount} onReset={reset}>
         <FilterSelect id="admin-logs-source" label="Data source" allLabel="All sources" value={source} onChange={setSource} options={dataSources.map((s) => ({ value: s.id, label: s.name }))} />

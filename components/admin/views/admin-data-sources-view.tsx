@@ -16,6 +16,7 @@ import { CategoryBadge } from "@/components/category-badge"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { dataSourceStatusOptions } from "@/lib/admin/status"
 import { runDataSourceSync } from "@/lib/data/admin-actions"
+import { Badge } from "@/components/ui/badge"
 import type { DataSource, DataSourceStatus, Sport } from "@/lib/data/types"
 import { formatRelativeTime } from "@/lib/format"
 import { ALL } from "@/lib/schedule"
@@ -23,6 +24,34 @@ import { sportCategory, sportLabel, sports } from "@/lib/sports"
 
 const NONE = "none"
 type Draft = { name: string; sport: Sport | typeof NONE; status: DataSourceStatus }
+
+/**
+ * Which adapter serves the source and whether it can run. Three states are
+ * kept visibly apart: no provider (placeholder), provider not configured
+ * (e.g. API key missing), provider ready. "Ready" says nothing about whether
+ * a sync has ever succeeded; that is the Status and Last synced columns.
+ */
+function ProviderCell({ source }: { source: DataSource }) {
+  const provider = source.provider
+  if (!provider) return <span className="text-muted-foreground">None (placeholder)</span>
+  return (
+    <span className="grid gap-0.5 leading-tight">
+      <span className="flex items-center gap-1.5">
+        <span className="font-medium">{provider.name}</span>
+        <Badge variant={provider.kind === "mock" ? "secondary" : "outline"} className="h-4 px-1.5 text-[10px]">
+          {provider.kind === "mock" ? "Mock" : "Live"}
+        </Badge>
+      </span>
+      <span className={provider.configured ? "text-xs text-muted-foreground" : "text-xs text-destructive"} title={provider.configurationError}>
+        {provider.configured
+          ? provider.kind === "mock"
+            ? "Deterministic fixtures, never external data"
+            : "Configured · credentials present, not yet verified against the live API"
+          : `Not configured · ${provider.configurationError?.split(";")[0].replace(/\. The .*$/, "") ?? "see configuration"}`}
+      </span>
+    </span>
+  )
+}
 
 export function AdminDataSourcesView() {
   const now = useAdminNow()
@@ -59,6 +88,12 @@ export function AdminDataSourcesView() {
     { key: "name", header: "Source", cell: (row) => <span className="font-medium">{row.name}</span>, sortValue: (row) => row.name },
     { key: "category", header: "Category", cell: (row) => (row.sport ? <CategoryBadge category={sportCategory(row.sport)} /> : <span className="text-muted-foreground">All</span>) },
     { key: "sport", header: "Sport / Game", cell: (row) => (row.sport ? sportLabel(row.sport) : <span className="text-muted-foreground">Cross-discipline</span>), sortValue: (row) => (row.sport ? sportLabel(row.sport) : "") },
+    {
+      key: "provider",
+      header: "Provider",
+      cell: (row) => <ProviderCell source={row} />,
+      sortValue: (row) => (row.provider ? `${row.provider.kind}-${row.provider.name}` : "zzz"),
+    },
     { key: "status", header: "Status", cell: (row) => <AdminStatusBadge status={row.status} />, sortValue: (row) => row.status },
     { key: "synced", header: "Last synced", cell: (row) => (row.lastSyncedAt ? <time dateTime={row.lastSyncedAt}>{formatRelativeTime(row.lastSyncedAt, now)}</time> : "Never"), sortValue: (row) => row.lastSyncedAt ?? "", className: "whitespace-nowrap" },
   ]
@@ -66,7 +101,7 @@ export function AdminDataSourcesView() {
   return (
     <AdminPage
       title="Data Sources"
-      description="External feeds and manual imports that will populate the catalogue. Connections are placeholders until real integrations exist."
+      description="Feeds that populate the catalogue. A source is synced only through its bound provider: mock providers serve deterministic fixtures, live providers call the external API from the server with credentials from the environment. Sources without a provider are placeholders."
     >
       <AdminToolbar activeCount={hierarchy.activeCount} onReset={hierarchy.reset}>
         <HierarchyFilterSelects idPrefix="admin-sources" filters={filters} update={update} sportOptions={hierarchy.sportOptions} leagueOptions={hierarchy.leagueOptions} showLeague={false} />
@@ -101,6 +136,7 @@ export function AdminDataSourcesView() {
             sport: editor.draft.sport === NONE ? undefined : editor.draft.sport,
             status: editor.draft.status,
             lastSyncedAt: existing?.lastSyncedAt,
+            provider: existing?.provider,
           })
           editor.close()
         }}

@@ -1,6 +1,6 @@
 import { mockBasketballProvider } from "@/lib/data/sync/providers/mock-basketball"
 import { sportradarTennisProvider } from "@/lib/data/sync/providers/sportradar-tennis"
-import type { Provider } from "@/lib/data/sync/types"
+import type { Provider, ProviderConfigurationStatus } from "@/lib/data/sync/types"
 
 /**
  * Every provider adapter the application knows, keyed by `Provider.key`.
@@ -26,4 +26,25 @@ export const dataSourceProviders: Record<string, string> = {
 export function resolveProvider(dataSourceId: string): Provider<never> | undefined {
   const key = dataSourceProviders[dataSourceId]
   return key ? providers[key] : undefined
+}
+
+/** What the admin UI shows about a DataSource's binding: which adapter, mock or live, and whether it is configured. */
+export type DataSourceProviderInfo = {
+  key: string
+  name: string
+  kind: Provider["kind"]
+  sport: string
+  configuration: ProviderConfigurationStatus
+}
+
+export function describeDataSourceProvider(dataSourceId: string): DataSourceProviderInfo | undefined {
+  const provider = resolveProvider(dataSourceId)
+  if (!provider) return undefined
+  return {
+    key: provider.key,
+    name: provider.name,
+    kind: provider.kind,
+    sport: provider.sport,
+    configuration: provider.checkConfiguration ? provider.checkConfiguration() : { configured: true },
+  }
 }

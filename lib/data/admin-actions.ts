@@ -76,7 +76,10 @@ export async function runDataSourceSync(dataSourceId: unknown): Promise<AdminAct
   try {
     const result = await syncDataSource(dataSourceId)
     refresh()
-    if (result.status === "FAILED") return { ok: false, error: `Sync failed: ${result.error ?? "see the sync log."}` }
+    if (result.status === "FAILED") {
+      const prefix = result.errorKind === "configuration" ? "Sync not run" : "Sync failed"
+      return { ok: false, error: `${prefix}: ${result.error ?? "see the sync log."}` }
+    }
     const failed = Object.values(result.counts).reduce((sum, c) => sum + c.failed, 0)
     const detail = result.status === "PARTIAL" ? ` (${failed} failed, see the sync log)` : ""
     return { ok: true, message: `Sync ${result.status.toLowerCase()}: ${result.records} records in ${result.durationMs} ms${detail}.` }

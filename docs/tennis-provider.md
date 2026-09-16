@@ -70,6 +70,10 @@ The normalizer keeps every participant: singles produce one player per side, dou
 
 Persistence: each side becomes `MatchParticipant` rows (`side` A or B, `order` 1..n, `playerId` set, `teamId` null) through the generic sync path (`lib/data/sync/participants.ts` → `syncRepository.upsertMatch`); the winner's aggregate sets go to `Match.sideAScore` / `sideBScore`. Nothing tennis-specific exists in the service or repository. Match Detail renders singles as "Alcaraz vs Sinner" and doubles as "Player A / Player B vs Player C / Player D", with no Home/Away label because `tennis` has `homeAway: false`. A run with a valid key is therefore expected to end SUCCESS (or PARTIAL only for genuinely bad records).
 
+## Pagination and limits (Phase 7)
+
+Summaries are paged with `start`/`limit=200`. An empty page ends a season; a well-formed `X-Max-Results` decides otherwise; without it a short page is the last; `MAX_PAGES_PER_SEASON = 50` caps every season. Provider instants (`start_time` with offset) are normalized to UTC ISO strings; an unparseable time fails that record. Scores are the aggregate sets-won pair (`home_score`/`away_score`); per-set `period_scores` are not stored (no period model, by decision).
+
 ## Status mapping
 
 | Sportradar `status` | Normalized | Stored |
@@ -95,6 +99,10 @@ Unchanged from Phase 4: `(dataSourceId, externalId)` on League, Team, Player, Ve
 ## Time handling
 
 `sport_event.start_time` is an ISO 8601 instant with offset; it is passed through unchanged and would be stored as `timestamptz`. Season bounds are calendar dates. No local-time substitution anywhere; the project's presentation-timezone debt is unchanged.
+
+## Readiness and smoke test (Phase 7)
+
+`validateSportradarTennisConfig` reports every configuration problem in one message; Admin → Data Sources shows "Live · Not configured · SPORTRADAR_API_KEY is not set" until a key exists, and "Live · Configured · credentials present, not yet verified against the live API" afterwards. A Sync now without a key records a FAILED "Configuration error" run and makes no request. With a key, follow the manual smoke test in `docs/live-data-integration.md` §16 (`npm run sync:manual -- ds-tennis-sportradar`). Retry policy, error classification, and the end-to-end fixture pipeline test (`tests/db/sync-pipeline.test.ts`) are described there.
 
 ## Known limitations
 

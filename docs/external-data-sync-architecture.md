@@ -58,7 +58,7 @@ The seed adds two bound DataSources: `ds-mock-basketball` ("Mock Basketball Feed
 1. Load the DataSource. Missing → FAILED result, no log (the log needs the FK).
 2. Create a `SyncLog` with status `RUNNING`, entity `"all"`, `startedAt = now`.
 3. Resolve the adapter; refuse if none is bound or if the adapter's sport differs from the source's sport scope → FAILED.
-4. `fetch` then `normalize`. Any throw → FAILED with the message.
+4. `checkConfiguration` (if the adapter has one) → FAILED "Configuration error: …" without a request. Then `fetch` and `normalize`; a throw in either → FAILED with a classified message (`SyncResult.errorKind`: configuration, rate-limit, server, timeout, network, malformed, …). Record-level errors reported by `normalize` count as failed records.
 5. Upsert in dependency order, each record independently, collecting issues:
    leagues (sport must exist in the catalogue; sports are never synced) → seasons → venues → teams → players → matches.
 6. Outcome: `SUCCESS` if no record failed; `PARTIAL` if some failed and some were written; `FAILED` if nothing was written.
@@ -98,7 +98,9 @@ Adapters hand over ISO 8601 instants; the service parses them with `new Date()` 
 
 ## Errors, retries, rate limits
 
-- `utils/http.ts` provides `fetchJson` (timeout via `AbortSignal.timeout`, bounded exponential-backoff retries, `Retry-After` support, an `onResponse` hook for pagination headers), `withRetry`, and a `RateLimiter` enforcing a minimum interval between requests. Adapters compose them; the mock adapter pages its fixtures through the limiter to exercise the path, the tennis adapter pages real responses with `X-Max-Results`.
+Since Phase 7 the pipeline lives in `lib/data/sync/sync-core.ts` (`runSync`, injected repository and provider resolver) with `sync-service.ts` as the server-only binding, and the repository in `lib/data/repositories/sync-ops.ts` (`createSyncRepository(client)`) with `sync-repository.ts` as its binding; the database tests run the real pipeline inside rolled-back transactions. Error classification, the retry policy table, and the manual smoke test are documented in `docs/live-data-integration.md`.
+
+- `utils/http.ts` provides `fetchJson` (timeout via `AbortSignal.timeout`, bounded exponential-backoff retries for 429/502/503/504/timeouts/connection failures only, `Retry-After` in seconds or HTTP-date form capped at 30 s, malformed-body detection, an `onResponse` hook for pagination headers, injectable `fetch` and `sleep`), `withRetry`, `classifyError`, `redactUrl`/`redactSecrets`, and a `RateLimiter` enforcing a minimum interval between requests. Adapters compose them; the mock adapter pages its fixtures through the limiter to exercise the path, the tennis adapter pages real responses with `X-Max-Results` under a 50-page cap.
 - Configuration problems (missing or rejected credentials) are thrown as `ProviderConfigurationError` from `fetch`; the run is FAILED with that message and no request is retried.
 - Fetch and normalize errors abort the run as FAILED. Record-level errors (missing parent, invalid date, same team on both sides, database constraint) fail that record only.
 - No job queue, cron, or worker exists. `syncDataSource` is a plain server function callable from a Server Action today and from a scheduler later.

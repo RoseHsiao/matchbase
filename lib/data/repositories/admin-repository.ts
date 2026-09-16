@@ -2,6 +2,7 @@ import "server-only"
 
 import { db } from "@/lib/data/db"
 import { validateParticipants } from "@/lib/data/match-participants"
+import { describeDataSourceProvider } from "@/lib/data/sync/providers/registry"
 import { adminActivity } from "@/lib/data/mock"
 import {
   entityStatus,
@@ -168,7 +169,7 @@ function toVenue(row: { id: string; name: string; city: string | null; country: 
   return { id: row.id, name: row.name, city: row.city ?? "", country: row.country ?? "", capacity: row.capacity ?? undefined, status: entityStatus[row.status] }
 }
 
-function toSyncLog(row: { id: string; dataSourceId: string; entity: string; records: number; status: DbSyncStatus; durationMs: number | null; startedAt: Date }): SyncLog {
+function toSyncLog(row: { id: string; dataSourceId: string; entity: string; records: number; status: DbSyncStatus; durationMs: number | null; startedAt: Date; error: string | null }): SyncLog {
   return {
     id: row.id,
     dataSourceId: row.dataSourceId,
@@ -177,6 +178,7 @@ function toSyncLog(row: { id: string; dataSourceId: string; entity: string; reco
     status: fromDbSyncStatus[row.status],
     durationMs: row.durationMs ?? 0,
     at: row.startedAt.toISOString(),
+    error: row.error ?? undefined,
   }
 }
 
@@ -212,15 +214,25 @@ export const adminRepository = {
       players: players.map(toPlayer),
       matches: matches.map(toMatch),
       venues: venues.map(toVenue),
-      dataSources: dataSources.map(
-        (row): DataSource => ({
+      dataSources: dataSources.map((row): DataSource => {
+        const binding = describeDataSourceProvider(row.id)
+        return {
           id: row.id,
           name: row.name,
           sport: row.sportId === null ? undefined : toSport(row.sportId),
           status: deriveDataSourceStatus(row.status, row.syncLogs[0]?.status),
           lastSyncedAt: row.lastSyncedAt?.toISOString(),
-        })
-      ),
+          provider: binding
+            ? {
+                key: binding.key,
+                name: binding.name,
+                kind: binding.kind,
+                configured: binding.configuration.configured,
+                configurationError: binding.configuration.configured ? undefined : binding.configuration.error,
+              }
+            : undefined,
+        }
+      }),
       syncLogs: syncLogs.map(toSyncLog),
       // Audit logging is deferred (decisions §16); the landing page keeps its demo feed.
       activity: [...adminActivity],

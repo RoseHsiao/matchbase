@@ -120,6 +120,17 @@ export type Venue = {
 
 export type DataSourceStatus = "connected" | "disconnected" | "attention"
 
+/** The adapter bound to a data source and whether it can run. Absent when nothing is bound. */
+export type DataSourceProvider = {
+  key: string
+  name: string
+  /** "live" reaches an external service; "mock" serves deterministic fixtures. */
+  kind: "live" | "mock"
+  configured: boolean
+  /** Why the provider cannot run, e.g. a missing API key. Never contains a credential. */
+  configurationError?: string
+}
+
 export type DataSource = {
   id: string
   name: string
@@ -127,6 +138,7 @@ export type DataSource = {
   sport?: Sport
   status: DataSourceStatus
   lastSyncedAt?: string
+  provider?: DataSourceProvider
 }
 
 export type SyncStatus = "running" | "success" | "failed" | "partial"
@@ -141,6 +153,8 @@ export type SyncLog = {
   status: SyncStatus
   durationMs: number
   at: string
+  /** Fatal error or the issue list of a run, newline separated. Never contains credentials. */
+  error?: string
 }
 
 export type AdminActivity = {

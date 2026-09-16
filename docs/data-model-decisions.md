@@ -663,6 +663,10 @@ See section 6 (revised) and `docs/match-participant-model-analysis.md` §26. Two
 
 See `docs/watchlist-reminders.md`. Migration `20260915084918_watchlist_reminders` adds `enum WatchlistReminder` and `UserWatchlistMatch.reminder` with default `OFF` (existing rows untouched). Rules (`lib/watchlist/reminder-rules.ts`): only a saved, upcoming match takes a reminder; `off` is always allowed; live and finished matches reject anything else. Server action `setWatchlistReminder`; the layout seeds a client reminder store from `getWatchlistEntries()`. Notification delivery is deferred until authentication and background execution exist. The same phase added the sport visual registry (`lib/sport-icons.tsx`, `components/sport-icon.tsx`): every sport and category has one icon definition, rendered through `SportIcon` / `CategoryIcon` / `SportLine`; esports logos are registry `asset` slots, no brand artwork is bundled.
 
+### Live data integration (Phase 7, implemented 2026-09-16)
+
+See `docs/live-data-integration.md`. No schema change. The sync pipeline was split into an injectable core (`lib/data/sync/sync-core.ts`, `lib/data/repositories/sync-ops.ts`) so the real pipeline runs against PostgreSQL in rolled-back test transactions; `Provider` gained `kind` (mock | live) and `checkConfiguration`; failures are classified; the HTTP layer retries only transient failures and never logs credentials; Admin → Data Sources shows the provider binding and its configuration state; `.env.example` documents the variables; `npm run sync:manual` is the explicit, manual smoke-test path. Live Sportradar responses remain unverified until a key is available.
+
 ### Deferred (unchanged from section 16)
 
 `LeagueTeam`, `TeamMembership`, `MatchPeriod`, `MatchSide` (table), a Category table, `ExternalIdentity`, `AuditLog`, and analytics models are not in the schema.
