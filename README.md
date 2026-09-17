@@ -65,7 +65,7 @@ An **Admin** workspace (`/admin`) manages the catalogue (sports, leagues, season
 - **Persistent user state.** Follows (teams, players, leagues), watchlist and per-match reminder preferences live in PostgreSQL, keyed by a user id that is resolved in exactly one function.
 - **Optimistic client stores with server reconciliation.** Follow and watchlist toggles update instantly, call a Server Action, and roll back with the server's reason on rejection (for example "This match has already started").
 - **Provider-agnostic sync.** One generic pipeline ingests any provider through a `fetch → normalize` adapter contract. A deterministic mock basketball feed and a real Sportradar Tennis adapter both run through it unchanged.
-- **Operational visibility.** Every sync run writes a `SyncLog` (SUCCESS / PARTIAL / FAILED, record counts, duration, classified error). Admin shows whether a source is a placeholder, a mock, or a live provider and whether it is configured.
+- **Operational visibility.** Every sync run writes a `SyncLog` (SUCCESS / PARTIAL / FAILED, record counts, duration, classified error, redacted before it is stored). Admin → Monitoring derives each source's health (healthy, degraded, stale, failing, syncing, never synced, not configured) from that evidence with plain-language reasons, and Sync Logs filters runs by kind, including runs abandoned by a dead process and recovered by the lock.
 - **Light and dark themes, responsive shell** with a sidebar on desktop and a four-item bottom navigation on mobile.
 
 ## Key engineering challenges
@@ -286,7 +286,7 @@ app/
   (app)/                    user-facing routes and the admin workspace
     dashboard/ schedule/ matches/[id] watchlist/ teams/[id] players/[id] leagues/[id] history/
     admin/                  sports, leagues, seasons, teams, players, venues, matches,
-                            data-sources, sync-logs (+ analytics/monitoring/settings placeholders)
+                            data-sources, sync-logs, monitoring (+ analytics/settings placeholders)
 components/
   matches/ schedule/ watchlist/ reminders/ teams/ players/ dashboard/ history/   feature UI
   admin/                    generic data table, form dialogs, per-entity views
@@ -387,7 +387,7 @@ Stated precisely, because the difference matters:
 | **Reminders** | Preference persisted per watchlisted match, validated, shown on four surfaces | **No notification is ever delivered.** No scheduler, worker, push, email or in-app delivery log |
 | **Synchronization** | Manual (Admin "Sync now", `npm run sync:manual`) and scheduled: a daily Vercel Cron Job through `/api/cron/sync` with a database-backed run lock and Admin freshness; see [docs/scheduled-sync.md](docs/scheduled-sync.md) | Daily only, because Vercel Hobby allows nothing more frequent; no live-score streaming, no deletion reconciliation, no `DataSource.provider` column (binding is in code) |
 | **Time zones** | Instants stored in UTC; reminder arithmetic is zone-free | Day boundaries ("today", schedule days) use the server's local time; the decided Asia/Taipei presentation zone is not applied yet |
-| **Admin** | Catalogue CRUD, data sources, sync logs | Analytics, Monitoring and Settings are reserved "Coming soon" placeholders |
+| **Admin** | Catalogue CRUD, data sources, sync logs, and a Monitoring overview of source health | Analytics and Settings are reserved "Coming soon" placeholders; there is no alerting |
 | **Match detail** | Aggregate score per side, live detail string | No per-set / per-map scores, rankings or seeds |
 
 ## Roadmap

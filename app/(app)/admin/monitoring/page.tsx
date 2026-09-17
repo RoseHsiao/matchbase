@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { AdminComingSoonView } from "@/components/admin/views/admin-coming-soon-view";
+import { AdminMonitoringView } from "@/components/admin/views/admin-monitoring-view";
 import { getAdminNavItem } from "@/lib/admin/navigation";
 
 const nav = getAdminNavItem("/admin/monitoring");
@@ -11,5 +11,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <AdminComingSoonView item={nav} />;
+  return <AdminMonitoringView />;
 }

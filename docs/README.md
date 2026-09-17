@@ -11,6 +11,7 @@ Start with the [project README](../README.md) for the overview, then the [case s
 | [demo-data-and-time.md](demo-data-and-time.md) | decision record | implemented (Phase 8.2) | why the fixed seed aged out, the demo clock, anchor resolution, time zone, consistency rules, what is and is not shifted |
 | [providers/thesportsdb.md](providers/thesportsdb.md) | provider spec + verification record | implemented (Phase 8.1), **live-verified** | free-tier probe results, endpoints used and rejected, mapping, statuses, UTC timestamps, request budget, data ownership, what is live-verified versus fixture-only |
 | [scheduled-sync.md](scheduled-sync.md) | architecture + verification record | implemented (Phase 8.3), smoke-tested locally | verified Vercel constraints, cron route and secret, provider-neutral scheduler, eligibility, cadence, the database run lock and stale recovery, freshness model, Admin, deployment variables |
+| [operational-monitoring.md](operational-monitoring.md) | architecture + verification record | implemented (Phase 8.4) | the health model and its exact precedence, run categories, PARTIAL and abandoned-run semantics, failure streaks, bounded queries, Admin Monitoring and Sync Logs, the redaction boundary |
 | [data-model-decisions.md](data-model-decisions.md) | decision record | implemented; body maintained through Phase 7 | every schema decision with its rationale; "Prisma Schema Implementation Notes" at the end records what each phase built |
 | [match-participant-model-analysis.md](match-participant-model-analysis.md) | analysis + implementation note | implemented 2026-09-15; §26 is authoritative | why `homeTeamId / awayTeamId` was replaced by `MatchParticipant`, the alternatives, the migration strategy, and the deviations |
 | [external-data-sync-architecture.md](external-data-sync-architecture.md) | architecture | implemented (Phase 4), updated in place | the provider contract, sync lifecycle, external identity, idempotency, transaction boundaries |
@@ -35,6 +36,7 @@ Start with the [project README](../README.md) for the overview, then the [case s
 | 8.2 | 2026-09-17 | (uncommitted) | demo timeline laid over the current date through an injectable demo clock |
 | 8.1 (providers) | 2026-09-17 | (uncommitted) | TheSportsDB V1 adapter for Premier League football, verified against the live free API, through the unchanged pipeline |
 | 8.3 | 2026-09-17 | (uncommitted) | scheduled sync: Vercel Cron → authenticated route → provider-neutral scheduler → the same `runSync`; database run lock; freshness in Admin |
+| 8.4 | 2026-09-17 | (uncommitted) | operational monitoring: per-source health derived from persisted evidence, Admin Monitoring, Sync Logs kinds and details, redaction at the persistence boundary |
 
 ## Conventions in these documents
 

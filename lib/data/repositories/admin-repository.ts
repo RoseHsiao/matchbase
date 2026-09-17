@@ -2,6 +2,7 @@ import "server-only"
 
 import { db } from "@/lib/data/db"
 import { validateParticipants } from "@/lib/data/match-participants"
+import { loadDataSourcesWithRuns, loadRecentSyncLogs } from "@/lib/data/repositories/monitoring-ops"
 import { describeDataSourceProvider, resolveProvider } from "@/lib/data/sync/providers/registry"
 import { isSchedulable } from "@/lib/data/sync/scheduler"
 import { adminActivity } from "@/lib/data/mock"
@@ -64,6 +65,7 @@ const toDbMatchStatus: Record<MatchStatus, DbMatchStatus> = { upcoming: "UPCOMIN
 /** "attention" is derived from sync logs, never stored (decisions notes). */
 const toDbDataSourceStatus: Record<DataSourceStatus, DbDataSourceStatus> = { connected: "ACTIVE", attention: "ACTIVE", disconnected: "INACTIVE" }
 const fromDbSyncStatus: Record<DbSyncStatus, SyncStatus> = { RUNNING: "running", SUCCESS: "success", PARTIAL: "partial", FAILED: "failed" }
+const toDbSyncStatus: Record<SyncStatus, DbSyncStatus> = { running: "RUNNING", success: "SUCCESS", partial: "PARTIAL", failed: "FAILED" }
 
 // ---------------------------------------------------------------------------
 // Payload validation (form input is untrusted)
@@ -201,11 +203,8 @@ export const adminRepository = {
       db.player.findMany({ orderBy: { name: "asc" } }),
       db.venue.findMany({ orderBy: { name: "asc" } }),
       db.match.findMany({ include: matchInclude, orderBy: [{ startsAt: "asc" }, { id: "asc" }] }),
-      db.dataSource.findMany({
-        include: { syncLogs: { select: { status: true, startedAt: true, error: true }, orderBy: { startedAt: "desc" }, take: 1 } },
-        orderBy: { name: "asc" },
-      }),
-      db.syncLog.findMany({ orderBy: { startedAt: "desc" } }),
+      loadDataSourcesWithRuns(db),
+      loadRecentSyncLogs(db),
     ])
     return {
       sports: sports.map((row): SportRecord => ({ id: toSport(row.id), status: entityStatus[row.status] })),
@@ -218,16 +217,17 @@ export const adminRepository = {
       dataSources: dataSources.map((row): DataSource => {
         const binding = describeDataSourceProvider(row.id)
         const eligibility = isSchedulable(row, resolveProvider(row.id))
-        const latest = row.syncLogs[0]
+        const latest = row.recentRuns[0]
         return {
           id: row.id,
           name: row.name,
           sport: row.sportId === null ? undefined : toSport(row.sportId),
-          status: deriveDataSourceStatus(row.status, latest?.status),
+          status: deriveDataSourceStatus(row.status, latest ? toDbSyncStatus[latest.status] : undefined),
           lastSyncedAt: row.lastSyncedAt?.toISOString(),
           scheduled: eligibility.eligible,
           scheduleReason: eligibility.eligible ? undefined : eligibility.reason,
-          lastRun: latest ? { status: fromDbSyncStatus[latest.status], at: latest.startedAt.toISOString(), error: latest.error?.split("\n")[0] } : undefined,
+          lastRun: latest ? { status: latest.status, at: latest.at, error: latest.summary } : undefined,
+          recentRuns: row.recentRuns,
           provider: binding
             ? {
                 key: binding.key,

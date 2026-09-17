@@ -147,6 +147,8 @@ export type DataSource = {
   scheduleReason?: string
   /** The most recent run of any outcome, for execution state ("syncing", "failed"). */
   lastRun?: { status: SyncStatus; at: string; error?: string }
+  /** Recent runs, newest first, bounded (lib/data/sync/health.ts RECENT_RUNS); the evidence health is derived from. */
+  recentRuns?: import("@/lib/data/sync/health").SyncRunSummary[]
 }
 
 export type SyncStatus = "running" | "success" | "failed" | "partial"

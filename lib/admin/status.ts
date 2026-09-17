@@ -25,6 +25,40 @@ export const statusMeta: Record<AdminStatus, { label: string; tone: StatusTone }
   partial: { label: "Partial", tone: "warning" },
 }
 
+import type { SourceHealthState, SyncRunCategory } from "@/lib/data/sync/health"
+
+/** Operational health pills (Admin → Monitoring). Tones follow the same vocabulary as statuses. */
+export const healthMeta: Record<SourceHealthState, { label: string; tone: StatusTone }> = {
+  healthy: { label: "Healthy", tone: "success" },
+  degraded: { label: "Degraded", tone: "warning" },
+  stale: { label: "Stale", tone: "warning" },
+  failing: { label: "Failing", tone: "danger" },
+  syncing: { label: "Syncing", tone: "info" },
+  "never-synced": { label: "Never synced", tone: "warning" },
+  "not-configured": { label: "Not configured", tone: "neutral" },
+  disabled: { label: "Disabled", tone: "neutral" },
+  mock: { label: "Mock", tone: "neutral" },
+  placeholder: { label: "Placeholder", tone: "neutral" },
+}
+
+/** Short labels for why a run ended the way it did (Sync Logs "Kind" column). */
+export const runCategoryLabel: Record<SyncRunCategory, string> = {
+  ok: "Clean",
+  running: "Running",
+  issues: "Record issues",
+  abandoned: "Abandoned",
+  configuration: "Configuration",
+  auth: "Credentials",
+  "rate-limit": "Rate limited",
+  server: "Provider error",
+  client: "Request rejected",
+  timeout: "Timeout",
+  network: "Unreachable",
+  malformed: "Malformed response",
+  unbound: "No provider",
+  failed: "Failed",
+}
+
 export const entityStatusOptions: { value: EntityStatus; label: string }[] = [
   { value: "active", label: "Active" },
   { value: "inactive", label: "Inactive" },

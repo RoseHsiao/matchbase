@@ -15,6 +15,7 @@ import {
   type SyncResult,
   type SyncStatus,
 } from "@/lib/data/sync/types"
+import { redactSensitiveText } from "@/lib/data/sync/redaction"
 import { classifyError, redactUrl } from "@/lib/data/sync/utils/http"
 import type { MatchStatus as DbMatchStatus } from "@/lib/generated/prisma/enums"
 
@@ -98,6 +99,8 @@ export type SyncOptions = {
   resolveProvider?: (dataSourceId: string) => Provider<never> | undefined
   /** Age after which a RUNNING log is treated as abandoned. */
   staleLockMs?: number
+  /** Environment whose secret values are scrubbed from every stored message; defaults to the process environment. */
+  env?: Record<string, string | undefined>
 }
 
 export async function runSync(repository: SyncRepository, dataSourceId: string, options: SyncOptions = {}): Promise<SyncResult> {
@@ -105,6 +108,8 @@ export async function runSync(repository: SyncRepository, dataSourceId: string, 
   const clock = Date.now()
   const counts = emptyCounts()
   const issues: SyncIssue[] = []
+  // Persistence boundary: nothing reaches SyncLog without this pass, whatever an adapter or driver put in a message.
+  const scrub = (text: string | null): string | null => (text === null ? null : redactSensitiveText(text, options.env ?? process.env))
   const base = (status: SyncOutcome, extra: Partial<SyncResult> = {}): SyncResult => ({
     dataSourceId,
     provider: null,
@@ -128,8 +133,9 @@ export async function runSync(repository: SyncRepository, dataSourceId: string, 
   const syncLogId = lock.syncLogId
   if (lock.recovered > 0) issues.push({ level: "warning", entity: "provider", message: `${lock.recovered} abandoned run${lock.recovered === 1 ? "" : "s"} marked failed before this run.` })
   const fail = async (error: string, errorKind: SyncErrorKind, provider: string | null = null): Promise<SyncResult> => {
-    await repository.finishSyncLog(syncLogId, { status: "FAILED", records: 0, durationMs: Date.now() - clock, error })
-    return base("FAILED", { syncLogId, error, errorKind, provider })
+    const safe = scrub(error) ?? error
+    await repository.finishSyncLog(syncLogId, { status: "FAILED", records: 0, durationMs: Date.now() - clock, error: safe })
+    return base("FAILED", { syncLogId, error: safe, errorKind, provider })
   }
 
   const provider = (options.resolveProvider ?? resolveFromRegistry)(dataSourceId)
@@ -290,7 +296,7 @@ export async function runSync(repository: SyncRepository, dataSourceId: string, 
   const failed = Object.values(counts).reduce((sum, c) => sum + c.failed, 0)
   const status: SyncStatus = failed === 0 ? "SUCCESS" : records > 0 ? "PARTIAL" : "FAILED"
   const durationMs = Date.now() - clock
-  await repository.finishSyncLog(syncLogId, { status, records, durationMs, error: issuesToText(issues) })
+  await repository.finishSyncLog(syncLogId, { status, records, durationMs, error: scrub(issuesToText(issues)) })
   if (status !== "FAILED") await repository.markSynced(dataSourceId, startedAt)
 
   return {

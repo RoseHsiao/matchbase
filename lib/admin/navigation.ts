@@ -98,7 +98,7 @@ export const adminManageSections: AdminNavSection[] = [
  */
 export const adminWorkspaceItems: AdminNavItem[] = [
   { title: "Analytics", href: "/admin/analytics", icon: BarChart3Icon, description: "Coverage, volume, and engagement reporting." },
-  { title: "Monitoring", href: "/admin/monitoring", icon: ActivityIcon, description: "Feed health, sync status, and alerts." },
+  { title: "Monitoring", href: "/admin/monitoring", icon: ActivityIcon, description: "Operational health of external data sources: freshness, recent runs, failures." },
   { title: "Settings", href: "/admin/settings", icon: SettingsIcon, description: "Workspace configuration and access." },
 ]
 

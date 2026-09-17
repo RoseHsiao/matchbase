@@ -3,7 +3,8 @@
 import * as React from "react"
 import { PencilIcon, RefreshCwIcon } from "lucide-react"
 
-import { useAdminCollection, useAdminNotice, useAdminNow } from "@/components/admin/admin-data-provider"
+import { useAdminCollection, useAdminNow } from "@/components/admin/admin-data-provider"
+import { useSyncNow } from "@/components/admin/use-sync-now"
 import { AdminDataTable, type AdminColumn } from "@/components/admin/admin-data-table"
 import { AdminFormDialog } from "@/components/admin/admin-form-dialog"
 import { AdminPage } from "@/components/admin/admin-page"
@@ -15,7 +16,6 @@ import { useEntityEditor } from "@/components/admin/use-entity-editor"
 import { CategoryLine, SportLine } from "@/components/sport-icon"
 import { FilterSelect } from "@/components/filters/filter-select"
 import { dataSourceStatusOptions } from "@/lib/admin/status"
-import { runDataSourceSync } from "@/lib/data/admin-actions"
 import { Badge } from "@/components/ui/badge"
 import type { DataSource, DataSourceStatus, Sport } from "@/lib/data/types"
 import { DEFAULT_SCHEDULE_CONFIG } from "@/lib/data/sync/schedule-config"
@@ -88,22 +88,7 @@ export function AdminDataSourcesView() {
   const hierarchy = useHierarchyFilters({ category: ALL, sport: ALL, leagueId: ALL, status: ALL }, leagues)
   const { filters, update } = hierarchy
   const editor = useEntityEditor<Draft>({ name: "", sport: NONE, status: "connected" })
-  const { notify } = useAdminNotice()
-  const [syncingId, setSyncingId] = React.useState<string | null>(null)
-
-  async function sync(source: DataSource) {
-    if (syncingId) return
-    setSyncingId(source.id)
-    notify(`Syncing ${source.name}…`)
-    try {
-      const result = await runDataSourceSync(source.id)
-      notify(result.ok ? (result.message ?? "Sync finished.") : result.error, result.ok ? "info" : "error")
-    } catch {
-      notify("Sync failed unexpectedly. Please try again.", "error")
-    } finally {
-      setSyncingId(null)
-    }
-  }
+  const { sync } = useSyncNow()
 
   const rows = dataSources.filter(
     (source) =>

@@ -11,15 +11,17 @@ const toneClassName: Record<StatusTone, string> = {
   neutral: "bg-muted-foreground/60",
 }
 
-/** Status pill with a coloured dot. Labels and tones come from `statusMeta`. */
+/** Status pill with a coloured dot. Labels and tones come from `statusMeta`, or from an explicit `meta` (health pills). */
 export function AdminStatusBadge({
   status,
+  meta: explicit,
   className,
 }: {
-  status: AdminStatus
+  status?: AdminStatus
+  meta?: { label: string; tone: StatusTone }
   className?: string
 }) {
-  const meta = statusMeta[status]
+  const meta = explicit ?? statusMeta[status ?? "active"]
   return (
     <Badge variant="outline" className={cn("gap-1.5", className)}>
       <span

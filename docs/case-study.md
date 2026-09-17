@@ -204,6 +204,7 @@ Stated precisely.
 - **Scheduled sync is daily.** A Vercel Cron Job runs the provider-neutral scheduler once a day (the Hobby plan's minimum interval) through the same pipeline as the CLI and Admin, guarded by a database run lock ([scheduled-sync.md](scheduled-sync.md)). No live-score streaming, no deletion reconciliation, and the DataSource → provider binding lives in code rather than a column.
 - **Demo data is relative, not live.** The seed lays a fixed timeline of offsets over the current date (or `DEMO_ANCHOR`), evaluated in Asia/Taipei, and refuses any anchor for which statuses and times would contradict. Nothing advances between seeds; a "live" match is an authored fixture. See [demo-data-and-time.md](demo-data-and-time.md).
 - **Presentation time zone.** Instants are stored in UTC and reminder arithmetic is zone-free, but day boundaries still use the server's local zone; the decided Asia/Taipei rule is not applied.
+- **Monitoring is visibility only.** Admin → Monitoring derives per-source health from sync logs and readiness ([operational-monitoring.md](operational-monitoring.md)); nothing alerts anyone.
 - **Schema gaps known and accepted.** No partial unique index for "one CURRENT season per league" (repository-enforced). No per-set or per-map scores, rankings or seeds. Admin Analytics, Monitoring and Settings are placeholders.
 
 ## 12. What comes next
