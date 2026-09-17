@@ -201,7 +201,7 @@ Stated precisely.
 - **Reminders are preferences, not notifications.** Nothing is delivered by any channel.
 - **No authentication.** `getCurrentUserId()` returns the seeded demo user for every request. It is the single seam a session would replace; the user tables need no change.
 - **No background or scheduled sync.** Syncs are manual (Admin button or CLI). No live-score streaming, no deletion reconciliation, and the DataSource → provider binding lives in code rather than a column.
-- **Demo data is anchored.** The seed fixes every timestamp to 2026-09-14 (Asia/Taipei) so re-running never moves dates. The upcoming fixtures span about a week around that date, after which the "upcoming" sections are empty until the anchor moves or a live provider is synced.
+- **Demo data is relative, not live.** The seed lays a fixed timeline of offsets over the current date (or `DEMO_ANCHOR`), evaluated in Asia/Taipei, and refuses any anchor for which statuses and times would contradict. Nothing advances between seeds; a "live" match is an authored fixture. See [demo-data-and-time.md](demo-data-and-time.md).
 - **Presentation time zone.** Instants are stored in UTC and reminder arithmetic is zone-free, but day boundaries still use the server's local zone; the decided Asia/Taipei rule is not applied.
 - **Schema gaps known and accepted.** No partial unique index for "one CURRENT season per league" (repository-enforced). No per-set or per-map scores, rankings or seeds. Admin Analytics, Monitoring and Settings are placeholders.
 

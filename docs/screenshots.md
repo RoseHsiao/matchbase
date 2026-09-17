@@ -6,7 +6,7 @@ Do not add placeholder images. When captured, put files under `docs/screenshots/
 
 ## Before capturing
 
-1. **Move the seed anchor or sync a provider.** The seed fixes every timestamp around 2026-09-14 (`SEED_DAY` in `prisma/seed.ts`). Capture while "today" and "upcoming" sections are populated: either set the machine clock, adjust `SEED_DAY` locally and re-seed, or, if a Sportradar key is available, run the tennis sync so real upcoming fixtures exist. Do not commit an anchor change made only for screenshots.
+1. **Seed right before capturing.** `npm run db:seed` lays the demo timeline over the current half hour, so "today", "live" and "upcoming" are populated at capture time (see `docs/demo-data-and-time.md`). For a fixed, repeatable state use `DEMO_ANCHOR=2026-09-14T19:30 npm run db:seed` and set the machine clock to match, or just seed and capture within the hour.
 2. Seed once (`npm run db:seed`) so the demo user has follows, a watchlist with one match per reminder option, and the Wimbledon singles and doubles fixtures.
 3. Capture both a desktop width (about 1440 px) and one phone width (about 390 px) for the first two shots; desktop only for the rest.
 4. Capture the light theme by default; one dark-theme shot of the Dashboard is enough to show theming.
@@ -36,7 +36,7 @@ Shots 1, 3, 5 and 10 are the minimum set. If only one image can go at the top of
 
 - Admin list pages for sports, leagues, seasons, teams, venues: they are generic data tables and read as CRUD.
 - Admin Analytics, Monitoring, Settings: placeholders.
-- Empty states caused by the seed anchor having aged; fix the anchor first.
+- Empty states caused by a stale seed; re-seed first.
 
 ## Suggested captions
 

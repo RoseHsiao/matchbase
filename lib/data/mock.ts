@@ -11,11 +11,16 @@ import type {
   UserFollows,
   Venue,
 } from "@/lib/data/types"
+import { createDemoClock, resolveDemoAnchor, type DemoClock } from "@/lib/demo-clock"
 
 /**
- * Mock data for development. Match times are generated relative to "now" so
- * the dashboard always contains live, finished, and upcoming matches.
- * Replace with real queries once the data layer exists.
+ * Demo dataset: the catalogue, the demo user's follows, and a *timeline* of
+ * matches, feeds and logs written as offsets from an anchor ("67 minutes
+ * before", "tomorrow at 21:00 Taipei"). `buildDemoData(clock)` lays that
+ * timeline over any anchor (lib/demo-clock.ts); the seed uses the real date
+ * (or DEMO_ANCHOR) so the demo never ages out, tests use a fixed anchor so
+ * they never read the wall clock. Entity ids are fixed slugs and never
+ * depend on time. Real provider rows are not part of this file.
  */
 
 export const leagues: League[] = [
@@ -103,17 +108,12 @@ export const players: Player[] = [
   { id: "townsend", name: "Taylor Townsend", role: "Doubles", nationality: "United States" },
 ]
 
-/** Build an ISO timestamp `dayOffset` days from today at the given local time. */
-function at(dayOffset: number, hour: number, minute = 0): string {
-  const date = new Date()
-  date.setDate(date.getDate() + dayOffset)
-  date.setHours(hour, minute, 0, 0)
-  return date.toISOString()
-}
-
-/** ISO timestamp `minutes` from now, used for live and just-finished matches. */
-function fromNow(minutes: number): string {
-  return new Date(Date.now() + minutes * 60_000).toISOString()
+/** ISO evaluators for one clock: `at(dayOffset, hour, minute)` in the demo zone, `fromNow(minutes)` from the anchor. */
+function evaluators(clock: DemoClock) {
+  return {
+    at: (dayOffset: number, hour: number, minute = 0): string => clock.at(dayOffset, hour, minute).toISOString(),
+    fromNow: (minutes: number): string => clock.fromAnchor(minutes).toISOString(),
+  }
 }
 
 /** One team per side: side A first. Participant ids are derived from the match id so they stay stable. */
@@ -131,7 +131,10 @@ function playerSides(matchId: string, sideA: string[], sideB: string[]): MatchPa
   return [...side("A", sideA), ...side("B", sideB)]
 }
 
-export const matches: Match[] = [
+/** The match timeline. Statuses are authored to match their offsets; lib/data/demo-consistency.ts checks that for any anchor. */
+export function buildMatches(clock: DemoClock): Match[] {
+  const { at, fromNow } = evaluators(clock)
+  return [
   // Today: finished
   {
     id: "m-lec-g2-fnc",
@@ -355,7 +358,8 @@ export const matches: Match[] = [
     stage: "Ladies' doubles · Final",
     venue: "Centre Court, Wimbledon",
   },
-]
+  ]
+}
 
 export const currentUserFollows: UserFollows = {
   teamIds: ["arsenal", "liverpool", "celtics", "g2", "t1", "sentinels", "vitality"],
@@ -410,7 +414,9 @@ export const venues: Venue[] = [
   { id: "v-oldtrafford", name: "Old Trafford", city: "Manchester", country: "England", capacity: 74310, status: "inactive" },
 ]
 
-export const dataSources: DataSource[] = [
+export function buildDataSources(clock: DemoClock): DataSource[] {
+  const { fromNow } = evaluators(clock)
+  return [
   { id: "ds-nba", name: "NBA Data API", sport: "basketball", status: "connected", lastSyncedAt: fromNow(-12) },
   { id: "ds-lck", name: "LCK Data API", sport: "lol", status: "connected", lastSyncedAt: fromNow(-25) },
   { id: "ds-epl", name: "Premier League Feed", sport: "football", status: "attention", lastSyncedAt: fromNow(-190) },
@@ -421,9 +427,12 @@ export const dataSources: DataSource[] = [
   { id: "ds-mock-basketball", name: "Mock Basketball Feed", sport: "basketball", status: "connected" },
   // Bound to the Sportradar tennis adapter; needs SPORTRADAR_API_KEY to sync.
   { id: "ds-tennis-sportradar", name: "Sportradar Tennis", sport: "tennis", status: "connected" },
-]
+  ]
+}
 
-export const syncLogs: SyncLog[] = [
+export function buildSyncLogs(clock: DemoClock): SyncLog[] {
+  const { fromNow } = evaluators(clock)
+  return [
   { id: "sl-01", dataSourceId: "ds-nba", entity: "matches", records: 12, status: "success", durationMs: 840, at: fromNow(-12) },
   { id: "sl-02", dataSourceId: "ds-lck", entity: "matches", records: 24, status: "success", durationMs: 1320, at: fromNow(-25) },
   { id: "sl-03", dataSourceId: "ds-esl", entity: "players", records: 60, status: "success", durationMs: 2100, at: fromNow(-45) },
@@ -436,13 +445,49 @@ export const syncLogs: SyncLog[] = [
   { id: "sl-10", dataSourceId: "ds-manual", entity: "matches", records: 4, status: "success", durationMs: 90, at: fromNow(-60 * 26) },
   { id: "sl-11", dataSourceId: "ds-vct", entity: "matches", records: 0, status: "failed", durationMs: 30000, at: fromNow(-60 * 30) },
   { id: "sl-12", dataSourceId: "ds-esl", entity: "matches", records: 18, status: "success", durationMs: 980, at: fromNow(-60 * 33) },
-]
+  ]
+}
 
-export const adminActivity: AdminActivity[] = [
+export function buildAdminActivity(clock: DemoClock): AdminActivity[] {
+  const { fromNow } = evaluators(clock)
+  return [
   { id: "act-1", at: fromNow(-8), action: "Match updated", entity: "Arsenal vs Chelsea", actor: "Rose" },
   { id: "act-2", at: fromNow(-35), action: "Team added", entity: "Dplus KIA", actor: "Rose" },
   { id: "act-3", at: fromNow(-60 * 2), action: "Player updated", entity: "Faker", actor: "Sync · LCK Data API" },
   { id: "act-4", at: fromNow(-60 * 5), action: "League created", entity: "LCK", actor: "Rose" },
   { id: "act-5", at: fromNow(-60 * 9), action: "Season updated", entity: "NBA 2026-27", actor: "Sync · NBA Data API" },
   { id: "act-6", at: fromNow(-60 * 26), action: "Venue added", entity: "LoL Park, Seoul", actor: "Rose" },
-]
+  ]
+}
+
+export type DemoData = {
+  matches: Match[]
+  dataSources: DataSource[]
+  syncLogs: SyncLog[]
+  adminActivity: AdminActivity[]
+}
+
+/** Every time-relative part of the demo, laid over `clock`. The static catalogue and follows are the module exports above. */
+export function buildDemoData(clock: DemoClock): DemoData {
+  return {
+    matches: buildMatches(clock),
+    dataSources: buildDataSources(clock),
+    syncLogs: buildSyncLogs(clock),
+    adminActivity: buildAdminActivity(clock),
+  }
+}
+
+/**
+ * The module-level dataset for consumers that only need a representative
+ * snapshot (admin activity, domain tests that read participants). Anchored
+ * once at import to the real date, or to DEMO_ANCHOR when set. The seed does
+ * not use these; it builds its own with the anchor it reports.
+ */
+const defaultClock = createDemoClock({
+  anchor: resolveDemoAnchor(typeof process === "undefined" ? {} : process.env, new Date()),
+})
+const defaultData = buildDemoData(defaultClock)
+export const matches: Match[] = defaultData.matches
+export const dataSources: DataSource[] = defaultData.dataSources
+export const syncLogs: SyncLog[] = defaultData.syncLogs
+export const adminActivity: AdminActivity[] = defaultData.adminActivity

@@ -1,10 +1,10 @@
 /**
- * Seeds PostgreSQL from the existing mock dataset in lib/data/mock.ts.
+ * Seeds PostgreSQL from the demo dataset in lib/data/mock.ts.
  *
- * Source of truth: the mock arrays and the sport registry in lib/sports.ts.
- * Nothing here invents records; every row maps to an existing mock record and
- * keeps its id, so routes such as /matches/[id] and /teams/[id] keep working
- * against the database.
+ * Source of truth: the mock arrays, the demo timeline, and the sport registry
+ * in lib/sports.ts. Nothing here invents records; every row maps to an
+ * existing mock record and keeps its id, so routes such as /matches/[id] and
+ * /teams/[id] keep working against the database.
  *
  * Normalisation applied (see docs/data-model-decisions.md):
  * - Sport rows come from the code registry (`sports` + `sportMeta`).
@@ -16,13 +16,18 @@
  * - SyncLog.at -> SyncLog.startedAt.
  * - Match.participants -> MatchParticipant rows, reconciled by (matchId, side, order).
  *
- * Determinism: mock.ts generates every timestamp relative to the moment the
- * module is imported. The seed instead anchors all timestamps to a fixed
- * reference instant (SEED_NOW, Asia/Taipei) so re-running never moves dates.
- * Match times are transcribed as generator specs below and self-checked
- * against the live mock values on every run, so the two cannot drift apart.
+ * Time: the demo timeline is written as offsets from an anchor. This seed
+ * lays it over the real date (or DEMO_ANCHOR for a reproducible run), in
+ * Asia/Taipei for day boundaries, so the dashboard, schedule, watchlist and
+ * history stay populated as the calendar moves. Statuses are authored in the
+ * timeline, never derived from the clock; lib/data/demo-consistency.ts
+ * refuses any anchor for which status, start time, scores and reminders
+ * would contradict each other. See docs/demo-data-and-time.md.
  *
- * Idempotent: every row is upserted by id. No table is truncated.
+ * Idempotent: every row is upserted by a fixed id (never derived from time).
+ * Re-seeding on another day moves the demo timestamps and nothing else.
+ * Rows owned by external providers (dataSourceId + externalId) are never
+ * touched. No table is truncated.
  *
  * User state: the single development user (lib/data/demo-user.ts) is created
  * and the mock `currentUserFollows` ids become its follow / watchlist rows,
@@ -45,116 +50,27 @@ import {
   SyncStatus,
   type Prisma,
 } from "../lib/generated/prisma/client"
+import { checkDemoConsistency } from "../lib/data/demo-consistency"
 import { DEMO_USER_EMAIL, DEMO_USER_ID, DEMO_USER_NAME } from "../lib/data/demo-user"
 import { validateParticipants } from "../lib/data/match-participants"
+import * as catalogue from "../lib/data/mock"
+import { buildDemoData } from "../lib/data/mock"
+import { createDemoClock, DEMO_TIME_ZONE, resolveDemoAnchor } from "../lib/demo-clock"
 import { toDbReminder } from "../lib/data/repositories/watchlist-reminder-ops"
 import type * as MockTypes from "../lib/data/types"
 import { sportMeta, sports } from "../lib/sports"
 
 // ---------------------------------------------------------------------------
-// Fixed reference time
+// Demo clock
 // ---------------------------------------------------------------------------
-
-/** Presentation timezone (decisions §12). Asia/Taipei has no DST. */
-const TZ_OFFSET_HOURS = 8
-
-/** Seed "now": 2026-09-14 12:00 Asia/Taipei. Every relative time is anchored here. */
-const SEED_DAY = { year: 2026, month: 8 /* September, zero-based */, day: 14 }
-const SEED_NOW = Date.UTC(SEED_DAY.year, SEED_DAY.month, SEED_DAY.day, 12 - TZ_OFFSET_HOURS, 0, 0)
-
-/** Mirrors mock `fromNow(minutes)`, anchored to SEED_NOW. */
-function seedFromNow(minutes: number): Date {
-  return new Date(SEED_NOW + minutes * 60_000)
-}
-
-/** Mirrors mock `at(dayOffset, hour, minute)`, evaluated in Asia/Taipei. */
-function seedAt(dayOffset: number, hour: number, minute = 0): Date {
-  return new Date(
-    Date.UTC(SEED_DAY.year, SEED_DAY.month, SEED_DAY.day + dayOffset, hour - TZ_OFFSET_HOURS, minute, 0, 0)
-  )
-}
 
 /**
- * Re-anchor a mock `fromNow()` value: recover the minute offset from the
- * import-time clock and apply it to SEED_NOW. Every mock offset is a whole
- * number of minutes, so rounding removes import jitter.
+ * The anchor for this run: the real date floored to the half hour, or
+ * DEMO_ANCHOR when set (see lib/demo-clock.ts for the accepted forms).
+ * Day-relative offsets are evaluated in DEMO_TIME_ZONE (Asia/Taipei).
  */
-function reanchor(iso: string, importNow: number): Date {
-  const offsetMs = Date.parse(iso) - importNow
-  const minutes = Math.round(offsetMs / 60_000)
-  if (Math.abs(offsetMs - minutes * 60_000) > 5_000) {
-    throw new Error(`Timestamp ${iso} is not a whole-minute offset from now; cannot re-anchor deterministically.`)
-  }
-  return seedFromNow(minutes)
-}
-
-// ---------------------------------------------------------------------------
-// Match time specs, transcribed from lib/data/mock.ts
-// ---------------------------------------------------------------------------
-
-type TimeSpec =
-  | { kind: "fromNow"; minutes: number }
-  | { kind: "at"; dayOffset: number; hour: number; minute: number }
-
-const fromNow = (minutes: number): TimeSpec => ({ kind: "fromNow", minutes })
-const at = (dayOffset: number, hour: number, minute = 0): TimeSpec => ({ kind: "at", dayOffset, hour, minute })
-
-/** One entry per mock match. Verified against the live mock values in `checkTimeSpecs`. */
-const MATCH_TIME_SPECS: Record<string, TimeSpec> = {
-  "m-lec-g2-fnc": fromNow(-240),
-  "m-esl-navi-faze": fromNow(-180),
-  "m-epl-ars-che": fromNow(-67),
-  "m-vct-sen-prx": fromNow(-45),
-  "m-epl-liv-mci": fromNow(150),
-  "m-esl-vit-spi": fromNow(210),
-  "m-nba-lal-bos": fromNow(330),
-  "m-ucl-rma-fcb": at(1, 21, 0),
-  "m-lec-kc-mad": at(1, 18, 0),
-  "m-nba-gsw-den": at(1, 19, 30),
-  "m-vct-fut-loud": at(2, 17, 0),
-  "m-epl-tot-ars": at(3, 16, 30),
-  "m-esl-faze-vit": at(4, 20, 0),
-  "m-lec-g2-kc": at(6, 17, 0),
-  "m-lck-t1-geng": fromNow(90),
-  "m-lck-hle-dk": at(1, 17, 0),
-  "m-lck-geng-dk": at(3, 17, 0),
-  "m-lck-t1-hle": at(-1, 17, 0),
-  "m-epl-mci-tot": at(-2, 20, 0),
-  "m-nba-bos-gsw": at(-1, 19, 30),
-  "m-wim-alcaraz-sinner": at(-1, 14, 0),
-  "m-wim-sinner-alcaraz-exh": at(3, 15, 0),
-  "m-wim-doubles-final": at(2, 13, 0),
-}
-
-/** Evaluate a spec the way mock.ts does (machine-local time), for the self-check. */
-function evaluateLikeMock(spec: TimeSpec, importNow: number): Date {
-  if (spec.kind === "fromNow") return new Date(importNow + spec.minutes * 60_000)
-  const date = new Date(importNow)
-  date.setDate(date.getDate() + spec.dayOffset)
-  date.setHours(spec.hour, spec.minute, 0, 0)
-  return date
-}
-
-/** Evaluate a spec against the fixed seed reference. */
-function evaluateForSeed(spec: TimeSpec): Date {
-  return spec.kind === "fromNow" ? seedFromNow(spec.minutes) : seedAt(spec.dayOffset, spec.hour, spec.minute)
-}
-
-/** Throws if the transcribed specs and the mock values disagree. */
-function checkTimeSpecs(matches: readonly MockTypes.Match[], importNow: number): void {
-  const specIds = new Set(Object.keys(MATCH_TIME_SPECS))
-  for (const match of matches) {
-    const spec = MATCH_TIME_SPECS[match.id]
-    if (!spec) throw new Error(`No time spec for mock match ${match.id}.`)
-    specIds.delete(match.id)
-    const expected = evaluateLikeMock(spec, importNow).getTime()
-    const actual = Date.parse(match.startsAt)
-    const tolerance = spec.kind === "fromNow" ? 5_000 : 0
-    if (Math.abs(actual - expected) > tolerance) {
-      throw new Error(`Time spec for ${match.id} does not reproduce the mock value (drift ${actual - expected} ms).`)
-    }
-  }
-  if (specIds.size > 0) throw new Error(`Time specs without a mock match: ${[...specIds].join(", ")}.`)
+function demoClockFromEnv() {
+  return createDemoClock({ anchor: resolveDemoAnchor(process.env, new Date()), timeZone: DEMO_TIME_ZONE })
 }
 
 // ---------------------------------------------------------------------------
@@ -221,12 +137,12 @@ async function main() {
   const connectionString = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL
   if (!connectionString) throw new Error("DATABASE_URL_UNPOOLED or DATABASE_URL must be set.")
 
-  // Capture the clock right before the mock module evaluates its relative
-  // timestamps, so its offsets can be recovered.
-  const importNow = Date.now()
-  const mock = await import("../lib/data/mock")
+  const clock = demoClockFromEnv()
+  const timeline = buildDemoData(clock)
+  const mock = { ...catalogue, ...timeline }
 
-  checkTimeSpecs(mock.matches, importNow)
+  const issues = checkDemoConsistency({ matches: mock.matches, follows: mock.currentUserFollows }, clock)
+  if (issues.length > 0) throw new Error(`Demo timeline is not coherent for anchor ${clock.anchor.toISOString()}:\n  ${issues.join("\n  ")}`)
 
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 
@@ -258,7 +174,7 @@ async function main() {
       name: source.name,
       sportId: source.sport ?? null,
       status: dataSourceStatus[source.status],
-      lastSyncedAt: source.lastSyncedAt ? reanchor(source.lastSyncedAt, importNow) : null,
+      lastSyncedAt: source.lastSyncedAt ? new Date(source.lastSyncedAt) : null,
     }))
     await transaction(
       dataSourceRows.map((data) => prisma.dataSource.upsert({ where: { id: data.id }, create: data, update: data }))
@@ -355,7 +271,7 @@ async function main() {
       leagueId: match.leagueId,
       seasonId: must(seasonIdByLeague.get(match.leagueId), `match ${match.id} league ${match.leagueId} has no season`),
       venueId: match.venue === undefined ? null : must(venueIdByName.get(match.venue), `match ${match.id} venue "${match.venue}" has no Venue row`),
-      startsAt: evaluateForSeed(MATCH_TIME_SPECS[match.id]),
+      startsAt: new Date(match.startsAt),
       status: matchStatus[match.status],
       stage: match.stage ?? null,
       sideAScore: match.score?.a ?? null,
@@ -401,7 +317,7 @@ async function main() {
       records: log.records,
       status: syncStatus[log.status],
       durationMs: log.durationMs,
-      startedAt: reanchor(log.at, importNow),
+      startedAt: new Date(log.at),
       error: null,
     }))
     await transaction(
@@ -449,7 +365,8 @@ async function main() {
       userLeagueFollow: await prisma.userLeagueFollow.count(),
       userWatchlistMatch: await prisma.userWatchlistMatch.count(),
     }
-    console.log(`Seeded from mock data (reference time ${new Date(SEED_NOW).toISOString()}):`)
+    const anchorLocal = clock.anchorDate()
+    console.log(`Seeded demo data. Anchor ${clock.anchor.toISOString()} (${anchorLocal.year}-${String(anchorLocal.month).padStart(2, "0")}-${String(anchorLocal.day).padStart(2, "0")} in ${clock.timeZone}${process.env.DEMO_ANCHOR ? ", from DEMO_ANCHOR" : ", from the current date"}):`)
     for (const [table, count] of Object.entries(counts)) console.log(`  ${table}: ${count}`)
   } finally {
     await prisma.$disconnect()

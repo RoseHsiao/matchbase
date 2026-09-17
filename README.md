@@ -303,7 +303,7 @@ lib/
   reminders.ts              reminder arithmetic and labels
   watchlist/                reminder rules, client store
 prisma/
-  schema.prisma  migrations/  seed.ts (idempotent, anchored to a fixed date)
+  schema.prisma  migrations/  seed.ts (idempotent; demo timeline laid over the current date)
 scripts/sync-data-source.mts   manual CLI sync of one DataSource
 tests/
   domain/  sync/  db/       see Testing
@@ -348,7 +348,7 @@ npm run sync:manual -- ds-tennis-sportradar   # requires SPORTRADAR_API_KEY; cal
 PRISMA_QUERY_LOG=1 npm run dev                # print every SQL statement
 ```
 
-The seed anchors every timestamp to a fixed reference instant (2026-09-14, Asia/Taipei) so re-running it never moves dates. Because of that, the demo fixtures are only "upcoming" for about a week around that date; see [Current limitations](#current-limitations).
+The seed lays a fixed timeline of offsets ("live now", "tomorrow 21:00 Taipei", "finished yesterday") over the current date, floored to the half hour, so the Dashboard, Schedule, Watchlist and History are populated whenever you seed. Set `DEMO_ANCHOR=2026-09-14` to reproduce a specific demo state. Tests and provider fixtures never use the wall clock. Details: [docs/demo-data-and-time.md](docs/demo-data-and-time.md).
 
 ## Environment variables
 
@@ -371,7 +371,7 @@ Stated precisely, because the difference matters:
 |---|---|---|
 | **Sportradar integration** | Adapter implemented; configuration validation, auth handling, pagination, normalization, persistence, idempotency and secret redaction verified against fixtures shaped like the documented API | **No run against the live API.** `SPORTRADAR_API_KEY` is not configured in any environment used so far. Real response shapes, authentication, rate limits, freshness and catalogue coverage are unverified |
 | **API credentials** | Read from the environment on the server; never in source, URLs or logs | No credential storage beyond environment variables |
-| **Demo data** | Deterministic seed from `lib/data/mock.ts`, idempotent, anchored to 2026-09-14 (Asia/Taipei) | Fixtures do not move with the calendar. After roughly 2026-09-20 the "upcoming" sections are empty until the seed anchor is changed or a live provider is synced |
+| **Demo data** | Deterministic timeline from `lib/data/mock.ts`, seeded relative to the current date (or `DEMO_ANCHOR`), idempotent, coherence-checked | It is still demo data: nothing advances between seeds, "live" matches are authored fixtures, and re-seeding is the only refresh |
 | **Authentication** | `getCurrentUserId()` is the single seam; all user tables are keyed by user id | No login, sessions or roles. Every request is the seeded demo user |
 | **Reminders** | Preference persisted per watchlisted match, validated, shown on four surfaces | **No notification is ever delivered.** No scheduler, worker, push, email or in-app delivery log |
 | **Synchronization** | Manual: Admin "Sync now" (Server Action) or `npm run sync:manual` | No background or scheduled sync, no live-score streaming, no deletion reconciliation, no `DataSource.provider` column (binding is in code) |
@@ -387,7 +387,7 @@ Next phase candidates, in rough priority order. None is started.
 2. **Authentication** behind the existing `getCurrentUserId()` seam; the user tables need no change.
 3. **Reminder delivery**: a scheduler over `UserWatchlistMatch × Match.startsAt`, an idempotent delivery log, and one channel (in-app via the header bell first).
 4. **Scheduled synchronization** and a `DataSource.provider` column so bindings live in data.
-5. **Presentation time zone** applied to day boundaries.
+5. **Presentation time zone** applied to day boundaries (the seed already evaluates its timeline in Asia/Taipei).
 6. A second team-sport provider to prove the "one adapter file, one registry entry, one DataSource row" claim against a live feed.
 
 ---
