@@ -11,6 +11,7 @@ import {
   type SyncEntityKind,
   type SyncErrorKind,
   type SyncIssue,
+  type SyncOutcome,
   type SyncResult,
   type SyncStatus,
 } from "@/lib/data/sync/types"
@@ -45,6 +46,8 @@ import type { MatchStatus as DbMatchStatus } from "@/lib/generated/prisma/enums"
 
 const SYNC_LOG_ENTITY = "all"
 const MAX_ERROR_LENGTH = 2000
+/** A RUNNING log older than this belongs to a dead process: a real run finishes in minutes, and the cron function is cut off at 300 s. */
+export const SYNC_LOCK_STALE_MS = 15 * 60_000
 
 const matchStatus: Record<Exclude<NormalizedMatch["status"], "unknown">, DbMatchStatus> = {
   upcoming: "UPCOMING",
@@ -93,6 +96,8 @@ export type SyncOptions = {
   signal?: AbortSignal
   /** Provider lookup; defaults to the registry. Tests inject fixture-backed adapters here. */
   resolveProvider?: (dataSourceId: string) => Provider<never> | undefined
+  /** Age after which a RUNNING log is treated as abandoned. */
+  staleLockMs?: number
 }
 
 export async function runSync(repository: SyncRepository, dataSourceId: string, options: SyncOptions = {}): Promise<SyncResult> {
@@ -100,7 +105,7 @@ export async function runSync(repository: SyncRepository, dataSourceId: string, 
   const clock = Date.now()
   const counts = emptyCounts()
   const issues: SyncIssue[] = []
-  const base = (status: SyncStatus, extra: Partial<SyncResult> = {}): SyncResult => ({
+  const base = (status: SyncOutcome, extra: Partial<SyncResult> = {}): SyncResult => ({
     dataSourceId,
     provider: null,
     status,
@@ -115,7 +120,13 @@ export async function runSync(repository: SyncRepository, dataSourceId: string, 
   const source = await repository.findDataSource(dataSourceId)
   if (!source) return base("FAILED", { error: `Data source "${dataSourceId}" does not exist.`, errorKind: "no-provider" })
 
-  const syncLogId = await repository.startSyncLog(dataSourceId, SYNC_LOG_ENTITY, startedAt)
+  // One run per source at a time, across processes: the RUNNING log is the lock (see sync-ops.acquireSyncLog).
+  const lock = await repository.acquireSyncLog(dataSourceId, SYNC_LOG_ENTITY, startedAt, options.staleLockMs ?? SYNC_LOCK_STALE_MS)
+  if (!lock.acquired) {
+    return base("SKIPPED", { syncLogId: lock.syncLogId, error: `A sync started at ${lock.activeSince.toISOString()} is still running; skipped.`, errorKind: "locked" })
+  }
+  const syncLogId = lock.syncLogId
+  if (lock.recovered > 0) issues.push({ level: "warning", entity: "provider", message: `${lock.recovered} abandoned run${lock.recovered === 1 ? "" : "s"} marked failed before this run.` })
   const fail = async (error: string, errorKind: SyncErrorKind, provider: string | null = null): Promise<SyncResult> => {
     await repository.finishSyncLog(syncLogId, { status: "FAILED", records: 0, durationMs: Date.now() - clock, error })
     return base("FAILED", { syncLogId, error, errorKind, provider })

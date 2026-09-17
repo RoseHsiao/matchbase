@@ -47,7 +47,8 @@ if (!url) {
 }
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) })
 try {
-  const result = await runSync(createSyncRepository(prisma), dataSourceId)
+  const repository = createSyncRepository(prisma, { transaction: (work) => prisma.$transaction((tx) => work(tx), { timeout: 15_000 }) })
+  const result = await runSync(repository, dataSourceId)
   console.log(`Status: ${result.status}${result.errorKind ? ` (${result.errorKind})` : ""}`)
   console.log(`Records: ${result.records} in ${result.durationMs} ms`)
   for (const [entity, c] of Object.entries(result.counts)) console.log(`  ${entity.padEnd(8)} created ${c.created}  updated ${c.updated}  failed ${c.failed}`)
@@ -58,7 +59,8 @@ try {
     if (result.issues.length > 20) console.log(`  … ${result.issues.length - 20} more in the sync log`)
   }
   console.log(`Sync log: ${result.syncLogId ?? "(none)"} → Admin → Sync Logs`)
-  process.exitCode = result.status === "FAILED" ? 1 : 0
+  // 0 success/partial, 1 failed, 3 skipped because another run holds the source (not an error: retry later).
+  process.exitCode = result.status === "FAILED" ? 1 : result.status === "SKIPPED" ? 3 : 0
 } finally {
   await prisma.$disconnect()
 }

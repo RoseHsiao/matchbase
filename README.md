@@ -99,7 +99,8 @@ External API ──▶ Provider adapter ──▶ NormalizedSnapshot ──▶ S
 
 - **Raw payloads never leave the adapter file.** The adapter's `Raw` type parameter is private; it maps its provider's vocabulary to MatchBase sport codes and statuses.
 - **The sync core iterates entities generically** in dependency order (leagues → seasons → venues → teams → players → matches), upserting each record independently by `(dataSourceId, externalId)` so internal ids, follows, watchlist rows and routes survive re-syncs. A bad record fails alone; the run ends SUCCESS, PARTIAL or FAILED.
-- **The browser never talks to the provider.** Syncs run in a Server Action or a CLI script, credentials are read from the environment on the server, and every recorded message is scrubbed of secrets. A build-output scan confirms no `SPORTRADAR` string reaches the client bundle.
+- **The browser never talks to the provider.** Syncs run in a Server Action, a CLI script, or the authenticated cron route, credentials are read from the environment on the server, and every recorded message is scrubbed of secrets. A build-output scan confirms no `SPORTRADAR`, `THESPORTSDB` or `CRON_SECRET` string reaches the client bundle.
+- **Scheduled sync shares the pipeline.** A Vercel Cron Job calls one route that authenticates with `CRON_SECRET` and runs a provider-neutral scheduler; the scheduler calls the same `runSync` the CLI and Admin use. A database-backed lock (the RUNNING sync log, taken under a row lock) keeps concurrent invocations from syncing one source twice, with stale-lock recovery. Admin shows each source's freshness.
 - **HTTP concerns are shared utilities**: timeouts, bounded retries for 429/5xx/timeouts only, `Retry-After` handling, a rate limiter, and injectable `fetch` and `sleep` so all of it is unit-tested without a network.
 
 The Sportradar Tennis adapter exercises the hardest path (paged season summaries, singles and doubles, "Last, First" names, offset timestamps, unmapped statuses) and is the first real provider.
@@ -141,6 +142,7 @@ flowchart LR
     C --> L[SyncLog + DataSource.lastSyncedAt]
     ADM[Admin · Sync now<br/>Server Action] --> C
     CLI[npm run sync:manual] --> C
+    CRON[Vercel Cron → /api/cron/sync<br/>CRON_SECRET → scheduler] --> C
 ```
 
 The sync core takes an injected repository and provider resolver, so the database tests run the real pipeline inside rolled-back transactions and the CLI script runs the same code the Admin button runs.
@@ -306,6 +308,8 @@ lib/
 prisma/
   schema.prisma  migrations/  seed.ts (idempotent; demo timeline laid over the current date)
 scripts/sync-data-source.mts   manual CLI sync of one DataSource
+app/api/cron/sync/route.ts     Vercel Cron trigger → lib/api/cron-sync.ts → lib/data/sync/scheduler.ts
+vercel.json                    the cron schedule (daily, UTC)
 tests/
   domain/  sync/  db/       see Testing
 docs/                       design decisions, architecture, case study
@@ -365,6 +369,8 @@ All variables are server-only. None is prefixed `NEXT_PUBLIC_`, none is imported
 | `SPORTRADAR_TENNIS_BASE_URL`, `_LANGUAGE`, `_SEASON_YEAR`, `_LEVELS`, `_COMPETITIONS`, `_REQUEST_INTERVAL_MS` | no | scope and pacing of the tennis sync; see `.env.example` |
 | `THESPORTSDB_API_KEY` | no (public free key `123`) | TheSportsDB V1 key, placed in the URL path on the server only |
 | `THESPORTSDB_BASE_URL`, `_REQUEST_INTERVAL_MS`, `_PAST_DAYS`, `_FUTURE_DAYS`, `_MAX_REQUESTS`, `_SEASON` | no | pacing, day window, per-run request budget and season override; see `.env.example` |
+| `CRON_SECRET` | for scheduled sync | sent by Vercel Cron as a Bearer token; the route refuses to run without it (at least 16 characters) |
+| `SYNC_*_MINUTES` | no | cadence tuning for freshness, the recency gate, the time budget and stale-lock recovery; see `.env.example` |
 | `PRISMA_QUERY_LOG` | no | `1` prints SQL |
 
 ## Current limitations
@@ -379,7 +385,7 @@ Stated precisely, because the difference matters:
 | **Demo data** | Deterministic timeline from `lib/data/mock.ts`, seeded relative to the current date (or `DEMO_ANCHOR`), idempotent, coherence-checked | It is still demo data: nothing advances between seeds, "live" matches are authored fixtures, and re-seeding is the only refresh |
 | **Authentication** | `getCurrentUserId()` is the single seam; all user tables are keyed by user id | No login, sessions or roles. Every request is the seeded demo user |
 | **Reminders** | Preference persisted per watchlisted match, validated, shown on four surfaces | **No notification is ever delivered.** No scheduler, worker, push, email or in-app delivery log |
-| **Synchronization** | Manual: Admin "Sync now" (Server Action) or `npm run sync:manual` | No background or scheduled sync, no live-score streaming, no deletion reconciliation, no `DataSource.provider` column (binding is in code) |
+| **Synchronization** | Manual (Admin "Sync now", `npm run sync:manual`) and scheduled: a daily Vercel Cron Job through `/api/cron/sync` with a database-backed run lock and Admin freshness; see [docs/scheduled-sync.md](docs/scheduled-sync.md) | Daily only, because Vercel Hobby allows nothing more frequent; no live-score streaming, no deletion reconciliation, no `DataSource.provider` column (binding is in code) |
 | **Time zones** | Instants stored in UTC; reminder arithmetic is zone-free | Day boundaries ("today", schedule days) use the server's local time; the decided Asia/Taipei presentation zone is not applied yet |
 | **Admin** | Catalogue CRUD, data sources, sync logs | Analytics, Monitoring and Settings are reserved "Coming soon" placeholders |
 | **Match detail** | Aggregate score per side, live detail string | No per-set / per-map scores, rankings or seeds |
@@ -391,7 +397,7 @@ Next phase candidates, in rough priority order. None is started.
 1. **Verify the live Sportradar path** with a real key: run the documented smoke test, record observed response shapes, fix any adapter assumptions. (TheSportsDB is already live-verified for one league; a second league is a registry binding.)
 2. **Authentication** behind the existing `getCurrentUserId()` seam; the user tables need no change.
 3. **Reminder delivery**: a scheduler over `UserWatchlistMatch × Match.startsAt`, an idempotent delivery log, and one channel (in-app via the header bell first).
-4. **Scheduled synchronization** and a `DataSource.provider` column so bindings live in data.
+4. A `DataSource.provider` column so bindings live in data (scheduled synchronization itself now exists).
 5. **Presentation time zone** applied to day boundaries (the seed already evaluates its timeline in Asia/Taipei).
 6. A second team-sport provider to prove the "one adapter file, one registry entry, one DataSource row" claim against a live feed.
 

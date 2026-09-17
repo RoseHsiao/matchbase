@@ -76,6 +76,7 @@ export async function runDataSourceSync(dataSourceId: unknown): Promise<AdminAct
   try {
     const result = await syncDataSource(dataSourceId)
     refresh()
+    if (result.status === "SKIPPED") return { ok: true, message: `Sync already running: ${result.error ?? "another run holds this source."}` }
     if (result.status === "FAILED") {
       const prefix = result.errorKind === "configuration" ? "Sync not run" : "Sync failed"
       return { ok: false, error: `${prefix}: ${result.error ?? "see the sync log."}` }

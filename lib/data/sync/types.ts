@@ -184,6 +184,7 @@ export type SyncErrorKind =
   | "malformed"
   | "no-provider"
   | "records"
+  | "locked"
   | "unknown"
 
 // ---------------------------------------------------------------------------
@@ -223,7 +224,11 @@ export type Provider<Raw = unknown> = {
 // Results
 // ---------------------------------------------------------------------------
 
+/** Stored sync log statuses. */
 export type SyncStatus = "SUCCESS" | "PARTIAL" | "FAILED"
+
+/** A run's outcome: the stored statuses, or SKIPPED when another run held the source's lock (nothing is logged for a skip). */
+export type SyncOutcome = SyncStatus | "SKIPPED"
 
 export type SyncEntityCounts = { created: number; updated: number; failed: number }
 
@@ -232,7 +237,7 @@ export type SyncCounts = Record<"leagues" | "seasons" | "teams" | "players" | "v
 export type SyncResult = {
   dataSourceId: string
   provider: string | null
-  status: SyncStatus
+  status: SyncOutcome
   /** Records created or updated. */
   records: number
   durationMs: number

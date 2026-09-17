@@ -18,6 +18,8 @@ import { dataSourceStatusOptions } from "@/lib/admin/status"
 import { runDataSourceSync } from "@/lib/data/admin-actions"
 import { Badge } from "@/components/ui/badge"
 import type { DataSource, DataSourceStatus, Sport } from "@/lib/data/types"
+import { DEFAULT_SCHEDULE_CONFIG } from "@/lib/data/sync/schedule-config"
+import { freshnessLabel, getDataSourceFreshness, getSyncExecutionState } from "@/lib/data/sync/freshness"
 import { formatRelativeTime } from "@/lib/format"
 import { ALL } from "@/lib/schedule"
 import { sportCategory, sportLabel, sports } from "@/lib/sports"
@@ -50,6 +52,30 @@ function ProviderCell({ source }: { source: DataSource }) {
               ? `Configured · ${provider.configurationDetail}`
               : "Configured · credentials present, not yet verified against the live API"
           : `Not configured · ${provider.configurationError?.split(";")[0].replace(/\. The .*$/, "") ?? "see configuration"}`}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * "Is this source being kept fresh?" in one cell: freshness of the last
+ * successful run against the scheduled cadence, what the source is doing
+ * now, and whether the scheduler includes it. Pure helpers with the admin
+ * snapshot's `now`, so the answer is the same on the server and the client.
+ */
+function FreshnessCell({ source, now }: { source: DataSource; now: Date }) {
+  if (!source.provider) return <span className="text-muted-foreground">—</span>
+  const freshness = getDataSourceFreshness({ lastSuccessfulSyncAt: source.lastSyncedAt, expectedIntervalMs: DEFAULT_SCHEDULE_CONFIG.expectedIntervalMs, graceMs: DEFAULT_SCHEDULE_CONFIG.graceMs, now })
+  const execution = getSyncExecutionState(source.lastRun ? { status: source.lastRun.status } : undefined)
+  const tone = freshness.state === "fresh" ? "text-foreground" : freshness.state === "stale" ? "text-destructive" : "text-muted-foreground"
+  return (
+    <span className="grid gap-0.5 leading-tight">
+      <span className={tone}>
+        {freshnessLabel(freshness)}
+        {execution === "syncing" ? " · syncing now" : execution === "failed" ? ` · last run ${source.lastRun?.status}` : ""}
+      </span>
+      <span className="text-xs text-muted-foreground" title={source.scheduleReason}>
+        {source.scheduled ? "Auto: daily" : `Auto: off · ${source.scheduleReason ?? "not schedulable"}`}
       </span>
     </span>
   )
@@ -98,6 +124,7 @@ export function AdminDataSourcesView() {
     },
     { key: "status", header: "Status", cell: (row) => <AdminStatusBadge status={row.status} />, sortValue: (row) => row.status },
     { key: "synced", header: "Last synced", cell: (row) => (row.lastSyncedAt ? <time dateTime={row.lastSyncedAt}>{formatRelativeTime(row.lastSyncedAt, now)}</time> : "Never"), sortValue: (row) => row.lastSyncedAt ?? "", className: "whitespace-nowrap" },
+    { key: "freshness", header: "Freshness", cell: (row) => <FreshnessCell source={row} now={now} />, sortValue: (row) => (row.scheduled ? "1" : "0") + (row.lastSyncedAt ?? "") },
   ]
 
   return (

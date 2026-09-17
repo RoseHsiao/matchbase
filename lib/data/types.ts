@@ -139,8 +139,14 @@ export type DataSource = {
   /** Undefined for sources that span disciplines, such as manual import. */
   sport?: Sport
   status: DataSourceStatus
+  /** Last SUCCESS or PARTIAL run. */
   lastSyncedAt?: string
   provider?: DataSourceProvider
+  /** Whether the scheduler picks this source up automatically, and why not when it does not. Undefined until the admin snapshot computes it. */
+  scheduled?: boolean
+  scheduleReason?: string
+  /** The most recent run of any outcome, for execution state ("syncing", "failed"). */
+  lastRun?: { status: SyncStatus; at: string; error?: string }
 }
 
 export type SyncStatus = "running" | "success" | "failed" | "partial"

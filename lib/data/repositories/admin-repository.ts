@@ -2,7 +2,8 @@ import "server-only"
 
 import { db } from "@/lib/data/db"
 import { validateParticipants } from "@/lib/data/match-participants"
-import { describeDataSourceProvider } from "@/lib/data/sync/providers/registry"
+import { describeDataSourceProvider, resolveProvider } from "@/lib/data/sync/providers/registry"
+import { isSchedulable } from "@/lib/data/sync/scheduler"
 import { adminActivity } from "@/lib/data/mock"
 import {
   entityStatus,
@@ -201,7 +202,7 @@ export const adminRepository = {
       db.venue.findMany({ orderBy: { name: "asc" } }),
       db.match.findMany({ include: matchInclude, orderBy: [{ startsAt: "asc" }, { id: "asc" }] }),
       db.dataSource.findMany({
-        include: { syncLogs: { select: { status: true }, orderBy: { startedAt: "desc" }, take: 1 } },
+        include: { syncLogs: { select: { status: true, startedAt: true, error: true }, orderBy: { startedAt: "desc" }, take: 1 } },
         orderBy: { name: "asc" },
       }),
       db.syncLog.findMany({ orderBy: { startedAt: "desc" } }),
@@ -216,12 +217,17 @@ export const adminRepository = {
       venues: venues.map(toVenue),
       dataSources: dataSources.map((row): DataSource => {
         const binding = describeDataSourceProvider(row.id)
+        const eligibility = isSchedulable(row, resolveProvider(row.id))
+        const latest = row.syncLogs[0]
         return {
           id: row.id,
           name: row.name,
           sport: row.sportId === null ? undefined : toSport(row.sportId),
-          status: deriveDataSourceStatus(row.status, row.syncLogs[0]?.status),
+          status: deriveDataSourceStatus(row.status, latest?.status),
           lastSyncedAt: row.lastSyncedAt?.toISOString(),
+          scheduled: eligibility.eligible,
+          scheduleReason: eligibility.eligible ? undefined : eligibility.reason,
+          lastRun: latest ? { status: fromDbSyncStatus[latest.status], at: latest.startedAt.toISOString(), error: latest.error?.split("\n")[0] } : undefined,
           provider: binding
             ? {
                 key: binding.key,

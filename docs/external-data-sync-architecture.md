@@ -6,7 +6,8 @@ Phase 4 (implemented 2026-09-15). Server-side ingestion from external providers 
 
 - Implemented in Phase 4: provider contract, HTTP utilities, sync service, sync repository, provider registry, one deterministic mock provider, an Admin "Sync now" action.
 - Implemented since (this document was updated in place): the `MatchParticipant` model (Phase 5, `docs/match-participant-model-analysis.md`), a real provider adapter for Sportradar Tennis (`docs/tennis-provider.md`), the retry, pagination, configuration and redaction hardening of Phase 7 (`docs/live-data-integration.md`), and a second real adapter, TheSportsDB V1 for Premier League football, verified against the live free API (Phase 8.1, `docs/providers/thesportsdb.md`).
-- Not implemented (deferred): scheduling, background workers, live-score push, a `provider` column on `DataSource`. The Sportradar adapter has not been run against the live API (no key configured).
+- Implemented in Phase 8.3: scheduled execution through a Vercel Cron Job and a provider-neutral scheduler that calls the same `runSync`, with a database-backed per-source run lock and a freshness model (`docs/scheduled-sync.md`).
+- Not implemented (deferred): background workers or queues, live-score push, a `provider` column on `DataSource`. The Sportradar adapter has not been run against the live API (no key configured).
 
 ## Pipeline
 
@@ -104,7 +105,7 @@ Since Phase 7 the pipeline lives in `lib/data/sync/sync-core.ts` (`runSync`, inj
 - `utils/http.ts` provides `fetchJson` (timeout via `AbortSignal.timeout`, bounded exponential-backoff retries for 429/502/503/504/timeouts/connection failures only, `Retry-After` in seconds or HTTP-date form capped at 30 s, malformed-body detection, an `onResponse` hook for pagination headers, injectable `fetch` and `sleep`), `withRetry`, `classifyError`, `redactUrl`/`redactSecrets`, and a `RateLimiter` enforcing a minimum interval between requests. Adapters compose them; the mock adapter pages its fixtures through the limiter to exercise the path, the tennis adapter pages real responses with `X-Max-Results` under a 50-page cap.
 - Configuration problems (missing or rejected credentials) are thrown as `ProviderConfigurationError` from `fetch`; the run is FAILED with that message and no request is retried.
 - Fetch and normalize errors abort the run as FAILED. Record-level errors (missing parent, invalid date, same team on both sides, database constraint) fail that record only.
-- No job queue, cron, or worker exists. `syncDataSource` is a plain server function callable from a Server Action today and from a scheduler later.
+- No job queue or worker exists. `syncDataSource` is a plain server function called from the Admin Server Action, the CLI, and, since Phase 8.3, the cron scheduler. Every call takes the per-source run lock inside `runSync`.
 
 ## Transaction boundaries
 

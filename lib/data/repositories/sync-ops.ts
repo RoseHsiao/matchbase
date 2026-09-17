@@ -52,11 +52,22 @@ function sameParticipants(existing: { side: string; order: number; teamId: strin
 }
 
 /** The subset of the client the sync writes need; a `$transaction` client satisfies it. */
-export type SyncClient = Pick<Prisma.TransactionClient, "dataSource" | "sport" | "league" | "season" | "team" | "player" | "venue" | "match" | "matchParticipant" | "syncLog">
+export type SyncClient = Pick<Prisma.TransactionClient, "dataSource" | "sport" | "league" | "season" | "team" | "player" | "venue" | "match" | "matchParticipant" | "syncLog" | "$queryRaw">
+
+/** Runs `work` in a short database transaction. Omitted when the client already is one (tests). */
+export type TransactionRunner = <T>(work: (tx: SyncClient) => Promise<T>) => Promise<T>
+
+export type SyncRepositoryOptions = { transaction?: TransactionRunner }
 
 export type SyncRepository = ReturnType<typeof createSyncRepository>
 
-export function createSyncRepository(db: SyncClient) {
+/** What lock acquisition reports: the new RUNNING log, or the run that still holds the source. */
+export type SyncLockResult =
+  | { acquired: true; syncLogId: string; recovered: number }
+  | { acquired: false; syncLogId: string; activeSince: Date; recovered: number }
+
+export function createSyncRepository(db: SyncClient, options: SyncRepositoryOptions = {}) {
+  const inTransaction: TransactionRunner = options.transaction ?? ((work) => work(db))
   return {
   findDataSource(id: string) {
     return db.dataSource.findUnique({ where: { id }, select: { id: true, name: true, sportId: true, status: true } })
@@ -161,9 +172,31 @@ export function createSyncRepository(db: SyncClient) {
     return { id: existing.id, created: false }
   },
 
-  async startSyncLog(dataSourceId: string, entity: string, startedAt: Date): Promise<string> {
-    const row = await db.syncLog.create({ data: { dataSourceId, entity, records: 0, status: "RUNNING", startedAt }, select: { id: true } })
-    return row.id
+  /**
+   * Takes the per-source run lock by creating the RUNNING sync log, atomically.
+   *
+   * The DataSource row is locked `FOR UPDATE` inside one short transaction, so
+   * two processes (two serverless invocations, an Admin click during a cron
+   * run, the CLI) serialise here: the second sees the first's RUNNING log
+   * and gets `acquired: false`. The RUNNING row *is* the durable lock, so it
+   * survives the process; a RUNNING row older than `staleAfterMs` is an
+   * abandoned run (a killed or timed-out process), marked FAILED here and
+   * counted in `recovered`, so a crash can never lock a source for good. The
+   * row lock is held only for these few statements, never for the sync.
+   */
+  async acquireSyncLog(dataSourceId: string, entity: string, startedAt: Date, staleAfterMs: number): Promise<SyncLockResult> {
+    return inTransaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "DataSource" WHERE "id" = ${dataSourceId} FOR UPDATE`
+      const staleBefore = new Date(startedAt.getTime() - staleAfterMs)
+      const abandoned = await tx.syncLog.updateMany({
+        where: { dataSourceId, status: "RUNNING", startedAt: { lt: staleBefore } },
+        data: { status: "FAILED", durationMs: staleAfterMs, error: `Abandoned: the run did not finish within ${Math.round(staleAfterMs / 60_000)} minutes and was marked failed by a later run.` },
+      })
+      const active = await tx.syncLog.findFirst({ where: { dataSourceId, status: "RUNNING" }, select: { id: true, startedAt: true }, orderBy: { startedAt: "desc" } })
+      if (active) return { acquired: false, syncLogId: active.id, activeSince: active.startedAt, recovered: abandoned.count }
+      const row = await tx.syncLog.create({ data: { dataSourceId, entity, records: 0, status: "RUNNING", startedAt }, select: { id: true } })
+      return { acquired: true, syncLogId: row.id, recovered: abandoned.count }
+    })
   },
 
   async finishSyncLog(id: string, outcome: { status: SyncStatus; records: number; durationMs: number; error: string | null }): Promise<void> {
