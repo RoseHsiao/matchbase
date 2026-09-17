@@ -41,7 +41,7 @@ type Provider<Raw> = {
 
 `NormalizedSnapshot` holds leagues, seasons, teams, players, venues, team matches (`NormalizedMatch`), player matches (`NormalizedIndividualMatch`, two `sides` of players), and issues. The registry (`lib/data/sync/providers/registry.ts`) binds a DataSource id to a provider key; nothing executable is stored in the database. `describeDataSourceProvider(id)` reports the binding, its kind, and its configuration status to Admin → Data Sources.
 
-Registered providers: `mock-basketball` (kind `mock`, bound to `ds-mock-basketball`) and `sportradar-tennis` (kind `live`, bound to `ds-tennis-sportradar`).
+Registered providers: `mock-basketball` (kind `mock`, bound to `ds-mock-basketball`), `sportradar-tennis` (kind `live`, bound to `ds-tennis-sportradar`) and, since Phase 8.1, `thesportsdb-epl` (kind `live`, bound to `ds-thesportsdb-epl`; the first adapter verified against a live API, see `docs/providers/thesportsdb.md`). A configured live provider may add a one-line detail to its Admin row (`ProviderConfigurationStatus.detail`).
 
 ## 3. Environment variables
 

@@ -160,8 +160,12 @@ export class ProviderConfigurationError extends Error {
   }
 }
 
-/** Whether an adapter has what it needs to run, checked without any request. */
-export type ProviderConfigurationStatus = { configured: true } | { configured: false; error: string }
+/**
+ * Whether an adapter has what it needs to run, checked without any request.
+ * A configured adapter may add a one-line `detail` (what the configuration
+ * means, e.g. "public free key, 24 requests/min"); it never contains a secret.
+ */
+export type ProviderConfigurationStatus = { configured: true; detail?: string } | { configured: false; error: string }
 
 /**
  * Where a run failed or what went wrong, for the sync log and the admin UI.

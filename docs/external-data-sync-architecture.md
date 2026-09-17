@@ -5,7 +5,7 @@ Phase 4 (implemented 2026-09-15). Server-side ingestion from external providers 
 ## Status
 
 - Implemented in Phase 4: provider contract, HTTP utilities, sync service, sync repository, provider registry, one deterministic mock provider, an Admin "Sync now" action.
-- Implemented since (this document was updated in place): the `MatchParticipant` model (Phase 5, `docs/match-participant-model-analysis.md`), a real provider adapter for Sportradar Tennis (`docs/tennis-provider.md`), and the retry, pagination, configuration and redaction hardening of Phase 7 (`docs/live-data-integration.md`).
+- Implemented since (this document was updated in place): the `MatchParticipant` model (Phase 5, `docs/match-participant-model-analysis.md`), a real provider adapter for Sportradar Tennis (`docs/tennis-provider.md`), the retry, pagination, configuration and redaction hardening of Phase 7 (`docs/live-data-integration.md`), and a second real adapter, TheSportsDB V1 for Premier League football, verified against the live free API (Phase 8.1, `docs/providers/thesportsdb.md`).
 - Not implemented (deferred): scheduling, background workers, live-score push, a `provider` column on `DataSource`. The Sportradar adapter has not been run against the live API (no key configured).
 
 ## Pipeline
@@ -50,7 +50,7 @@ One adapter serves one sport. A provider covering several sports registers one a
 
 `lib/data/sync/providers/registry.ts` holds two maps: provider key → adapter, and DataSource id → provider key. The `DataSource` model has no provider column yet; adding one is the correct long-term home and needs a migration, so it is deferred and the binding is code for now. A DataSource with no binding cannot sync and gets a FAILED log saying so.
 
-The seed adds two bound DataSources: `ds-mock-basketball` ("Mock Basketball Feed", basketball, mock adapter) and `ds-tennis-sportradar` ("Sportradar Tennis", tennis, Sportradar adapter, needs `SPORTRADAR_API_KEY`). The other seeded sources (NBA, LCK, EPL, VCT, ESL feeds, Manual Import) remain unbound placeholders.
+The seed adds three bound DataSources: `ds-mock-basketball` ("Mock Basketball Feed", basketball, mock adapter), `ds-tennis-sportradar` ("Sportradar Tennis", tennis, Sportradar adapter, needs `SPORTRADAR_API_KEY`) and `ds-thesportsdb-epl` ("TheSportsDB · Premier League", football, TheSportsDB adapter, works with the public free key). The other seeded sources (NBA, LCK, EPL, VCT, ESL feeds, Manual Import) remain unbound placeholders.
 
 ## Sync lifecycle
 

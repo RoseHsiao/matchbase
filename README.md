@@ -227,12 +227,13 @@ Tennis players are stored as `Player` rows with `teamId = null`, are listed as "
 
 ## External data sync
 
-Two providers are registered in `lib/data/sync/providers/registry.ts`:
+Three providers are registered in `lib/data/sync/providers/registry.ts`:
 
 | Provider | Kind | Bound DataSource | Purpose |
 |---|---|---|---|
 | `mock-basketball` | mock | `ds-mock-basketball` | deterministic fixtures relative to the run time; drives pipeline, idempotency and PARTIAL-run tests |
 | `sportradar-tennis` | live | `ds-tennis-sportradar` | Sportradar Tennis API v3: competitions → seasons → paged summaries; singles and doubles |
+| `thesportsdb-epl` | live | `ds-thesportsdb-epl` | TheSportsDB V1 free API, English Premier League: league → team list → season, next, previous and day schedules; **verified against the live API** |
 
 What the pipeline guarantees (all covered by tests):
 
@@ -244,7 +245,7 @@ What the pipeline guarantees (all covered by tests):
 
 Admin → Data Sources shows each source's state precisely: "None (placeholder)", "Mock · Deterministic fixtures", "Live · Not configured · SPORTRADAR_API_KEY is not set", or "Live · Configured · credentials present, not yet verified against the live API".
 
-Details: [docs/external-data-sync-architecture.md](docs/external-data-sync-architecture.md), [docs/live-data-integration.md](docs/live-data-integration.md), [docs/tennis-provider.md](docs/tennis-provider.md).
+Details: [docs/external-data-sync-architecture.md](docs/external-data-sync-architecture.md), [docs/live-data-integration.md](docs/live-data-integration.md), [docs/tennis-provider.md](docs/tennis-provider.md), [docs/providers/thesportsdb.md](docs/providers/thesportsdb.md).
 
 ## Watchlist and reminders
 
@@ -345,6 +346,7 @@ Optional:
 ```bash
 npm run sync:manual -- ds-mock-basketball     # run the mock provider through the real pipeline
 npm run sync:manual -- ds-tennis-sportradar   # requires SPORTRADAR_API_KEY; calls the live API
+npm run sync:manual -- ds-thesportsdb-epl     # calls the live TheSportsDB free API (about 75 s, 25 paced requests)
 PRISMA_QUERY_LOG=1 npm run dev                # print every SQL statement
 ```
 
@@ -361,6 +363,8 @@ All variables are server-only. None is prefixed `NEXT_PUBLIC_`, none is imported
 | `SPORTRADAR_API_KEY` | for a live tennis sync | sent as `x-api-key`; without it the tennis source reports "Not configured" and a sync records a FAILED run without making a request |
 | `SPORTRADAR_TENNIS_ACCESS_LEVEL` | no (`trial`) | must match the key |
 | `SPORTRADAR_TENNIS_BASE_URL`, `_LANGUAGE`, `_SEASON_YEAR`, `_LEVELS`, `_COMPETITIONS`, `_REQUEST_INTERVAL_MS` | no | scope and pacing of the tennis sync; see `.env.example` |
+| `THESPORTSDB_API_KEY` | no (public free key `123`) | TheSportsDB V1 key, placed in the URL path on the server only |
+| `THESPORTSDB_BASE_URL`, `_REQUEST_INTERVAL_MS`, `_PAST_DAYS`, `_FUTURE_DAYS`, `_MAX_REQUESTS`, `_SEASON` | no | pacing, day window, per-run request budget and season override; see `.env.example` |
 | `PRISMA_QUERY_LOG` | no | `1` prints SQL |
 
 ## Current limitations
@@ -370,6 +374,7 @@ Stated precisely, because the difference matters:
 | Area | What exists | What does not |
 |---|---|---|
 | **Sportradar integration** | Adapter implemented; configuration validation, auth handling, pagination, normalization, persistence, idempotency and secret redaction verified against fixtures shaped like the documented API | **No run against the live API.** `SPORTRADAR_API_KEY` is not configured in any environment used so far. Real response shapes, authentication, rate limits, freshness and catalogue coverage are unverified |
+| **TheSportsDB integration** | Adapter implemented and **run twice against the live V1 free API** for the Premier League: real fixtures, results, clubs, badges and venues ingested through the generic pipeline, idempotent | Free-tier listings are truncated (10 teams, 5 to 15 season events, 3 per day, 1 next and previous), so coverage is a window around the run, not a full season. No live match was observed, so live-phase statuses are fixture-tested only. Players are not synced |
 | **API credentials** | Read from the environment on the server; never in source, URLs or logs | No credential storage beyond environment variables |
 | **Demo data** | Deterministic timeline from `lib/data/mock.ts`, seeded relative to the current date (or `DEMO_ANCHOR`), idempotent, coherence-checked | It is still demo data: nothing advances between seeds, "live" matches are authored fixtures, and re-seeding is the only refresh |
 | **Authentication** | `getCurrentUserId()` is the single seam; all user tables are keyed by user id | No login, sessions or roles. Every request is the seeded demo user |
@@ -383,7 +388,7 @@ Stated precisely, because the difference matters:
 
 Next phase candidates, in rough priority order. None is started.
 
-1. **Verify the live Sportradar path** with a real key: run the documented smoke test, record observed response shapes, fix any adapter assumptions.
+1. **Verify the live Sportradar path** with a real key: run the documented smoke test, record observed response shapes, fix any adapter assumptions. (TheSportsDB is already live-verified for one league; a second league is a registry binding.)
 2. **Authentication** behind the existing `getCurrentUserId()` seam; the user tables need no change.
 3. **Reminder delivery**: a scheduler over `UserWatchlistMatch × Match.startsAt`, an idempotent delivery log, and one channel (in-app via the header bell first).
 4. **Scheduled synchronization** and a `DataSource.provider` column so bindings live in data.

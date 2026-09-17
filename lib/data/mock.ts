@@ -427,6 +427,8 @@ export function buildDataSources(clock: DemoClock): DataSource[] {
   { id: "ds-mock-basketball", name: "Mock Basketball Feed", sport: "basketball", status: "connected" },
   // Bound to the Sportradar tennis adapter; needs SPORTRADAR_API_KEY to sync.
   { id: "ds-tennis-sportradar", name: "Sportradar Tennis", sport: "tennis", status: "connected" },
+  // Bound to the TheSportsDB V1 adapter for league 4328 (English Premier League); the public free key works.
+  { id: "ds-thesportsdb-epl", name: "TheSportsDB · Premier League", sport: "football", status: "connected" },
   ]
 }
 

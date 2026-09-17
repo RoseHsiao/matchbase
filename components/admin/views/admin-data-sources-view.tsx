@@ -46,7 +46,9 @@ function ProviderCell({ source }: { source: DataSource }) {
         {provider.configured
           ? provider.kind === "mock"
             ? "Deterministic fixtures, never external data"
-            : "Configured · credentials present, not yet verified against the live API"
+            : provider.configurationDetail
+              ? `Configured · ${provider.configurationDetail}`
+              : "Configured · credentials present, not yet verified against the live API"
           : `Not configured · ${provider.configurationError?.split(";")[0].replace(/\. The .*$/, "") ?? "see configuration"}`}
       </span>
     </span>

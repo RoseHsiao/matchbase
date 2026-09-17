@@ -129,6 +129,8 @@ export type DataSourceProvider = {
   configured: boolean
   /** Why the provider cannot run, e.g. a missing API key. Never contains a credential. */
   configurationError?: string
+  /** What a configured provider's setup means, when the adapter says so. Never contains a credential. */
+  configurationDetail?: string
 }
 
 export type DataSource = {

@@ -197,6 +197,7 @@ Alongside the tests: `npm run typecheck`, `npm run lint`, `npm run build` (which
 
 Stated precisely.
 
+- **A second, live-verified provider exists.** TheSportsDB V1 (free key) for Premier League football was synced twice into the development database through the unchanged pipeline; its free tier truncates listings, so it is a window, not a season ([providers/thesportsdb.md](providers/thesportsdb.md)).
 - **Live Sportradar responses are unverified.** No API key has been configured in any environment used so far. The adapter, its configuration validation, authentication handling, pagination, normalization, persistence, idempotency and secret redaction are verified against fixtures shaped like the documented API. Actual response shapes, rate-limit behaviour, freshness and catalogue coverage are not. A manual smoke test is documented in [live-data-integration.md §16](live-data-integration.md).
 - **Reminders are preferences, not notifications.** Nothing is delivered by any channel.
 - **No authentication.** `getCurrentUserId()` returns the seeded demo user for every request. It is the single seam a session would replace; the user tables need no change.

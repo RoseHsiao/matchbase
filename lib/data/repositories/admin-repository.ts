@@ -229,6 +229,7 @@ export const adminRepository = {
                 kind: binding.kind,
                 configured: binding.configuration.configured,
                 configurationError: binding.configuration.configured ? undefined : binding.configuration.error,
+                configurationDetail: binding.configuration.configured ? binding.configuration.detail : undefined,
               }
             : undefined,
         }
