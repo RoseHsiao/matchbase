@@ -13,11 +13,16 @@
 //   references are SetNull, user join rows and sync logs Cascade.
 // - No model exists for a UI concept (views, filters, dashboard, admin pages).
 //
-// Invariants that Prisma cannot express and that the repository layer must
-// enforce for now:
-// - Match.homeTeamId <> Match.awayTeamId
-// - Match.homeScore and Match.awayScore are both null or both set
-//   (both could later become PostgreSQL CHECK constraints in a migration)
+// Invariants that Prisma cannot express:
+// - Match.sideAScore and Match.sideBScore are both null or both set
+//   (CHECK "Match_scores_paired", migration 20260915061141)
+// - a MatchParticipant references exactly one team or one player
+//   (CHECK "MatchParticipant_one_ref"); positions start at 1
+//   (CHECK "MatchParticipant_order_positive"); a team or player appears at
+//   most once per match (@@unique below), which also keeps the sides disjoint
+// - the remaining participant rules (both sides non-empty, homogeneous sides,
+//   one team per team side) live in lib/data/match-participants.ts and are
+//   applied by every writer (admin, sync, seed)
 // - at most one Season per League has status CURRENT
 //   (not expressible as a normal Prisma constraint or a CHECK constraint;
 //   the eventual database-level solution is a PostgreSQL partial unique

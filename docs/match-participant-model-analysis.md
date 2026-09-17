@@ -1,6 +1,6 @@
 # Match / MatchSide / MatchParticipant Analysis
 
-Phase 5, analysis only (2026-09-15). No code, schema, migration, seed, or dependency was changed while producing this document. It records an architecture decision for a later implementation phase.
+Phase 5 (2026-09-15). Sections 1 to 25 are the analysis as written before implementation; nothing was changed while producing them. The model was implemented the same day, and section 26 ("Implementation") records what was built and where it deviates from the recommendation (notably: `Sport.participantKind` / `maxPerSide` were **not** added, scores are `sideAScore` / `sideBScore`, participant indexes are single-column). Read section 26 as authoritative and the rest as the reasoning behind it.
 
 ## 1. Executive Summary
 

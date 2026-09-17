@@ -2,12 +2,15 @@
 
 ## Status
 
-- Decision status: Approved for v1
-- Prisma implementation: Not started
-- PostgreSQL migration: Not started
-- Purpose: Define the v1 data-model decisions before implementation
+- Decision status: Approved for v1; implemented
+- Prisma implementation: Complete (`prisma/schema.prisma`)
+- PostgreSQL migration: Applied. Four migrations: `20260913083037_init`, `20260915061141_match_participants`, `20260915063143_drop_legacy_match_sides`, `20260915084918_watchlist_reminders`
+- Last updated: 2026-09-17 (status header and stale passages corrected; decisions unchanged)
+- Purpose: Record every v1 data-model decision with its rationale, and the implementation notes for each phase
 
-This document turns the findings in `docs/data-model-architecture-audit.md` into explicit decisions. The audit describes the current code; this document is the contract for what gets built. Where the two differ, this document wins for implementation, and the audit remains the record of why.
+This document turns the findings in `docs/data-model-architecture-audit.md` into explicit decisions. The audit is now a historical snapshot of the mock-data codebase; this document is the contract that was built. Where the two differ, this document wins, and the audit remains the record of why.
+
+Reading guide: sections 1 to 20 are the decisions. Section 6 was revised on 2026-09-15 when `homeTeamId` / `awayTeamId` were replaced by `MatchParticipant`; a few later sections that still describe the original two-team shape are marked as superseded in place. "Prisma Schema Implementation Notes" at the end records what each phase actually built. Portfolio readers should start with `docs/case-study.md`.
 
 ---
 
@@ -353,8 +356,10 @@ League
 Season
     ↓
 Match
+ ↓
+MatchParticipant (side A | B, order)
  ↙      ↘
-Team    Team
+Team    Player
  ↓
 Player
 
@@ -370,7 +375,7 @@ User
  └── UserWatchlistMatch  → Match
 ```
 
-Team also references League directly (primary league). Match references League, Season, both Teams, and optionally Venue.
+Team also references League directly (primary league). Match references League, Season, and optionally Venue; its sides are `MatchParticipant` rows that reference exactly one Team or one Player each (section 6, revised 2026-09-15). The original diagram showed Match referencing two Teams directly; that shape was replaced by the participant model.
 
 ---
 
@@ -413,7 +418,7 @@ Team also references League directly (primary league). Match references League, 
 
 - No full authentication system
 - No public API requirement
-- No generic participant abstraction
+- ~~No generic participant abstraction~~ (superseded 2026-09-15: `MatchParticipant` was introduced when the tennis provider needed player sides; see section 6)
 - No multi-league team relationship
 - No player team history
 - No polymorphic external identity system
@@ -529,7 +534,7 @@ Indexes follow the query patterns in the audit's section 8.1. Where a composite 
 
 ### Relations to review
 
-- `Match.homeTeam` / `Match.awayTeam` use named relations `"HomeTeam"` and `"AwayTeam"` with back-relations `Team.homeMatches` / `Team.awayMatches`. Review that the repository's "matches involving team X" query unions both.
+- Superseded 2026-09-15: the original `Match.homeTeam` / `Match.awayTeam` named relations (`"HomeTeam"` / `"AwayTeam"`, back-relations `Team.homeMatches` / `Team.awayMatches`) were dropped with `20260915063143_drop_legacy_match_sides`. "Matches involving team X" is now `participants: { some: { teamId } }` through `Team.participations`.
 - `DataSource` now has five domain back-relations plus `syncLogs`. This is the cost of direct external id fields and is expected.
 
 ### Prisma configuration and validation status

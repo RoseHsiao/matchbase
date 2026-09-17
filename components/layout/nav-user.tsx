@@ -54,7 +54,7 @@ export function NavUser({ name, email, avatarUrl }: NavUserProps) {
               />
             }
           >
-            <Avatar className="size-8 rounded-lg">
+            <Avatar className="size-8 rounded-lg after:rounded-lg">
               <AvatarImage src={avatarUrl} alt={name} />
               <AvatarFallback className="rounded-lg">
                 {initials(name)}

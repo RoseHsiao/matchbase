@@ -106,6 +106,8 @@ type SportLineProps = {
   showSport?: boolean
   size?: IconSize
   className?: string
+  /** Style the league label apart from the sport name, e.g. muted in a heading where the sport is emphasised. */
+  leagueClassName?: string
 }
 
 /**
@@ -113,18 +115,18 @@ type SportLineProps = {
  * metadata. With `showSport={false}` it collapses to "[icon] NBA" for narrow
  * rows, keeping the sport's name on the icon for assistive technology.
  */
-export function SportLine({ sport, league, linked = false, showSport = true, size = "sm", className }: SportLineProps) {
+export function SportLine({ sport, league, linked = false, showSport = true, size = "sm", className, leagueClassName }: SportLineProps) {
   const { name } = getSportDefinition(sport)
   const leagueLabel = league ? (
     linked ? (
       <Link
         href={`/leagues/${league.id}`}
-        className="rounded-sm outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+        className={cn("rounded-sm outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50", leagueClassName)}
       >
         {league.label}
       </Link>
     ) : (
-      league.label
+      <span className={leagueClassName}>{league.label}</span>
     )
   ) : null
   return (
@@ -132,7 +134,7 @@ export function SportLine({ sport, league, linked = false, showSport = true, siz
       <SportIcon sport={sport} size={size} label={showSport ? "" : name} />
       <span className="truncate">
         {showSport ? name : null}
-        {showSport && league ? " · " : null}
+        {showSport && league ? <span className={leagueClassName}> · </span> : null}
         {leagueLabel}
       </span>
     </span>
@@ -147,16 +149,18 @@ type SportHierarchyProps = {
   layout?: "inline" | "stacked"
   size?: IconSize
   className?: string
+  /** Forwarded to `SportLine`. */
+  leagueClassName?: string
 }
 
 /** Category, sport, and league together, for headers and cards. */
-export function SportHierarchy({ sport, league, linked = false, layout = "inline", size = "sm", className }: SportHierarchyProps) {
+export function SportHierarchy({ sport, league, linked = false, layout = "inline", size = "sm", className, leagueClassName }: SportHierarchyProps) {
   const { category } = getSportDefinition(sport)
   if (layout === "stacked") {
     return (
       <span className={cn("grid min-w-0 gap-0.5", className)}>
         <CategoryLine category={category} size="xs" className="text-xs" />
-        <SportLine sport={sport} league={league} linked={linked} size={size} />
+        <SportLine sport={sport} league={league} linked={linked} size={size} leagueClassName={leagueClassName} />
       </span>
     )
   }
@@ -164,7 +168,7 @@ export function SportHierarchy({ sport, league, linked = false, layout = "inline
     <span className={cn("inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5", className)}>
       <CategoryLine category={category} size={size === "lg" ? "sm" : "xs"} />
       <span aria-hidden className="text-muted-foreground">·</span>
-      <SportLine sport={sport} league={league} linked={linked} size={size} />
+      <SportLine sport={sport} league={league} linked={linked} size={size} leagueClassName={leagueClassName} />
     </span>
   )
 }

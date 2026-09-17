@@ -1,8 +1,13 @@
-import type { Category, League, Sport, TeamView } from "@/lib/data/types"
-import { ALL, reconcileHierarchy } from "@/lib/schedule"
+import type { Category, Sport, TeamView } from "@/lib/data/types"
+import type { HierarchyRef } from "@/lib/hierarchy"
+import { ALL } from "@/lib/schedule"
 import { sportCategory } from "@/lib/sports"
 
-/** Pure team browsing logic: filter state, search, and reconciliation. */
+/**
+ * Pure team browsing logic: filter state and search. Option narrowing and
+ * reconciliation are the shared hierarchy behaviour in lib/schedule.ts;
+ * grouping is lib/hierarchy.ts.
+ */
 
 export type TeamFilterState = {
   query: string
@@ -16,15 +21,6 @@ export const defaultTeamFilters: TeamFilterState = {
   category: ALL,
   sport: ALL,
   leagueId: ALL,
-}
-
-export function countActiveTeamFilters(filters: TeamFilterState): number {
-  return (
-    (filters.query.trim() ? 1 : 0) +
-    (filters.category !== ALL ? 1 : 0) +
-    (filters.sport !== ALL ? 1 : 0) +
-    (filters.leagueId !== ALL ? 1 : 0)
-  )
 }
 
 /** Case-insensitive match on name, short name, or abbreviation. */
@@ -47,10 +43,7 @@ export function filterTeams(teams: TeamView[], filters: TeamFilterState): TeamVi
   )
 }
 
-/** Drop selections that no longer fit the broader filters. */
-export function reconcileTeamFilters(
-  next: TeamFilterState,
-  leagues: readonly League[]
-): TeamFilterState {
-  return reconcileHierarchy(next, leagues)
+/** Where a team sits in Category → Sport/Game → League. */
+export function teamHierarchyRef(team: TeamView): HierarchyRef {
+  return { sport: team.league.sport, league: { id: team.league.id, name: team.league.name } }
 }

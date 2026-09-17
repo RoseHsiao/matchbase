@@ -9,13 +9,19 @@ type TeamLogoProps = {
   className?: string
 }
 
-const sizeClassName: Record<NonNullable<TeamLogoProps["size"]>, string> = {
-  xs: "size-5 text-[9px] tracking-normal",
-  sm: "size-6 text-[9px]",
-  default: "size-8 text-[10px]",
-  lg: "size-10 text-xs",
-  xl: "size-16 text-base",
+type Size = NonNullable<TeamLogoProps["size"]>
+
+/** Box per size, and the text scale for short (1-2 character) and long (3 character) codes. */
+const sizeClassName: Record<Size, { box: string; short: string; long: string }> = {
+  xs: { box: "size-5", short: "text-[9px] tracking-normal", long: "text-[9px] tracking-normal" },
+  sm: { box: "size-6", short: "text-[9px] tracking-wide", long: "text-[7.5px] tracking-normal" },
+  default: { box: "size-8", short: "text-[10px] tracking-wide", long: "text-[9px] tracking-normal" },
+  lg: { box: "size-10", short: "text-xs tracking-wide", long: "text-[10px] tracking-normal" },
+  xl: { box: "size-16", short: "text-base tracking-wide", long: "text-sm tracking-normal" },
 }
+
+/** Codes are two to four letters; the badge shows at most three so nothing can overflow the box. */
+const MAX_CODE_CHARS = 3
 
 /** Pick black or white text for a hex background. */
 function readableTextColor(hex: string): string {
@@ -29,26 +35,25 @@ function readableTextColor(hex: string): string {
 
 /**
  * Team crest. Falls back to a coloured code badge until real logos exist;
- * the extra-small size shows only the first letter so it fits.
+ * the extra-small size shows only the first letter so it fits, and three
+ * letter codes use a slightly smaller scale than one or two letter codes.
  * Always rendered next to the team name, so it is hidden from screen readers.
  */
 export function TeamLogo({ team, size = "default", className }: TeamLogoProps) {
+  const code = size === "xs" ? team.code.slice(0, 1) : team.code.slice(0, MAX_CODE_CHARS)
+  const scale = sizeClassName[size]
   return (
     <Avatar
       title={team.name}
       aria-hidden
-      className={cn(
-        "rounded-md after:rounded-md",
-        sizeClassName[size],
-        className
-      )}
+      className={cn("rounded-md after:rounded-md", scale.box, className)}
     >
       {team.logoUrl ? <AvatarImage src={team.logoUrl} alt="" /> : null}
       <AvatarFallback
-        className="rounded-md font-semibold tracking-wide"
+        className={cn("overflow-hidden rounded-md px-0.5 font-semibold leading-none", code.length >= 3 ? scale.long : scale.short)}
         style={{ backgroundColor: team.color, color: readableTextColor(team.color) }}
       >
-        {size === "xs" ? team.code.slice(0, 1) : team.code.slice(0, 3)}
+        {code}
       </AvatarFallback>
     </Avatar>
   )

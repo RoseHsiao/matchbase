@@ -9,6 +9,11 @@ import type { TeamView } from "@/lib/data/types"
 
 type TeamCardProps = {
   team: TeamView
+  /**
+   * Show the Category → Sport/Game → League lines. Off when the card sits
+   * under a hierarchy heading that already states them (the Teams page).
+   */
+  showHierarchy?: boolean
   className?: string
 }
 
@@ -16,7 +21,7 @@ type TeamCardProps = {
  * Grid card for browsing teams. The name links to the team page; the follow
  * button is a separate control, so the card itself is not clickable.
  */
-export function TeamCard({ team, className }: TeamCardProps) {
+export function TeamCard({ team, showHierarchy = true, className }: TeamCardProps) {
   return (
     <Card size="sm" className={cn("min-w-0", className)}>
       <CardContent className="flex items-start gap-3">
@@ -38,7 +43,9 @@ export function TeamCard({ team, className }: TeamCardProps) {
             </Link>
             <span className="shrink-0 text-xs text-muted-foreground">{team.code}</span>
           </div>
-          <SportHierarchy sport={team.league.sport} league={{ id: team.league.id, label: team.league.name }} linked layout="stacked" size="xs" className="text-xs text-muted-foreground" />
+          {showHierarchy ? (
+            <SportHierarchy sport={team.league.sport} league={{ id: team.league.id, label: team.league.name }} linked layout="stacked" size="xs" className="text-xs text-muted-foreground" />
+          ) : null}
           <div className="mt-1">
             <TeamFollowButton teamId={team.id} teamName={team.name} size="sm" />
           </div>

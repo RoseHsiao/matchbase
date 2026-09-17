@@ -4,8 +4,9 @@ Phase 4 (implemented 2026-09-15). Server-side ingestion from external providers 
 
 ## Status
 
-- Implemented: provider contract, HTTP utilities, sync service, sync repository, provider registry, one deterministic mock provider, an Admin "Sync now" action.
-- Not implemented (deferred): a real provider, scheduling, background workers, live-score push, a `provider` column on `DataSource`, a `MatchParticipant` model.
+- Implemented in Phase 4: provider contract, HTTP utilities, sync service, sync repository, provider registry, one deterministic mock provider, an Admin "Sync now" action.
+- Implemented since (this document was updated in place): the `MatchParticipant` model (Phase 5, `docs/match-participant-model-analysis.md`), a real provider adapter for Sportradar Tennis (`docs/tennis-provider.md`), and the retry, pagination, configuration and redaction hardening of Phase 7 (`docs/live-data-integration.md`).
+- Not implemented (deferred): scheduling, background workers, live-score push, a `provider` column on `DataSource`. The Sportradar adapter has not been run against the live API (no key configured).
 
 ## Pipeline
 

@@ -1,8 +1,13 @@
-import type { Category, League, PlayerView, Sport, Team } from "@/lib/data/types"
-import { ALL, reconcileHierarchy } from "@/lib/schedule"
+import type { Category, PlayerView, Sport } from "@/lib/data/types"
+import type { HierarchyRef } from "@/lib/hierarchy"
+import { ALL } from "@/lib/schedule"
 import { sportCategory } from "@/lib/sports"
 
-/** Pure player browsing logic: filter state, search, and reconciliation. */
+/**
+ * Pure player browsing logic: filter state and search. Option narrowing and
+ * reconciliation are the shared hierarchy behaviour in lib/schedule.ts;
+ * grouping is lib/hierarchy.ts.
+ */
 
 export type PlayerFilterState = {
   query: string
@@ -18,16 +23,6 @@ export const defaultPlayerFilters: PlayerFilterState = {
   sport: ALL,
   leagueId: ALL,
   teamId: ALL,
-}
-
-export function countActivePlayerFilters(filters: PlayerFilterState): number {
-  return (
-    (filters.query.trim() ? 1 : 0) +
-    (filters.category !== ALL ? 1 : 0) +
-    (filters.sport !== ALL ? 1 : 0) +
-    (filters.leagueId !== ALL ? 1 : 0) +
-    (filters.teamId !== ALL ? 1 : 0)
-  )
 }
 
 /** Display name: the in-game handle for esports players, otherwise the full name. */
@@ -60,11 +55,13 @@ export function filterPlayers(
   )
 }
 
-/** Drop selections that no longer fit the broader filters. */
-export function reconcilePlayerFilters(
-  next: PlayerFilterState,
-  leagues: readonly League[],
-  teams: readonly Team[]
-): PlayerFilterState {
-  return reconcileHierarchy(next, leagues, teams)
+/**
+ * Where a player sits in Category → Sport/Game → League: the league of their
+ * team, or for a team-less athlete the league of their matches. Undefined
+ * only for a player with neither, who is then listed without hierarchy
+ * rather than hidden.
+ */
+export function playerHierarchyRef(player: PlayerView): HierarchyRef | undefined {
+  const { league } = player
+  return league ? { sport: league.sport, league: { id: league.id, name: league.name } } : undefined
 }

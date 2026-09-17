@@ -2,12 +2,14 @@
 
 ## Status
 
-- Audit status: Completed
-- Schema implementation: Not started
-- Prisma/PostgreSQL migration: Not started
-- Purpose: Baseline architecture documentation before database implementation
+- Audit status: Completed 2026-09-12. **Historical document, superseded.**
+- Schema implementation: Complete since 2026-09-13 (`prisma/schema.prisma`); see `docs/data-model-decisions.md` for the contract that was built
+- Prisma/PostgreSQL migration: Applied (four migrations, 2026-09-13 to 2026-09-15)
+- Purpose: Baseline record of the mock-data codebase and the reasoning that led to the PostgreSQL model
 
-This document records what the code contains today and what the future PostgreSQL model should look like. The two are kept strictly separate: sections 1 to 4 describe the current state, sections 5 to 8 describe proposals that have not been implemented.
+> **How to read this in 2026-09-17 terms.** Sections 1 to 4 describe the codebase as it was *before* the database existed (mock arrays, client-side stores, no User entity); none of that is current. Sections 5 to 8 were proposals; they were implemented with the deviations recorded in `docs/data-model-decisions.md` ("Prisma Schema Implementation Notes"). The most important later change is that section 6's recommendation to keep `homeTeamId` / `awayTeamId` was reversed on 2026-09-15 by the participant model (`docs/match-participant-model-analysis.md`, decisions section 6). The document is kept because it records *why* each decision was made.
+
+This document records what the code contained at the time and what the PostgreSQL model should look like. The two are kept strictly separate: sections 1 to 4 describe the state at the time, sections 5 to 8 describe the proposals as they stood before implementation.
 
 Source files inspected for the current state: `lib/data/types.ts`, `lib/data/mock.ts`, `lib/data/queries.ts`, `lib/sports.ts`, `lib/schedule.ts`, `lib/teams.ts`, `lib/players.ts`, `lib/format.ts`, the id-set and collection stores under `lib/`, the follow/watchlist providers, the Admin data provider and CRUD views under `components/admin/`, the match/team/player components, and every route under `app/(app)/`.
 

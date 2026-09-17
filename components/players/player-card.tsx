@@ -11,6 +11,12 @@ import { playerDisplayName } from "@/lib/players"
 
 type PlayerCardProps = {
   player: PlayerView
+  /**
+   * Show the Category → Sport/Game → League lines. Off when the card sits
+   * under a hierarchy heading that already states them (the Players page).
+   * The team line stays: it is the player's own relationship, not hierarchy.
+   */
+  showHierarchy?: boolean
   className?: string
 }
 
@@ -19,7 +25,7 @@ type PlayerCardProps = {
  * (when the player has one) links to the team page; the follow button is a
  * separate control. Individual athletes show their competition instead.
  */
-export function PlayerCard({ player, className }: PlayerCardProps) {
+export function PlayerCard({ player, showHierarchy = true, className }: PlayerCardProps) {
   const displayName = playerDisplayName(player)
   const { team, league } = player
 
@@ -57,7 +63,7 @@ export function PlayerCard({ player, className }: PlayerCardProps) {
           ) : (
             <span className="text-xs text-muted-foreground">Independent</span>
           )}
-          {league ? (
+          {showHierarchy && league ? (
             <SportHierarchy sport={league.sport} league={{ id: league.id, label: league.name }} linked layout="stacked" size="xs" className="text-xs text-muted-foreground" />
           ) : null}
           <div className="mt-1">

@@ -46,6 +46,9 @@ export function useHierarchyFilters<T extends HierarchyFilterState>(
   }
 }
 
+/** What `useHierarchyFilters` returns, for components that render a toolbar over it. */
+export type HierarchyController<T extends HierarchyFilterState> = ReturnType<typeof useHierarchyFilters<T>>
+
 type HierarchyFilterSelectsProps<T extends HierarchyFilterState> = {
   idPrefix: string
   filters: T
@@ -104,6 +107,9 @@ export function HierarchyFilterSelects<T extends HierarchyFilterState>({
           value={filters.teamId ?? ALL}
           onChange={(teamId) => update({ teamId } as Partial<T>)}
           options={teamOptions.map((t) => ({ value: t.id, label: t.name }))}
+          // Individual sports have no teams: the control stays visible so the hierarchy reads
+          // the same everywhere, but there is nothing to pick.
+          disabled={teamOptions.length === 0}
         />
       ) : null}
     </>

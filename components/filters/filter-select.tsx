@@ -39,6 +39,8 @@ type FilterSelectProps = {
   value: string
   onChange: (value: string) => void
   options: { value: string; label: string }[]
+  /** Disable the control, e.g. when the broader filters leave it no options. */
+  disabled?: boolean
   className?: string
 }
 
@@ -50,6 +52,7 @@ export function FilterSelect({
   value,
   onChange,
   options,
+  disabled = false,
   className,
 }: FilterSelectProps) {
   const items = {
@@ -62,26 +65,21 @@ export function FilterSelect({
       <Select
         value={value}
         items={items}
+        disabled={disabled}
         onValueChange={(next) => {
           if (typeof next === "string") onChange(next)
         }}
       >
         <SelectTrigger
           aria-labelledby={`${id}-label`}
-          className={className ?? "w-full cursor-pointer lg:w-44"}
+          className={className ?? "w-full lg:w-44"}
         >
           <SelectValue />
         </SelectTrigger>
         <SelectContent align="start" alignItemWithTrigger={false}>
-          <SelectItem value={ALL} className="cursor-pointer">
-            {allLabel}
-          </SelectItem>
+          <SelectItem value={ALL}>{allLabel}</SelectItem>
           {options.map((option) => (
-            <SelectItem
-              key={option.value}
-              value={option.value}
-              className="cursor-pointer"
-            >
+            <SelectItem key={option.value} value={option.value}>
               {option.label}
             </SelectItem>
           ))}

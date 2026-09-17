@@ -7,7 +7,10 @@
     "build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test": "tsx --test \"tests/**/*.test.ts\"",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
     "sync:manual": "tsx scripts/sync-data-source.mts"
   },
   "dependencies": {
