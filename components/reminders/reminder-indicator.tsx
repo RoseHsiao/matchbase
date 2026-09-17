@@ -55,7 +55,7 @@ export function ReminderIndicator({ className }: { className?: string }) {
         <PopoverHeader className="px-4 pt-4 pb-2">
           <PopoverTitle>Reminders</PopoverTitle>
           <PopoverDescription>
-            {count === 0 ? "Set a reminder on a saved match to see it here." : `${count} upcoming ${count === 1 ? "match" : "matches"} with a reminder.`}
+            {count === 0 ? "Add a match to your Watchlist and choose when to be reminded; it will show up here." : `${count} upcoming ${count === 1 ? "match" : "matches"} with a reminder. Nothing is sent yet; this is where your reminders are set.`}
           </PopoverDescription>
         </PopoverHeader>
         {count > 0 ? (
@@ -69,7 +69,7 @@ export function ReminderIndicator({ className }: { className?: string }) {
         ) : null}
         <div className="border-t px-4 py-2">
           <Link href="/watchlist" onClick={() => setOpen(false)} className={buttonVariants({ variant: "ghost", size: "sm", className: "w-full justify-center" })}>
-            Open watchlist
+            Open Watchlist
           </Link>
         </div>
       </PopoverContent>

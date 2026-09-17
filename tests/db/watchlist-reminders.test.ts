@@ -41,10 +41,14 @@ describeDb("watchlist reminders (database)", () => {
   /** Run `body` inside a transaction that always rolls back. */
   async function withRollback(body: (tx: ReminderClient) => Promise<void>): Promise<void> {
     await prisma
-      .$transaction(async (tx) => {
-        await body(tx)
-        throw new Rollback()
-      })
+      .$transaction(
+        async (tx) => {
+          await body(tx)
+          throw new Rollback()
+        },
+        // A cold Neon compute can take seconds to answer the first queries; the default 5 s would expire the transaction.
+        { timeout: 60_000, maxWait: 15_000 }
+      )
       .catch((error: unknown) => {
         if (!(error instanceof Rollback)) throw error
       })

@@ -10,6 +10,8 @@ type MatchDayListProps = {
   now: Date
   showLeague?: boolean
   renderAction?: (match: MatchView) => React.ReactNode
+  /** Heading level for the day headings; "h3" when the list sits under its own section heading. */
+  headingTag?: "h2" | "h3"
 }
 
 /** Matches grouped under one heading per calendar day. */
@@ -18,6 +20,7 @@ export function MatchDayList({
   now,
   showLeague = true,
   renderAction,
+  headingTag: Heading = "h2",
 }: MatchDayListProps) {
   return (
     <div className="grid gap-6">
@@ -27,7 +30,7 @@ export function MatchDayList({
         const count = group.matches.length
         return (
           <section key={group.key} aria-labelledby={headingId} className="grid gap-2">
-            <h2
+            <Heading
               id={headingId}
               className="flex flex-wrap items-baseline gap-x-2 px-1 text-sm font-semibold"
             >
@@ -36,7 +39,7 @@ export function MatchDayList({
                 {relative ? `${formatLongDate(group.date)} · ` : ""}
                 {count} {count === 1 ? "match" : "matches"}
               </span>
-            </h2>
+            </Heading>
             <Card className="py-1">
               <CardContent className="px-1">
                 <MatchList

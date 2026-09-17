@@ -41,7 +41,7 @@ export function WatchlistMatches({ matches, now: nowIso, limit, compact = false 
       <EmptyState
         icon={StarIcon}
         title="Your watchlist is empty"
-        description="Star a match anywhere to save it here, then set a reminder so you never miss the start."
+        description="Star a match anywhere to add it to your Watchlist, then choose when to be reminded."
         action={
           <Link href="/schedule" className={buttonVariants({ variant: "outline", size: "sm" })}>
             Browse the schedule

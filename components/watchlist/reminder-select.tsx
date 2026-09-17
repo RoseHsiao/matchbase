@@ -21,7 +21,8 @@ type ReminderSelectProps = {
   className?: string
 }
 
-const items = Object.fromEntries(REMINDER_OPTIONS.map((option) => [option.value, option.label]))
+/** Trigger labels: the chosen timing, or "No reminder" for off. The menu still offers "Off". */
+const items = Object.fromEntries(REMINDER_OPTIONS.map((option) => [option.value, option.value === "off" ? "No reminder" : option.label]))
 
 /**
  * Reminder picker for a watchlisted match. Enabled only while the match is
@@ -39,13 +40,13 @@ export function ReminderSelect({ match, now, compact = false, className }: Remin
   const firesAt = available ? getReminderAt(match.startsAt, reminder) : null
   const hint = !available
     ? reason === "not-watchlisted"
-      ? "Save the match to set a reminder."
+      ? "Add to Watchlist first, then choose when to be reminded."
       : reason === "started"
-        ? "The match has already started."
-        : "The match has finished."
+        ? "The match has already started, so no reminder can be set."
+        : "The match has finished, so no reminder can be set."
     : firesAt
       ? `Reminder at ${formatKickoff(firesAt, now)}`
-      : "No reminder for this match."
+      : "Saved. Choose when to be reminded before the start."
   const Icon = !available ? BellOffIcon : reminder === "off" ? BellIcon : BellRingIcon
 
   async function onChange(next: WatchlistReminder) {

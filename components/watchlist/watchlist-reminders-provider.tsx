@@ -147,7 +147,8 @@ export function useMatchReminder(
   const reminder = watchlisted ? (entry?.reminder ?? "off") : "off"
   const status = entry?.status ?? match.status
   const available = watchlisted && isReminderAvailable(status)
-  const reason = !watchlisted ? "not-watchlisted" : status === "live" ? "started" : status === "finished" ? "finished" : undefined
+  // A started or finished match can never take a reminder, so say that first; "add to Watchlist" would be a false promise.
+  const reason = status === "live" ? "started" : status === "finished" ? "finished" : !watchlisted ? "not-watchlisted" : undefined
   const setReminder = React.useCallback(
     (next: WatchlistReminder) =>
       change({

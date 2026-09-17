@@ -15,7 +15,7 @@ type WatchlistToggleProps = {
 export function WatchlistToggle({ matchId, className }: WatchlistToggleProps) {
   const { has, toggle } = useWatchlist()
   const saved = has(matchId)
-  const label = saved ? "Remove from watchlist" : "Add to watchlist"
+  const label = saved ? "Remove from Watchlist" : "Add to Watchlist"
 
   return (
     <Button
