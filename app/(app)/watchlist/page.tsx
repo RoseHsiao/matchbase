@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { WatchlistView } from "@/components/watchlist/watchlist-view";
-import { getMatches } from "@/lib/data/queries";
+import { getWatchlistMatches } from "@/lib/data/queries";
 import { getNavItem } from "@/lib/navigation";
 
 const nav = getNavItem("/watchlist");
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 export default async function WatchlistPage() {
   const now = new Date();
-  const matches = await getMatches();
+  const matches = await getWatchlistMatches();
 
   return (
     <>

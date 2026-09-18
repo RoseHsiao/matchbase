@@ -1,6 +1,7 @@
 import "server-only"
 
 import { db } from "@/lib/data/db"
+import { MAX_IMAGE_URL_LENGTH, sanitizeImageUrl } from "@/lib/safe-url"
 import { validateParticipants } from "@/lib/data/match-participants"
 import { loadDataSourcesWithRuns, loadRecentSyncLogs } from "@/lib/data/repositories/monitoring-ops"
 import { describeDataSourceProvider, resolveProvider } from "@/lib/data/sync/providers/registry"
@@ -76,6 +77,15 @@ type Payload = Record<string, unknown>
 function payload(input: unknown): Payload {
   if (typeof input !== "object" || input === null || Array.isArray(input)) throw new AdminError("Invalid record.")
   return input as Payload
+}
+
+/** An optional https:// image address; anything else is rejected with a message an administrator can act on. */
+function imageUrl(p: Record<string, unknown>, key: string, label: string): string | null {
+  const raw = text(p, key, label, { max: MAX_IMAGE_URL_LENGTH })
+  if (raw === undefined || raw === null || raw === "") return null
+  const safe = sanitizeImageUrl(raw)
+  if (!safe) throw new AdminError(`${label} must be an https:// image address.`)
+  return safe
 }
 
 function text(p: Payload, key: string, label: string, options: { required?: boolean; max?: number } = {}): string | undefined {
@@ -192,6 +202,9 @@ function deriveDataSourceStatus(status: DbDataSourceStatus, latest: DbSyncStatus
   return "connected"
 }
 
+/** The admin snapshot is one page load; bounded so a large provider window cannot make it unbounded. */
+const ADMIN_MATCH_LIMIT = 5000
+
 export const adminRepository = {
   /** Everything the admin area manages, batched: one query per collection. */
   async getAll(): Promise<AdminData> {
@@ -202,7 +215,7 @@ export const adminRepository = {
       db.team.findMany({ orderBy: { name: "asc" } }),
       db.player.findMany({ orderBy: { name: "asc" } }),
       db.venue.findMany({ orderBy: { name: "asc" } }),
-      db.match.findMany({ include: matchInclude, orderBy: [{ startsAt: "asc" }, { id: "asc" }] }),
+      db.match.findMany({ include: matchInclude, orderBy: [{ startsAt: "asc" }, { id: "asc" }], take: ADMIN_MATCH_LIMIT }),
       loadDataSourcesWithRuns(db),
       loadRecentSyncLogs(db),
     ])
@@ -305,7 +318,7 @@ export const adminRepository = {
       shortName: requiredText(p, "shortName", "Short name", 60),
       code: requiredText(p, "code", "Code", 8).toUpperCase(),
       color: text(p, "color", "Brand colour", { max: 16 }) ?? null,
-      logoUrl: text(p, "logoUrl", "Logo URL", { max: 2000 }) ?? null,
+      logoUrl: imageUrl(p, "logoUrl", "Logo URL"),
       status: toDbEntityStatus[oneOf(p, "status", "Status", ENTITY_STATUSES, "active")],
     }
     await write(() => db.team.upsert({ where: { id: teamId }, create: { id: teamId, ...data }, update: data }), {

@@ -56,6 +56,7 @@ import { validateParticipants } from "../lib/data/match-participants"
 import * as catalogue from "../lib/data/mock"
 import { buildDemoData } from "../lib/data/mock"
 import { createDemoClock, DEMO_TIME_ZONE, resolveDemoAnchor } from "../lib/demo-clock"
+import { seedPolicy } from "../lib/env/runtime-environment"
 import { toDbReminder } from "../lib/data/repositories/watchlist-reminder-ops"
 import type * as MockTypes from "../lib/data/types"
 import { sportMeta, sports } from "../lib/sports"
@@ -134,6 +135,14 @@ async function main() {
       // optional
     }
   }
+  // Production guard before anything touches a connection: the demo seed is a development fixture.
+  const policy = seedPolicy(process.env)
+  if (!policy.allowed) {
+    console.error(`Seed refused: ${policy.reason}`)
+    process.exit(3)
+  }
+  if (policy.note) console.warn(policy.note)
+
   const connectionString = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL
   if (!connectionString) throw new Error("DATABASE_URL_UNPOOLED or DATABASE_URL must be set.")
 

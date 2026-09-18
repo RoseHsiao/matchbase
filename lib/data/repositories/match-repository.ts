@@ -68,6 +68,13 @@ function toWhere(query: MatchQuery): MatchWhereInput {
   return and.length === 0 ? {} : { AND: and }
 }
 
+/**
+ * Upper bound for list reads that pass no explicit limit (Matches, History,
+ * admin snapshots). Far above today's catalogue; a page that needs more
+ * should add windows, not raise this.
+ */
+export const PUBLIC_LIST_LIMIT = 1000
+
 export const matchRepository = {
   /** Matches joined with league, participants (with their team or player), and venue, ready to render. */
   async findViews(query: MatchQuery = {}): Promise<MatchView[]> {
@@ -77,7 +84,7 @@ export const matchRepository = {
       include: matchInclude,
       // The id tiebreak keeps ordering stable when two matches share a start time.
       orderBy: [{ startsAt: order }, { id: "asc" }],
-      take: query.limit,
+      take: query.limit ?? PUBLIC_LIST_LIMIT,
     })
     return rows.map(toMatchView)
   },

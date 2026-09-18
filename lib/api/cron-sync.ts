@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto"
 
 import type { ScheduledSyncSummary, ScheduleTrigger } from "@/lib/data/sync/scheduler"
 import { providerSyncPolicy } from "@/lib/env/runtime-environment"
+import { logServerError } from "@/lib/logging/server-log"
 
 /**
  * The cron trigger boundary: authenticate the request the way Vercel
@@ -53,7 +54,7 @@ export async function handleCronSync(request: Request, deps: CronSyncDeps): Prom
     return Response.json({ ok: true, ...summary }, { headers: { "cache-control": "no-store" } })
   } catch (error) {
     // The scheduler isolates per-source failures; reaching here means the orchestration itself broke.
-    console.error("Scheduled sync failed before it could summarise.", error)
+    logServerError("cron-sync", error, deps.env)
     return Response.json({ ok: false, error: "Scheduled sync failed unexpectedly; see server logs." }, { status: 500, headers: { "cache-control": "no-store" } })
   }
 }

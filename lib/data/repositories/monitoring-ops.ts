@@ -46,3 +46,8 @@ export const SYNC_LOG_LIMIT = 500
 export async function loadRecentSyncLogs(db: MonitoringClient, limit: number = SYNC_LOG_LIMIT) {
   return db.syncLog.findMany({ orderBy: { startedAt: "desc" }, take: limit })
 }
+
+/** The newest runs of one source, for the manual-sync cooldown (lib/data/sync/manual-sync-policy.ts). */
+export async function loadRecentRuns(db: MonitoringClient, dataSourceId: string, limit = 5): Promise<{ status: "RUNNING" | "SUCCESS" | "PARTIAL" | "FAILED"; startedAt: Date }[]> {
+  return db.syncLog.findMany({ where: { dataSourceId }, select: { status: true, startedAt: true }, orderBy: { startedAt: "desc" }, take: limit })
+}

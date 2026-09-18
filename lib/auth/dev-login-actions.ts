@@ -4,6 +4,7 @@ import { getAuth } from "@/lib/auth/auth"
 import { provisionDevAccounts } from "@/lib/auth/dev-accounts"
 import { resolveDevLogin, type DevRole } from "@/lib/auth/dev-login"
 import { db } from "@/lib/data/db"
+import { logServerError } from "@/lib/logging/server-log"
 
 /**
  * Local-development quick sign-in. Re-checks the policy on every call (the
@@ -28,7 +29,7 @@ export async function devQuickSignIn(role: DevRole): Promise<DevQuickSignInResul
     await auth.api.signInEmail({ body: { email: account.email, password: account.password } })
     return { ok: true }
   } catch (error) {
-    console.error("Development quick sign-in failed.", error instanceof Error ? error.message : error)
+    logServerError("dev-login", error)
     return { ok: false, error: "Development quick sign-in failed; see the server log." }
   }
 }

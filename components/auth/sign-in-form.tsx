@@ -58,7 +58,7 @@ export function SignInForm({ next, signUpAllowed }: SignInFormProps) {
             </Link>
           </>
         ) : (
-          "Sign-up is closed on this deployment."
+          "Account creation is not open on this deployment; ask the operator for an account."
         )
       }
     >

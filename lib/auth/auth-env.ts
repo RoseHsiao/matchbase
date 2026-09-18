@@ -45,9 +45,25 @@ export function resolveAuthBaseUrl(env: EnvLike): string | undefined {
   return undefined
 }
 
-/** Sign-up is open unless AUTH_ALLOW_SIGN_UP is set to a false value. Safe to call without the secret. */
+/**
+ * Launch policy (Phase 9.2): public sign-up is CLOSED outside local
+ * development unless AUTH_ALLOW_SIGN_UP=true is set explicitly. There is no
+ * mail transport, so an account created in Production could not verify its
+ * address or recover its password; the operator creates accounts instead
+ * (docs/security/production-hardening.md). Development keeps sign-up open
+ * so the normal form stays exercised. Safe to call without the secret.
+ */
 export function isSignUpAllowed(env: EnvLike): boolean {
-  return env.AUTH_ALLOW_SIGN_UP === undefined ? true : isFlagEnabled(env.AUTH_ALLOW_SIGN_UP)
+  const explicit = env.AUTH_ALLOW_SIGN_UP?.trim()
+  if (explicit !== undefined && explicit !== "") return isFlagEnabled(explicit)
+  return resolveRuntimeEnvironment(env) === "development"
+}
+
+export type SignUpPolicy = { open: true; explicit: boolean } | { open: false; reason: string }
+
+export function signUpPolicy(env: EnvLike): SignUpPolicy {
+  if (isSignUpAllowed(env)) return { open: true, explicit: env.AUTH_ALLOW_SIGN_UP !== undefined }
+  return { open: false, reason: "Account creation is not open on this deployment. Existing accounts can sign in; ask the operator for an account." }
 }
 
 export function readAuthEnv(env: EnvLike): AuthEnvConfig {

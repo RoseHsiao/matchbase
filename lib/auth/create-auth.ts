@@ -24,6 +24,9 @@ import type { PrismaClient } from "@/lib/generated/prisma/client"
 
 const SESSION_DAYS = 7
 const SESSION_REFRESH_DAYS = 1
+/** Per IP: ten wrong guesses a minute is plenty for a person and hopeless for a brute force. */
+export const RATE_LIMIT_SIGN_IN_PER_MINUTE = 10
+export const RATE_LIMIT_SIGN_UP_PER_HOUR = 5
 
 export type CreateAuthOptions = {
   prisma: PrismaClient
@@ -59,6 +62,29 @@ export function createAuth({ prisma, env, plugins = [] }: CreateAuthOptions) {
     session: {
       expiresIn: SESSION_DAYS * 24 * 60 * 60,
       updateAge: SESSION_REFRESH_DAYS * 24 * 60 * 60,
+    },
+    /**
+     * Shared, database-backed rate limiting for the auth endpoints
+     * (docs/security/production-hardening.md, "Rate limiting"): every
+     * serverless instance reads and writes the same RateLimit table, so a
+     * limit means the same thing across instances. Keys are IP + path;
+     * Better Auth expires rows itself. Off in development so tests and
+     * local browser runs never trip it. Only auth HTTP endpoints are
+     * limited; server-side `auth.api` calls (dev quick sign-in, tests)
+     * bypass the limiter by design.
+     */
+    rateLimit: {
+      enabled: config.environment !== "development",
+      storage: "database",
+      modelName: "rateLimit",
+      window: 60,
+      max: 60,
+      customRules: {
+        "/sign-in/email": { window: 60, max: RATE_LIMIT_SIGN_IN_PER_MINUTE },
+        "/sign-up/email": { window: 3600, max: RATE_LIMIT_SIGN_UP_PER_HOUR },
+        "/request-password-reset": { window: 3600, max: RATE_LIMIT_SIGN_UP_PER_HOUR },
+        "/change-password": { window: 600, max: 5 },
+      },
     },
     plugins,
     logger: {

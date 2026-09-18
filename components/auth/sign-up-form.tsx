@@ -52,8 +52,8 @@ export function SignUpForm({ next, allowed }: SignUpFormProps) {
 
   if (!allowed) {
     return (
-      <AuthCard title="Sign-up is closed" description="This deployment does not accept new accounts." footer={<Link href={signInHref} className="font-medium text-foreground underline-offset-4 hover:underline">Sign in</Link>}>
-        <p className="text-sm text-muted-foreground">Existing accounts can still sign in. Ask the operator for an account.</p>
+      <AuthCard title="Account creation is not open" description="This deployment does not accept public sign-up yet." footer={<Link href={signInHref} className="font-medium text-foreground underline-offset-4 hover:underline">Sign in</Link>}>
+        <p className="text-sm text-muted-foreground">Existing accounts can sign in as usual. To get an account, ask the operator of this deployment.</p>
       </AuthCard>
     )
   }

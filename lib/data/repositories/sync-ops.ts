@@ -8,6 +8,7 @@ import type {
   SyncStatus,
 } from "@/lib/data/sync/types"
 import type { Prisma } from "@/lib/generated/prisma/client"
+import { sanitizeImageUrl } from "@/lib/safe-url"
 import type { MatchStatus as DbMatchStatus, SeasonStatus as DbSeasonStatus } from "@/lib/generated/prisma/enums"
 
 /**
@@ -106,7 +107,8 @@ export function createSyncRepository(db: SyncClient, options: SyncRepositoryOpti
   async upsertTeam(dataSourceId: string, leagueId: string, team: NormalizedTeam): Promise<Upserted> {
     const where = { dataSourceId_externalId: { dataSourceId, externalId: team.externalId } }
     const existing = await db.team.findUnique({ where, select: { id: true } })
-    const data = { leagueId, name: team.name, shortName: team.shortName, code: team.code.toUpperCase(), color: team.color ?? null, logoUrl: team.logoUrl ?? null }
+    // Provider badges are accepted only as https addresses; anything else falls back to the code badge.
+    const data = { leagueId, name: team.name, shortName: team.shortName, code: team.code.toUpperCase(), color: team.color ?? null, logoUrl: sanitizeImageUrl(team.logoUrl) }
     const row = await db.team.upsert({ where, create: { ...data, dataSourceId, externalId: team.externalId }, update: data, select: { id: true } })
     return { id: row.id, created: !existing }
   },

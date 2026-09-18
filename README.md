@@ -356,6 +356,7 @@ Or, for local development only, set `MATCHBASE_DEV_LOGIN=true` and the four `MAT
 Optional:
 
 ```bash
+npm run production:check                      # configuration readiness (add --db for read-only database checks)
 npm run sync:manual -- ds-mock-basketball     # run the mock provider through the real pipeline
 npm run sync:manual -- ds-tennis-sportradar   # requires SPORTRADAR_API_KEY; calls the live API
 npm run sync:manual -- ds-thesportsdb-epl     # calls the live TheSportsDB free API (about 75 s, 25 paced requests)
@@ -381,6 +382,10 @@ All variables are server-only. None is prefixed `NEXT_PUBLIC_`, none is imported
 | `BETTER_AUTH_URL` | outside Vercel production/preview | public base URL for the auth endpoints; derived from Vercel's system variables when unset, inferred from the request in local development |
 | `AUTH_ALLOW_SIGN_UP` | no (`true`) | `false` closes public sign-up; existing accounts keep signing in |
 | `MATCHBASE_DEV_LOGIN`, `MATCHBASE_DEV_{USER,ADMIN}_{EMAIL,PASSWORD}` | no | local-only quick sign-in buttons on `/sign-in` for a dev USER and a dev ADMIN; refused outside a development environment; see [docs/security/authentication-and-authorization.md](docs/security/authentication-and-authorization.md) |
+| `MATCHBASE_DATABASE_LABEL` | yes on deployments | `development` / `preview` / `production`: which database the URLs point at; Production refuses to start without `production`, everything else refuses `production` |
+| `MATCHBASE_OPERATOR_TARGET` | per command | `production` on the command line confirms an operator command against a production-labelled database |
+| `CSP_MODE`, `CSP_IMAGE_HOSTS` | no | Content Security Policy mode (`enforce` default, `report-only`, `off`) and extra https image origins |
+| `ALLOW_PRODUCTION_SEED` | never on a deployment | with the operator confirmation, lets the demo seed run against Production |
 | `ALLOW_PREVIEW_PROVIDER_SYNC` | no | Preview deployments refuse provider syncs unless this is `true` |
 | `CRON_SECRET` | for scheduled sync | sent by Vercel Cron as a Bearer token; the route refuses to run without it (at least 16 characters) |
 | `SYNC_*_MINUTES` | no | cadence tuning for freshness, the recency gate, the time budget and stale-lock recovery; see `.env.example` |
@@ -396,7 +401,8 @@ Stated precisely, because the difference matters:
 | **TheSportsDB integration** | Adapter implemented and **run twice against the live V1 free API** for the Premier League: real fixtures, results, clubs, badges and venues ingested through the generic pipeline, idempotent | Free-tier listings are truncated (10 teams, 5 to 15 season events, 3 per day, 1 next and previous), so coverage is a window around the run, not a full season. No live match was observed, so live-phase statuses are fixture-tested only. Players are not synced |
 | **API credentials** | Read from the environment on the server; never in source, URLs or logs | No credential storage beyond environment variables |
 | **Demo data** | Deterministic timeline from `lib/data/mock.ts`, seeded relative to the current date (or `DEMO_ANCHOR`), idempotent, coherence-checked | It is still demo data: nothing advances between seeds, "live" matches are authored fixtures, and re-seeding is the only refresh |
-| **Authentication** | Email and password sign-in through Better Auth, database sessions in an HttpOnly cookie, USER and ADMIN roles, `requireUser()` / `requireAdmin()` on every personal and admin mutation and loader, an operator CLI for the ADMIN role, a Preview guard on provider syncs; see [docs/security/authentication-and-authorization.md](docs/security/authentication-and-authorization.md) | No email verification, password reset or OAuth (no mail transport configured); Better Auth's rate limiting is per serverless instance; no security headers or CSP yet |
+| **Authentication** | Email and password sign-in through Better Auth, database sessions in an HttpOnly cookie, USER and ADMIN roles, `requireUser()` / `requireAdmin()` on every personal and admin mutation and loader, an operator CLI for the ADMIN role, database-backed rate limiting on the auth endpoints; see [docs/security/authentication-and-authorization.md](docs/security/authentication-and-authorization.md) | Public sign-up is closed at launch and there is no self-service password reset or email verification (no mail transport); recovery is an operator command |
+| **Production readiness** | Security headers and an enforced nonce CSP, environment model with database labels and a startup configuration guard, guarded migrations and seed, a least-privilege runtime-role template, `npm run production:check`, a deployment runbook; see [docs/security/production-hardening.md](docs/security/production-hardening.md) | Not deployed yet; the Neon runtime role and the Vercel configuration are Phase 9.3 operator steps ([docs/deployment/production-deployment.md](docs/deployment/production-deployment.md)) |
 | **Reminders** | Preference persisted per watchlisted match, validated, shown on four surfaces | **No notification is ever delivered.** No scheduler, worker, push, email or in-app delivery log |
 | **Synchronization** | Manual (Admin "Sync now", `npm run sync:manual`) and scheduled: a daily Vercel Cron Job through `/api/cron/sync` with a database-backed run lock and Admin freshness; see [docs/scheduled-sync.md](docs/scheduled-sync.md) | Daily only, because Vercel Hobby allows nothing more frequent; no live-score streaming, no deletion reconciliation, no `DataSource.provider` column (binding is in code) |
 | **Time zones** | Instants stored in UTC; reminder arithmetic is zone-free | Day boundaries ("today", schedule days) use the server's local time; the decided Asia/Taipei presentation zone is not applied yet |

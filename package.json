@@ -4,13 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"tests/**/*.test.ts\"",
-    "db:migrate": "prisma migrate deploy",
+    "db:migrate": "tsx scripts/migrate-deploy.mts",
     "db:seed": "prisma db seed",
+    "production:check": "tsx scripts/production-check.mts",
+    "account:password": "tsx scripts/account-password.mts",
     "sync:manual": "tsx scripts/sync-data-source.mts",
     "admin:role": "tsx scripts/admin-role.mts"
   },

@@ -66,7 +66,7 @@ describe("schedule config", () => {
   test("the committed cadence is daily in UTC, deployable on the Hobby plan", () => {
     assert.equal(SCHEDULED_SYNC_CRON, "0 3 * * *")
     assert.equal(SCHEDULED_SYNC_TIME_ZONE, "UTC")
-    assert.deepEqual(DEFAULT_SCHEDULE_CONFIG, { expectedIntervalMs: DAY, graceMs: 3 * HOUR, minIntervalMs: 30 * 60_000, timeBudgetMs: 4 * 60_000, staleLockMs: 15 * 60_000 })
+    assert.deepEqual(DEFAULT_SCHEDULE_CONFIG, { expectedIntervalMs: DAY, graceMs: 3 * HOUR, minIntervalMs: 30 * 60_000, timeBudgetMs: 4 * 60_000, staleLockMs: 15 * 60_000, manualCooldownMs: 10 * 60_000 })
     assert.ok(DEFAULT_SCHEDULE_CONFIG.timeBudgetMs < 300_000, "budget stays under the 300 s function limit")
   })
 

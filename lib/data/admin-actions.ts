@@ -4,9 +4,14 @@ import { refresh } from "next/cache"
 
 import { isAuthorizationError } from "@/lib/auth/authorization"
 import { requireAdmin } from "@/lib/auth/session"
+import { db } from "@/lib/data/db"
 import { AdminError, adminRepository } from "@/lib/data/repositories/admin-repository"
+import { loadRecentRuns } from "@/lib/data/repositories/monitoring-ops"
+import { manualSyncPolicy } from "@/lib/data/sync/manual-sync-policy"
+import { readScheduleConfig } from "@/lib/data/sync/schedule-config"
 import { syncDataSource } from "@/lib/data/sync/sync-service"
 import { providerSyncPolicy } from "@/lib/env/runtime-environment"
+import { logServerError } from "@/lib/logging/server-log"
 
 /**
  * Server boundary for Admin CRUD and manual sync. Every action authorizes
@@ -73,7 +78,7 @@ async function run(work: () => Promise<void>): Promise<AdminActionResult> {
     return { ok: true }
   } catch (error) {
     if (error instanceof AdminError) return { ok: false, error: error.message }
-    console.error("Admin mutation failed.", error)
+    logServerError("admin-mutation", error)
     return { ok: false, error: "The change could not be saved. Please try again." }
   }
 }
@@ -100,6 +105,9 @@ export async function runDataSourceSync(dataSourceId: unknown): Promise<AdminAct
   if (!policy.allowed) return { ok: false, error: `Sync not run: ${policy.reason}` }
   if (typeof dataSourceId !== "string" || dataSourceId.length === 0 || dataSourceId.length > 200) return { ok: false, error: "Invalid data source id." }
   try {
+    // Cooldown from the source's own history: a fresh successful run is not repeated on demand, a failed one may be retried at once.
+    const cooldown = manualSyncPolicy({ runs: await loadRecentRuns(db, dataSourceId), now: new Date(), cooldownMs: readScheduleConfig().manualCooldownMs })
+    if (!cooldown.allowed) return { ok: false, error: `Sync not run: ${cooldown.reason}` }
     const result = await syncDataSource(dataSourceId)
     refresh()
     if (result.status === "SKIPPED") return { ok: true, message: `Sync already running: ${result.error ?? "another run holds this source."}` }
@@ -111,7 +119,7 @@ export async function runDataSourceSync(dataSourceId: unknown): Promise<AdminAct
     const detail = result.status === "PARTIAL" ? ` (${failed} failed, see the sync log)` : ""
     return { ok: true, message: `Sync ${result.status.toLowerCase()}: ${result.records} records in ${result.durationMs} ms${detail}.` }
   } catch (error) {
-    console.error("Sync failed unexpectedly.", error)
+    logServerError("admin-sync", error)
     return { ok: false, error: "Sync failed unexpectedly. Please try again." }
   }
 }

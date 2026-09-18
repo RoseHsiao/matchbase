@@ -2,6 +2,7 @@ import { cn } from "cn"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import type { Team } from "@/lib/data/types"
+import { sanitizeImageUrl } from "@/lib/safe-url"
 
 type TeamLogoProps = {
   team: Pick<Team, "name" | "code" | "color" | "logoUrl">
@@ -42,13 +43,15 @@ function readableTextColor(hex: string): string {
 export function TeamLogo({ team, size = "default", className }: TeamLogoProps) {
   const code = size === "xs" ? team.code.slice(0, 1) : team.code.slice(0, MAX_CODE_CHARS)
   const scale = sizeClassName[size]
+  // Defence in depth: the write boundaries already reject non-https addresses.
+  const logoSrc = sanitizeImageUrl(team.logoUrl, { allowHttp: process.env.NODE_ENV !== "production" })
   return (
     <Avatar
       title={team.name}
       aria-hidden
       className={cn("rounded-md after:rounded-md", scale.box, className)}
     >
-      {team.logoUrl ? <AvatarImage src={team.logoUrl} alt="" /> : null}
+      {logoSrc ? <AvatarImage src={logoSrc} alt="" /> : null}
       <AvatarFallback
         className={cn("overflow-hidden rounded-md px-0.5 font-semibold leading-none", code.length >= 3 ? scale.long : scale.short)}
         style={{ backgroundColor: team.color, color: readableTextColor(team.color) }}

@@ -1,5 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg"
 
+import { operatorPolicy } from "../lib/env/runtime-environment"
 import { PrismaClient } from "../lib/generated/prisma/client"
 
 /**
@@ -13,8 +14,10 @@ import { PrismaClient } from "../lib/generated/prisma/client"
  *
  * The account must already exist (the person signs up first); the script
  * never creates users or passwords. Database sessions carry no role, so a
- * change applies on the user's next request. Exit codes: 0 done, 1 usage or
- * missing account, 2 database or configuration error.
+ * change applies on the user's next request. Against a production-labelled
+ * database it requires MATCHBASE_OPERATOR_TARGET=production. Exit codes:
+ * 0 done, 1 usage or missing account, 2 database or configuration error,
+ * 3 refused by the operator guard.
  */
 
 for (const file of [".env.local", ".env"]) {
@@ -41,11 +44,17 @@ function normalizeEmail(value: string | undefined): string {
 const [command, emailArg] = process.argv.slice(2) as [Command | undefined, string | undefined]
 if (command !== "list" && command !== "grant" && command !== "revoke") usage()
 
+const operator = operatorPolicy(process.env)
+if (!operator.allowed) {
+  console.error(`Refused: ${operator.reason}`)
+  process.exit(3)
+}
 const connectionString = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL
 if (!connectionString) {
   console.error("DATABASE_URL_UNPOOLED (or DATABASE_URL) is not set.")
   process.exit(2)
 }
+if (command !== "list") console.log(`Target database: ${operator.target}.`)
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 

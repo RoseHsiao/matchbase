@@ -29,7 +29,7 @@ Current Better Auth documentation (installation, database concepts, session mana
 
 **Email and password** is the first method. Reasons: it needs no third-party credentials or mail transport, which this deployment does not have; Better Auth hashes with scrypt and applies stricter built-in limits to the sign-in endpoint; and OAuth or magic links can be added later as configuration without touching the authorization boundary, because nothing outside `lib/auth` knows how a session was created. Email verification is off (`requireEmailVerification: false`) because there is no mail transport; turning it on is one option plus a `sendVerificationEmail` function.
 
-Password policy: 10 to 128 characters (`lib/auth/password-policy.ts`, shared by the server configuration and the sign-up form). Sign-up is open by default and closed with `AUTH_ALLOW_SIGN_UP=false`; existing accounts keep signing in.
+Password policy: 10 to 128 characters (`lib/auth/password-policy.ts`, shared by the server configuration and the sign-up form). **Since Phase 9.2 sign-up is closed by default outside local development** (launch policy in [production-hardening.md](production-hardening.md)); `AUTH_ALLOW_SIGN_UP=true` opens it, `false` closes it anywhere. Better Auth's `disableSignUp` enforces the choice server-side. Password recovery is an operator command (`npm run account:password`) until a mail transport exists.
 
 ## Modules
 
@@ -151,8 +151,8 @@ Better Auth's logger is routed through `redactSensitiveText` (the same scrubber 
 
 - Email verification, password reset and account deletion flows are not exposed (no mail transport). Better Auth's endpoints for them exist but are not wired into the UI.
 - `nextCookies` is now part of the application instance (not the tests'), which also makes Better Auth skip its session refresh during Server Component renders where no cookie can be written.
-- Better Auth's rate limiting uses in-memory storage per serverless instance; effective across instances only with database storage (P1 in the audit).
-- No security headers or CSP yet (P1).
-- One database role for runtime and migrations (P1).
+- Rate limiting: since 9.2 the auth endpoints use database storage shared by every instance (`RateLimit` table).
+- Security headers and an enforced nonce CSP exist since 9.2.
+- One database role for runtime and migrations until the Phase 9.3 runbook creates the runtime role (template in `prisma/sql/runtime-role.sql`).
 - Sessions are not listed or revoked from a UI; sign-out is per device.
 - The admin layout redirects to `/admin` after sign-in rather than the exact admin sub-page.

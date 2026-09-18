@@ -397,6 +397,17 @@ model Verification {
   @@index([identifier])
 }
 
+/// Better Auth rate-limit counters (storage: "database"): one row per
+/// IP-and-path key with a rolling window. Shared by every serverless
+/// instance, expired by Better Auth itself. No personal data beyond the
+/// client IP, which the row exists to count.
+model RateLimit {
+  id          String @id @default(cuid())
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+}
+
 model UserTeamFollow {
   userId    String
   teamId    String

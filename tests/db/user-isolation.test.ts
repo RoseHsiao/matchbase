@@ -51,7 +51,7 @@ describeDb("user-state isolation between two users (database)", () => {
         ])
         await work(createUserStateOps(tx), a.id, b.id)
         throw new Rollback()
-      })
+      }, { timeout: 30_000, maxWait: 10_000 })
       .catch((error: unknown) => {
         if (!(error instanceof Rollback)) throw error
       })

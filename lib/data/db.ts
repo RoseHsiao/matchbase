@@ -23,6 +23,9 @@ function createClient(): PrismaClient {
     adapter: new PrismaPg({ connectionString }),
     // Set PRISMA_QUERY_LOG=1 to print every SQL statement, e.g. to spot N+1 patterns.
     log: process.env.PRISMA_QUERY_LOG === "1" ? ["query"] : [],
+    // Better Auth runs each request inside one interactive transaction; give it
+    // room for a slow round trip without holding locks for long.
+    transactionOptions: { maxWait: 5_000, timeout: 15_000 },
   })
 }
 

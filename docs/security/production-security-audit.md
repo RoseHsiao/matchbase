@@ -2,6 +2,8 @@
 
 Status: audit only, 2026-09-17. No application behaviour, schema, dependency or configuration was changed. This document records what must be secured before MatchBase is exposed publicly on Vercel, and defines the scope of Phase 9.1. Companion: [access-control-matrix.md](access-control-matrix.md).
 
+> **Update 2026-09-18 (Phase 9.2).** The P1 items are addressed: database-backed rate limiting on the auth endpoints, a security-header baseline and an enforced nonce CSP, and a least-privilege runtime-role template with a readiness check that verifies it (creating the Neon role is a runbook step). Of the P2 items, `logoUrl` validation and the unbounded public reads are fixed; the Prisma CLI advisories are documented as unreachable at runtime. P3: error logging goes through one redacting helper and route error pages exist. Details and remaining risks: [production-hardening.md](production-hardening.md).
+>
 > **Update 2026-09-17 (Phase 9.1).** The four P0 findings below are resolved: Better Auth (email and password) provides sessions; `requireUser()` guards every personal mutation and `requireAdmin()` guards the admin loader and actions; visitors are anonymous until they sign up, the demo user is fixture data nobody can sign in as; Preview deployments refuse provider syncs unless opted in. Implementation and verification: [authentication-and-authorization.md](authentication-and-authorization.md). The body below is the audit as written; P1 to P3 remain open.
 
 ## 1. Executive summary
@@ -251,20 +253,20 @@ Server logs contain: `console.error("Admin mutation failed.", error)` and `conso
 
 ### P1 (before inviting real users)
 
-5. **No rate limiting on mutations.** Path: all Server Actions. Remediation: after auth, per-user limits on user-state writes and a minimum interval for manual syncs. Phase 9.2.
-6. **Single database role for runtime and migrations.** Remediation: least-privilege runtime role in Neon; owner role for operators. Phase 9.2 (infrastructure).
-7. **No security headers.** Remediation: HSTS (verify), nosniff, Referrer-Policy, frame-ancestors, Permissions-Policy; CSP once the auth provider and image hosts are fixed. Phase 9.2.
+5. **No rate limiting on mutations.** Path: all Server Actions. Remediation: after auth, per-user limits on user-state writes and a minimum interval for manual syncs. **9.2:** auth endpoints rate limited with shared database storage; manual sync has a 10-minute cooldown from run history; user-state writes rely on authentication plus idempotent composite keys (documented decision, no per-user limiter).
+6. **Single database role for runtime and migrations.** Remediation: least-privilege runtime role in Neon; owner role for operators. **9.2:** SQL template and `production:check --db` verification; the role itself is created in the Phase 9.3 runbook.
+7. **No security headers.** Remediation: HSTS (verify), nosniff, Referrer-Policy, frame-ancestors, Permissions-Policy; CSP once the auth provider and image hosts are fixed. **9.2: fixed** (baseline headers on every response; nonce-based CSP enforced).
 
 ### P2 (soon after launch)
 
-8. `Team.logoUrl` accepts any scheme; rendered as an image. Remediation: https-only validation in admin and adapter; CSP `img-src`.
-9. Unbounded catalogue reads on Matches, History, Teams, Players and the admin snapshot. Remediation: server-side windows and pagination as provider coverage grows.
-10. Prisma CLI transitive advisories (`mysql2`, `deepmerge-ts`): not exploitable at runtime; track patch releases.
-11. Manual sync minimum interval and Preview cron refusal.
+8. `Team.logoUrl` accepts any scheme; rendered as an image. **9.2: fixed** (https-only at both write boundaries and at render; CSP `img-src` lists the badge hosts).
+9. Unbounded catalogue reads on Matches, History, Teams, Players and the admin snapshot. **9.2: bounded** (watchlist reads only saved matches; list reads capped at 1000, admin matches at 5000); pagination deferred.
+10. Prisma CLI transitive advisories (`mysql2`, `deepmerge-ts`): not exploitable at runtime; track patch releases. **9.2: unchanged, documented.**
+11. Manual sync minimum interval and Preview cron refusal. **9.2: fixed** (cooldown; Preview refusal since 9.1).
 
 ### P3 (defence in depth)
 
-12. Redact server `console.error` output; add `error.tsx` boundaries; cap provider response size; document match-delete cascade policy; consider `experimental.taint` for the admin snapshot.
+12. Redact server `console.error` output; add `error.tsx` boundaries; cap provider response size; document match-delete cascade policy; consider `experimental.taint` for the admin snapshot. **9.2:** redacting log helper and error pages done; response-size cap, cascade policy and taint remain.
 
 ## 26. Phase 9.1 scope
 

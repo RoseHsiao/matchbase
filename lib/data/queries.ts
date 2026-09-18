@@ -167,9 +167,16 @@ export async function getWatchlistEntries(): Promise<WatchlistEntryView[]> {
   })
 }
 
-/** Every known match in start order. Client views filter this by saved ids. */
+/** Every known match in start order (bounded by the repository's list limit). */
 export async function getMatches(): Promise<MatchView[]> {
   return matchRepository.findViews()
+}
+
+/** Only the viewer's saved matches, so the watchlist never loads the whole catalogue. */
+export async function getWatchlistMatches(): Promise<MatchView[]> {
+  const { watchlistMatchIds } = await getCurrentUserFollows()
+  if (watchlistMatchIds.length === 0) return []
+  return matchRepository.findViews({ ids: watchlistMatchIds })
 }
 
 /** Every match from the start of today through the next `days` days, in start order. */

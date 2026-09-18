@@ -16,6 +16,7 @@ import { PrismaPg } from "@prisma/adapter-pg"
 import { createSyncRepository } from "../lib/data/repositories/sync-ops"
 import { describeDataSourceProvider } from "../lib/data/sync/providers/registry"
 import { runSync } from "../lib/data/sync/sync-core"
+import { operatorPolicy } from "../lib/env/runtime-environment"
 import { PrismaClient } from "../lib/generated/prisma/client"
 
 for (const file of [".env.local", ".env"]) {
@@ -40,11 +41,17 @@ if (!binding.configuration.configured) {
 }
 if (binding.kind === "live") console.log("This will call the external API with the credentials from your environment.")
 
+const operator = operatorPolicy(process.env)
+if (!operator.allowed) {
+  console.error(`Refused: ${operator.reason}`)
+  process.exit(3)
+}
 const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL
 if (!url) {
   console.error("DATABASE_URL is not set.")
   process.exit(2)
 }
+console.log(`Target database: ${operator.target}.`)
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) })
 try {
   const repository = createSyncRepository(prisma, { transaction: (work) => prisma.$transaction((tx) => work(tx), { timeout: 15_000 }) })

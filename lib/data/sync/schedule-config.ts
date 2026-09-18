@@ -28,6 +28,8 @@ export type ScheduleConfig = {
   timeBudgetMs: number
   /** A RUNNING sync log older than this is treated as abandoned and marked failed. */
   staleLockMs: number
+  /** Admin "Sync now" is refused while the last successful run is younger than this, unless the latest run failed. */
+  manualCooldownMs: number
 }
 
 function minutes(value: string | undefined, fallback: number): number {
@@ -42,6 +44,7 @@ export function readScheduleConfig(env: Record<string, string | undefined> = pro
     minIntervalMs: minutes(env.SYNC_MIN_INTERVAL_MINUTES, 30 * MINUTE),
     timeBudgetMs: minutes(env.SYNC_TIME_BUDGET_MINUTES, 4 * MINUTE),
     staleLockMs: minutes(env.SYNC_STALE_LOCK_MINUTES, 15 * MINUTE),
+    manualCooldownMs: minutes(env.SYNC_MANUAL_COOLDOWN_MINUTES, 10 * MINUTE),
   }
 }
 
