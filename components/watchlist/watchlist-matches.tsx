@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { StarIcon } from "lucide-react"
 
+import { useViewer } from "@/components/auth/viewer-provider"
 import { EmptyState } from "@/components/empty-state"
 import { MatchList } from "@/components/matches/match-list"
 import { buttonVariants } from "@/components/ui/button"
@@ -29,12 +30,29 @@ type WatchlistMatchesProps = {
  * "No reminder") so the two are told apart by text and icon, not colour.
  */
 export function WatchlistMatches({ matches, now: nowIso, limit, compact = false }: WatchlistMatchesProps) {
+  const viewer = useViewer()
   const { ids } = useWatchlist()
   const { entries } = useWatchlistReminders()
   const saved = selectWatchlistMatches(matches, ids, "status")
   const upcoming = saved.filter((match) => isReminderAvailable(match.status))
   const withReminder = upcoming.filter((match) => (entries.get(match.id)?.reminder ?? "off") !== "off").length
   const shown = limit === undefined ? saved : saved.slice(0, limit)
+
+  if (!viewer) {
+    return (
+      <EmptyState
+        icon={StarIcon}
+        title="Sign in to build a watchlist"
+        description="Saved matches and their reminders are kept with your account."
+        action={
+          <Link href="/sign-in?next=%2Fdashboard" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Sign in
+          </Link>
+        }
+        className="mx-2"
+      />
+    )
+  }
 
   if (saved.length === 0) {
     return (

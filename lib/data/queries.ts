@@ -1,12 +1,13 @@
 import { cache } from "react"
 
-import { getCurrentUserId } from "@/lib/data/current-user"
+import { getViewer, requireAdmin } from "@/lib/auth/session"
 import { adminRepository } from "@/lib/data/repositories/admin-repository"
 import { leagueRepository } from "@/lib/data/repositories/league-repository"
 import { matchRepository } from "@/lib/data/repositories/match-repository"
 import { playerRepository } from "@/lib/data/repositories/player-repository"
 import { seasonRepository } from "@/lib/data/repositories/season-repository"
 import { teamRepository } from "@/lib/data/repositories/team-repository"
+import { EMPTY_FOLLOWS } from "@/lib/data/repositories/user-state-ops"
 import { userStateRepository } from "@/lib/data/repositories/user-state-repository"
 import type {
   AdminData,
@@ -42,13 +43,15 @@ import { matchTitle } from "@/lib/matches"
  */
 
 /**
- * The current user's follows and watchlist, read once per request. React's
- * `cache` is request-scoped, so nothing user-specific outlives the request
- * or leaks between users once authentication exists.
+ * The signed-in viewer's follows and watchlist, read once per request; an
+ * anonymous visitor has none. React's `cache` is request-scoped, so nothing
+ * user-specific outlives the request or leaks between users. The user id
+ * comes from the session boundary only (lib/auth/session.ts).
  */
-const getCurrentUserFollows = cache(
-  async (): Promise<UserFollows> => userStateRepository.getFollows(await getCurrentUserId())
-)
+const getCurrentUserFollows = cache(async (): Promise<UserFollows> => {
+  const viewer = await getViewer()
+  return viewer ? userStateRepository.getFollows(viewer.id) : EMPTY_FOLLOWS
+})
 
 const STATUS_ORDER: Record<MatchStatus, number> = {
   live: 0,
@@ -73,12 +76,17 @@ function dayWindow(now: Date): { gte: Date; lt: Date } {
   return { gte, lt: addDays(gte, 1) }
 }
 
-/** All of today's matches in followed leagues or with followed teams. Live first. */
+/**
+ * Today's matches, live first. For a signed-in viewer: those in followed
+ * leagues or with followed teams and players. For an anonymous visitor the
+ * whole day's public schedule, since there is nothing personal to filter by.
+ */
 export async function getTodaysMatches(now = new Date()): Promise<MatchView[]> {
+  const viewer = await getViewer()
   const { teamIds, playerIds, leagueIds } = await getCurrentUserFollows()
   const matches = await matchRepository.findViews({
     startsAt: dayWindow(now),
-    followed: { teamIds, playerIds, leagueIds },
+    followed: viewer ? { teamIds, playerIds, leagueIds } : undefined,
   })
   return matches.sort(byStatusThenStart)
 }
@@ -288,7 +296,10 @@ export async function getPlayerResults(playerId: string, limit?: number): Promis
 /**
  * Everything the admin area manages, as plain records from the database.
  * Seeds the admin client store; the same rows back the user-facing pages.
+ * Administrators only: the guard sits here, in the data access layer, so no
+ * page can load the snapshot without it (the admin layout also checks, for UX).
  */
 export async function getAdminData(): Promise<AdminData> {
+  await requireAdmin()
   return adminRepository.getAll()
 }

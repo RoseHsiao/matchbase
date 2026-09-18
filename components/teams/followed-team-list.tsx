@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { UsersIcon } from "lucide-react"
 
+import { useViewer } from "@/components/auth/viewer-provider"
 import { EmptyState } from "@/components/empty-state"
 import { useFollows } from "@/components/teams/follows-provider"
 import { TeamRow } from "@/components/teams/team-row"
@@ -18,9 +19,26 @@ type FollowedTeamListProps = {
 
 /** Dashboard panel body: followed teams with their next fixture. */
 export function FollowedTeamList({ teams, now: nowIso }: FollowedTeamListProps) {
+  const viewer = useViewer()
   const { ids } = useFollows()
   const followed = teams.filter((team) => ids.has(team.id))
   const now = new Date(nowIso)
+
+  if (!viewer) {
+    return (
+      <EmptyState
+        icon={UsersIcon}
+        title="Sign in to follow teams"
+        description="Followed teams and their next fixtures appear here."
+        action={
+          <Link href="/sign-in?next=%2Fdashboard" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Sign in
+          </Link>
+        }
+        className="mx-2"
+      />
+    )
+  }
 
   if (followed.length === 0) {
     return (

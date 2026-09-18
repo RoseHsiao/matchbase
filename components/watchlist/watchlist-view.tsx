@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { BellRingIcon, StarIcon } from "lucide-react"
 
+import { useViewer } from "@/components/auth/viewer-provider"
 import { EmptyState } from "@/components/empty-state"
 import { MatchDayList } from "@/components/matches/match-day-list"
 import { buttonVariants } from "@/components/ui/button"
@@ -29,6 +30,7 @@ type WatchlistViewProps = {
  */
 export function WatchlistView({ matches, now: nowIso }: WatchlistViewProps) {
   const now = new Date(nowIso)
+  const viewer = useViewer()
   const { ids } = useWatchlist()
   const { entries: reminders } = useWatchlistReminders()
   const saved = selectWatchlistMatches(matches, ids)
@@ -37,6 +39,22 @@ export function WatchlistView({ matches, now: nowIso }: WatchlistViewProps) {
   const finished = saved.filter((match) => match.status === "finished")
   const stillToCome = saved.filter((match) => match.status !== "finished")
   const withReminder = upcoming.filter((match) => (reminders.get(match.id)?.reminder ?? "off") !== "off").length
+
+  if (!viewer) {
+    return (
+      <EmptyState
+        icon={StarIcon}
+        title="Sign in to use your Watchlist"
+        description="Saved matches and reminders are kept with your account. Browsing the schedule and match pages needs no account."
+        action={
+          <Link href="/sign-in?next=%2Fwatchlist" className={buttonVariants({ variant: "default" })}>
+            Sign in
+          </Link>
+        }
+        className="py-16"
+      />
+    )
+  }
 
   if (saved.length === 0) {
     return (

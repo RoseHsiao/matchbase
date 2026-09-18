@@ -2,14 +2,19 @@
 
 import { refresh } from "next/cache"
 
+import { isAuthorizationError } from "@/lib/auth/authorization"
+import { requireAdmin } from "@/lib/auth/session"
 import { AdminError, adminRepository } from "@/lib/data/repositories/admin-repository"
 import { syncDataSource } from "@/lib/data/sync/sync-service"
+import { providerSyncPolicy } from "@/lib/env/runtime-environment"
 
 /**
- * Server boundary for Admin CRUD. The client collection stores call these
- * after an optimistic change; a `{ ok: false }` result tells them to roll
- * back and show the message. Only AdminError messages are shown; anything
- * else is logged on the server and reported generically.
+ * Server boundary for Admin CRUD and manual sync. Every action authorizes
+ * first (`requireAdmin`, before any validation, repository call or provider
+ * request) and returns a result rather than throwing: a `{ ok: false }`
+ * tells the client store to roll back and show the message. Only AdminError
+ * and authorization messages are shown; anything else is logged on the
+ * server and reported generically.
  */
 
 export type AdminActionResult = { ok: true; message?: string } | { ok: false; error: string }
@@ -45,6 +50,19 @@ const deleters: Partial<Record<AdminMutableCollection, (id: string) => Promise<v
   matches: (id) => adminRepository.deleteMatch(id),
 }
 
+/** The failure result for a caller who is not an administrator, or null when they are. */
+async function denyUnlessAdmin(): Promise<AdminActionResult | null> {
+  try {
+    await requireAdmin()
+    return null
+  } catch (error) {
+    if (isAuthorizationError(error)) {
+      return { ok: false, error: error.kind === "unauthenticated" ? "Sign in as an administrator to make changes." : "Only administrators can make changes." }
+    }
+    throw error
+  }
+}
+
 async function run(work: () => Promise<void>): Promise<AdminActionResult> {
   try {
     await work()
@@ -61,6 +79,8 @@ async function run(work: () => Promise<void>): Promise<AdminActionResult> {
 }
 
 export async function saveAdminRecord(collection: string, item: unknown): Promise<AdminActionResult> {
+  const denied = await denyUnlessAdmin()
+  if (denied) return denied
   const save = savers[collection as AdminMutableCollection]
   if (!save) return { ok: false, error: "This collection cannot be edited." }
   return run(() => save(item))
@@ -69,9 +89,15 @@ export async function saveAdminRecord(collection: string, item: unknown): Promis
 /**
  * Runs one synchronisation for a data source, then refreshes the admin
  * snapshot so the new sync log, lastSyncedAt, and any synced catalogue rows
- * appear. Provider credentials never leave the server.
+ * appear. Provider credentials never leave the server. The per-source lock
+ * inside `syncDataSource` is unchanged; a Preview deployment refuses before
+ * reaching it unless the operator opted in.
  */
 export async function runDataSourceSync(dataSourceId: unknown): Promise<AdminActionResult> {
+  const denied = await denyUnlessAdmin()
+  if (denied) return denied
+  const policy = providerSyncPolicy(process.env)
+  if (!policy.allowed) return { ok: false, error: `Sync not run: ${policy.reason}` }
   if (typeof dataSourceId !== "string" || dataSourceId.length === 0 || dataSourceId.length > 200) return { ok: false, error: "Invalid data source id." }
   try {
     const result = await syncDataSource(dataSourceId)
@@ -91,6 +117,8 @@ export async function runDataSourceSync(dataSourceId: unknown): Promise<AdminAct
 }
 
 export async function deleteAdminRecord(collection: string, id: unknown): Promise<AdminActionResult> {
+  const denied = await denyUnlessAdmin()
+  if (denied) return denied
   const remove = deleters[collection as AdminMutableCollection]
   if (!remove) return { ok: false, error: "This collection cannot be deleted from." }
   if (typeof id !== "string" || id.length === 0 || id.length > 200) return { ok: false, error: "Invalid id." }

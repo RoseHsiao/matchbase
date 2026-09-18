@@ -38,6 +38,29 @@ describe("authorizeCronRequest", () => {
 })
 
 describe("handleCronSync", () => {
+  it("a browser session cookie is not cron authentication", async () => {
+    const d = deps()
+    const res = await handleCronSync(request({ cookie: "__Secure-better-auth.session_token=abc.def; better-auth.session_token=abc.def" }), d.deps)
+    assert.equal(res.status, 401)
+    assert.equal(d.calls.length, 0)
+  })
+
+  it("403 on a Preview deployment unless provider sync is explicitly allowed; the scheduler is never invoked", async () => {
+    const d = deps([], { ...env, VERCEL_ENV: "preview" })
+    const res = await handleCronSync(request({ authorization: `Bearer ${SECRET}` }), d.deps)
+    assert.equal(res.status, 403)
+    const body = await res.json()
+    assert.equal(body.ok, false)
+    assert.match(body.error, /Preview/)
+    assert.equal(d.calls.length, 0)
+    const allowed = deps([], { ...env, VERCEL_ENV: "preview", ALLOW_PREVIEW_PROVIDER_SYNC: "true" })
+    const ok = await handleCronSync(request({ authorization: `Bearer ${SECRET}` }), allowed.deps)
+    assert.equal(ok.status, 200)
+    assert.equal(allowed.calls.length, 1)
+    const production = deps([], { ...env, VERCEL_ENV: "production" })
+    assert.equal((await handleCronSync(request({ authorization: `Bearer ${SECRET}` }), production.deps)).status, 200)
+  })
+
   it("401 without valid auth and the scheduler is never invoked", async () => {
     const d = deps()
     const res = await handleCronSync(request(), d.deps)

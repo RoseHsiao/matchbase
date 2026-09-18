@@ -200,7 +200,7 @@ Stated precisely.
 - **A second, live-verified provider exists.** TheSportsDB V1 (free key) for Premier League football was synced twice into the development database through the unchanged pipeline; its free tier truncates listings, so it is a window, not a season ([providers/thesportsdb.md](providers/thesportsdb.md)).
 - **Live Sportradar responses are unverified.** No API key has been configured in any environment used so far. The adapter, its configuration validation, authentication handling, pagination, normalization, persistence, idempotency and secret redaction are verified against fixtures shaped like the documented API. Actual response shapes, rate-limit behaviour, freshness and catalogue coverage are not. A manual smoke test is documented in [live-data-integration.md §16](live-data-integration.md).
 - **Reminders are preferences, not notifications.** Nothing is delivered by any channel.
-- **No authentication.** `getCurrentUserId()` returns the seeded demo user for every request. It is the single seam a session would replace; the user tables need no change.
+- **Authentication is email and password only.** Better Auth with database sessions, USER and ADMIN roles, and server-side guards on every personal and admin mutation ([security/authentication-and-authorization.md](security/authentication-and-authorization.md)). No email verification, password reset or OAuth yet, because no mail transport or provider credentials exist; the ADMIN role is granted only from an operator shell.
 - **Scheduled sync is daily.** A Vercel Cron Job runs the provider-neutral scheduler once a day (the Hobby plan's minimum interval) through the same pipeline as the CLI and Admin, guarded by a database run lock ([scheduled-sync.md](scheduled-sync.md)). No live-score streaming, no deletion reconciliation, and the DataSource → provider binding lives in code rather than a column.
 - **Demo data is relative, not live.** The seed lays a fixed timeline of offsets over the current date (or `DEMO_ANCHOR`), evaluated in Asia/Taipei, and refuses any anchor for which statuses and times would contradict. Nothing advances between seeds; a "live" match is an authored fixture. See [demo-data-and-time.md](demo-data-and-time.md).
 - **Presentation time zone.** Instants are stored in UTC and reminder arithmetic is zone-free, but day boundaries still use the server's local zone; the decided Asia/Taipei rule is not applied.
@@ -212,7 +212,7 @@ Stated precisely.
 In rough priority order; none is started.
 
 1. Run the live Sportradar smoke test with a real key; record observed shapes; fix adapter assumptions.
-2. Authentication behind `getCurrentUserId()`.
+2. Hardening after authentication: rate limiting with database storage, security headers and CSP, a least-privilege database role ([security/production-security-audit.md](security/production-security-audit.md) P1).
 3. Reminder delivery: a scheduler over `UserWatchlistMatch × Match.startsAt`, an idempotent delivery log, and in-app delivery through the existing header bell first.
 4. Scheduled synchronization and a `DataSource.provider` column.
 5. Apply the presentation time zone to day boundaries.

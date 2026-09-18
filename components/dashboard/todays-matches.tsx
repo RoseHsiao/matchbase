@@ -13,13 +13,15 @@ import type { MatchView } from "@/lib/data/types"
  * time, participants, status, score, and, through the shared stores, the
  * watchlist star and the reminder state.
  */
-export function TodaysMatches({ matches, now }: { matches: MatchView[]; now: Date }) {
+export function TodaysMatches({ matches, now, personal = true }: { matches: MatchView[]; now: Date; personal?: boolean }) {
   const live = matches.filter((match) => match.status === "live").length
   const finished = matches.filter((match) => match.status === "finished").length
   const upcoming = matches.length - live - finished
   const description =
     matches.length === 0
-      ? "Nothing today for the teams, players and leagues you follow."
+      ? personal
+        ? "Nothing today for the teams, players and leagues you follow."
+        : "Nothing scheduled today."
       : [
           live > 0 ? `${live} live now` : null,
           upcoming > 0 ? `${upcoming} still to play` : null,
@@ -43,7 +45,7 @@ export function TodaysMatches({ matches, now }: { matches: MatchView[]; now: Dat
         renderMeta={(match) => <ReminderBadge match={match} />}
         renderAction={(match) => <WatchlistToggle matchId={match.id} />}
         emptyTitle="No matches today"
-        emptyDescription="Follow more teams and players, or browse the schedule to find something to watch."
+        emptyDescription={personal ? "Follow more teams and players, or browse the schedule to find something to watch." : "Browse the schedule to find something to watch, or sign in to follow teams and players."}
         emptyAction={
           <span className="flex flex-wrap justify-center gap-2">
             <Link href="/schedule" className={buttonVariants({ variant: "default", size: "sm" })}>

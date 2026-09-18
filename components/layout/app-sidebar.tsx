@@ -14,6 +14,7 @@ import {
   isRoutable,
 } from "@/lib/admin/navigation"
 import { isNavItemActive, navSections } from "@/lib/navigation"
+import { useViewer } from "@/components/auth/viewer-provider"
 import { NavUser } from "@/components/layout/nav-user"
 import {
   Sidebar,
@@ -33,7 +34,12 @@ import {
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
   const { isMobile, setOpenMobile } = useSidebar()
+  const viewer = useViewer()
   const inAdmin = isAdminPath(pathname)
+  // The Admin entry is a convenience for administrators; the route itself is guarded on the server.
+  const sections = navSections
+    .map((section) => ({ ...section, items: section.items.filter((item) => item.href !== ADMIN_ROOT || viewer?.role === "ADMIN") }))
+    .filter((section) => section.items.length > 0)
 
   // Close the mobile sheet after navigating so the new page is visible.
   function handleNavigate() {
@@ -64,7 +70,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
 
       <SidebarContent>
-        {navSections.map((section) => (
+        {sections.map((section) => (
           <SidebarGroup key={section.label}>
             <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -95,7 +101,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
 
       <SidebarFooter>
-        <NavUser name="Guest" email="guest@matchbase.app" />
+        <NavUser />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

@@ -134,6 +134,7 @@ The scheduler reads `DataSource` rows and calls the provider pipeline. It never 
 | `THESPORTSDB_*` | optional | optional | optional | defaults use the public free key; see `.env.example` |
 | `SYNC_*_MINUTES` | optional | optional | optional | cadence tuning; defaults match `vercel.json` |
 | `SPORTRADAR_*` | optional | optional | optional | unset means the tennis source is not schedulable |
+| `ALLOW_PREVIEW_PROVIDER_SYNC` | unset | unset unless the preview owns its database branch | unset | since Phase 9.1 a Preview deployment answers 403 to the cron route (after the secret check) and refuses Admin "Sync now" unless this is `true`; see [security/authentication-and-authorization.md](security/authentication-and-authorization.md) |
 
 None is `NEXT_PUBLIC_`; the built client bundle is scanned for `CRON_SECRET` and provider configuration strings as part of validation.
 

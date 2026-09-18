@@ -312,18 +312,89 @@ model MatchParticipant {
 // User state
 // ---------------------------------------------------------------------------
 
-/// Owner of follows and the watchlist. No credentials, sessions, or roles in
-/// v1; authentication is integrated later without changing these tables.
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+/// Authorization role, a server-side fact on the user row. Never accepted
+/// from the browser: Better Auth is configured with `input: false` for it
+/// (lib/auth/create-auth.ts) and only the operator CLI (scripts/admin-role.mts)
+/// changes it.
+enum UserRole {
+  USER
+  ADMIN
+}
 
+/// One MatchBase user: the row follows and the watchlist hang off, and the
+/// account Better Auth authenticates (docs/security/authentication-and-authorization.md).
+/// `name`, `emailVerified`, `image` and `updatedAt` are the Better Auth core
+/// user fields; the seed's demo user keeps this shape too but never has an
+/// Account row, so nobody can sign in as it.
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String   @default("")
+  emailVerified Boolean  @default(false)
+  image         String?
+  role          UserRole @default(USER)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  sessions      Session[]
+  accounts      Account[]
   teamFollows   UserTeamFollow[]
   playerFollows UserPlayerFollow[]
   leagueFollows UserLeagueFollow[]
   watchlist     UserWatchlistMatch[]
+}
+
+/// Better Auth database session. The browser holds only the random `token`
+/// in an HttpOnly cookie; every server read resolves it here.
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime @db.Timestamptz(3)
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Better Auth credential or provider link. For email and password the row
+/// is `providerId = "credential"` with the scrypt hash in `password`; the
+/// token columns exist for a later OAuth provider and stay null until then.
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime? @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @db.Timestamptz(3)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Better Auth short-lived verification values (email verification, password
+/// reset). Required by the core schema even though no flow issues them yet.
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@index([identifier])
 }
 
 model UserTeamFollow {

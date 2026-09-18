@@ -1,13 +1,19 @@
 "use client"
 
+import * as React from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   ChevronsUpDownIcon,
+  LogInIcon,
   LogOutIcon,
-  SettingsIcon,
+  ShieldCheckIcon,
   UserRoundIcon,
 } from "lucide-react"
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useViewer } from "@/components/auth/viewer-provider"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,12 +29,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-
-type NavUserProps = {
-  name: string
-  email: string
-  avatarUrl?: string
-}
+import { authClient } from "@/lib/auth/client"
 
 function initials(name: string) {
   return name
@@ -38,9 +39,48 @@ function initials(name: string) {
     .join("")
 }
 
-/** Sidebar footer account menu. Actions are placeholders until auth exists. */
-export function NavUser({ name, email, avatarUrl }: NavUserProps) {
+/**
+ * Sidebar footer account control. Anonymous: a "Sign in" entry. Signed in:
+ * the account menu with the role and a sign-out action. Who is signed in
+ * comes from the server render (ViewerProvider); signing out calls the auth
+ * endpoint and then re-renders the tree so every store is reseeded as anonymous.
+ */
+export function NavUser() {
+  const viewer = useViewer()
   const { isMobile } = useSidebar()
+  const router = useRouter()
+  const [signingOut, setSigningOut] = React.useState(false)
+
+  async function signOut() {
+    setSigningOut(true)
+    try {
+      await authClient.signOut()
+    } finally {
+      setSigningOut(false)
+      router.push("/dashboard")
+      router.refresh()
+    }
+  }
+
+  if (!viewer) {
+    return (
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton size="lg" tooltip="Sign in" render={<Link href="/sign-in" />}>
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <LogInIcon className="size-4" />
+            </div>
+            <div className="grid flex-1 text-left text-sm leading-tight">
+              <span className="truncate font-medium">Sign in</span>
+              <span className="truncate text-xs text-muted-foreground">Follow teams, save matches</span>
+            </div>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    )
+  }
+
+  const admin = viewer.role === "ADMIN"
 
   return (
     <SidebarMenu>
@@ -55,16 +95,11 @@ export function NavUser({ name, email, avatarUrl }: NavUserProps) {
             }
           >
             <Avatar className="size-8 rounded-lg after:rounded-lg">
-              <AvatarImage src={avatarUrl} alt={name} />
-              <AvatarFallback className="rounded-lg">
-                {initials(name)}
-              </AvatarFallback>
+              <AvatarFallback className="rounded-lg">{initials(viewer.name)}</AvatarFallback>
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">{name}</span>
-              <span className="truncate text-xs text-muted-foreground">
-                {email}
-              </span>
+              <span className="truncate font-medium">{viewer.name}</span>
+              <span className="truncate text-xs text-muted-foreground">{viewer.email}</span>
             </div>
             <ChevronsUpDownIcon className="ml-auto size-4" />
           </DropdownMenuTrigger>
@@ -77,29 +112,20 @@ export function NavUser({ name, email, avatarUrl }: NavUserProps) {
             {/* Base UI requires a group around a menu label. */}
             <DropdownMenuGroup>
               <DropdownMenuLabel className="font-normal">
-                <div className="grid text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{name}</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {email}
-                  </span>
+                <div className="grid gap-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">{viewer.name}</span>
+                  <span className="truncate text-xs text-muted-foreground">{viewer.email}</span>
+                  <Badge variant={admin ? "default" : "secondary"} className="w-fit">
+                    {admin ? <ShieldCheckIcon data-icon="inline-start" /> : <UserRoundIcon data-icon="inline-start" />}
+                    {admin ? "Administrator" : "Member"}
+                  </Badge>
                 </div>
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <UserRoundIcon />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <SettingsIcon />
-                Settings
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void signOut()} disabled={signingOut}>
               <LogOutIcon />
-              Sign out
+              {signingOut ? "Signing out…" : "Sign out"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

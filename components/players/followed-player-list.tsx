@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ChevronRightIcon, UserRoundIcon } from "lucide-react"
 
+import { useViewer } from "@/components/auth/viewer-provider"
 import { EmptyState } from "@/components/empty-state"
 import { ListRowLink } from "@/components/list-row-link"
 import { PlayerAvatar } from "@/components/players/player-avatar"
@@ -20,8 +21,25 @@ type FollowedPlayerListProps = {
 
 /** Dashboard panel body: followed players with their team (or "Independent") and competition. */
 export function FollowedPlayerList({ players, limit = 6 }: FollowedPlayerListProps) {
+  const viewer = useViewer()
   const { ids } = usePlayerFollows()
   const followed = players.filter((player) => ids.has(player.id))
+
+  if (!viewer) {
+    return (
+      <EmptyState
+        icon={UserRoundIcon}
+        title="Sign in to follow players"
+        description="Followed players and their teams appear here."
+        action={
+          <Link href="/sign-in?next=%2Fdashboard" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Sign in
+          </Link>
+        }
+        className="mx-2"
+      />
+    )
+  }
 
   if (followed.length === 0) {
     return (

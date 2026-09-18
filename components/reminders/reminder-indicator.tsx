@@ -5,6 +5,7 @@ import Link from "next/link"
 import { BellIcon } from "lucide-react"
 import { cn } from "cn"
 
+import { useViewer } from "@/components/auth/viewer-provider"
 import { SportIcon } from "@/components/sport-icon"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover"
@@ -23,6 +24,7 @@ const PREVIEW_LIMIT = 5
  * and client render the same number.
  */
 export function ReminderIndicator({ className }: { className?: string }) {
+  const viewer = useViewer()
   const { has } = useWatchlist()
   const { entries } = useWatchlistReminders()
   const [open, setOpen] = React.useState(false)
@@ -55,7 +57,11 @@ export function ReminderIndicator({ className }: { className?: string }) {
         <PopoverHeader className="px-4 pt-4 pb-2">
           <PopoverTitle>Reminders</PopoverTitle>
           <PopoverDescription>
-            {count === 0 ? "Add a match to your Watchlist and choose when to be reminded; it will show up here." : `${count} upcoming ${count === 1 ? "match" : "matches"} with a reminder. Nothing is sent yet; this is where your reminders are set.`}
+            {!viewer
+              ? "Sign in to save matches and choose when to be reminded."
+              : count === 0
+                ? "Add a match to your Watchlist and choose when to be reminded; it will show up here."
+                : `${count} upcoming ${count === 1 ? "match" : "matches"} with a reminder. Nothing is sent yet; this is where your reminders are set.`}
           </PopoverDescription>
         </PopoverHeader>
         {count > 0 ? (
@@ -68,8 +74,8 @@ export function ReminderIndicator({ className }: { className?: string }) {
           </ul>
         ) : null}
         <div className="border-t px-4 py-2">
-          <Link href="/watchlist" onClick={() => setOpen(false)} className={buttonVariants({ variant: "ghost", size: "sm", className: "w-full justify-center" })}>
-            Open Watchlist
+          <Link href={viewer ? "/watchlist" : "/sign-in?next=%2Fwatchlist"} onClick={() => setOpen(false)} className={buttonVariants({ variant: "ghost", size: "sm", className: "w-full justify-center" })}>
+            {viewer ? "Open Watchlist" : "Sign in"}
           </Link>
         </div>
       </PopoverContent>

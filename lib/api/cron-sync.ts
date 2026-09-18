@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto"
 
 import type { ScheduledSyncSummary, ScheduleTrigger } from "@/lib/data/sync/scheduler"
+import { providerSyncPolicy } from "@/lib/env/runtime-environment"
 
 /**
  * The cron trigger boundary: authenticate the request the way Vercel
@@ -43,6 +44,9 @@ function triggerOf(request: Request): ScheduleTrigger {
 export async function handleCronSync(request: Request, deps: CronSyncDeps): Promise<Response> {
   const auth = authorizeCronRequest(request, deps.env)
   if (!auth.ok) return Response.json({ ok: false, error: auth.reason }, { status: auth.status, headers: { "cache-control": "no-store" } })
+  // Environment intent, after the secret: a Preview deployment never syncs providers unless the operator opted in.
+  const policy = providerSyncPolicy(deps.env)
+  if (!policy.allowed) return Response.json({ ok: false, error: policy.reason }, { status: 403, headers: { "cache-control": "no-store" } })
   const now = deps.now?.() ?? new Date()
   try {
     const summary = await deps.run(triggerOf(request), now)

@@ -2,6 +2,7 @@
 
 import * as React from "react"
 
+import { useSignInPrompt } from "@/components/auth/viewer-provider"
 import type { ReminderActionResult } from "@/lib/data/user-state-actions"
 import type { MatchStatus, WatchlistEntryView, WatchlistReminder } from "@/lib/data/types"
 import { isReminderAvailable } from "@/lib/reminders"
@@ -72,12 +73,15 @@ const Context = React.createContext<ContextValue | null>(null)
 type WatchlistRemindersProviderProps = {
   initialEntries: ReminderEntry[]
   persist?: PersistReminder
+  /** True for an anonymous visitor: a change prompts sign-in instead of touching the store. */
+  readOnly?: boolean
   children: React.ReactNode
 }
 
-export function WatchlistRemindersProvider({ initialEntries, persist, children }: WatchlistRemindersProviderProps) {
+export function WatchlistRemindersProvider({ initialEntries, persist, readOnly = false, children }: WatchlistRemindersProviderProps) {
   const [store] = React.useState(() => createStore(initialEntries))
   const persistRef = React.useRef(persist)
+  const promptSignIn = useSignInPrompt()
 
   React.useEffect(() => {
     persistRef.current = persist
@@ -91,6 +95,10 @@ export function WatchlistRemindersProvider({ initialEntries, persist, children }
     () => ({
       store,
       async change(entry) {
+        if (readOnly) {
+          promptSignIn()
+          return { ok: false, error: "Sign in to set reminders." }
+        }
         const previous = store.getSnapshot().get(entry.matchId)
         store.set(entry)
         const save = persistRef.current
@@ -109,7 +117,7 @@ export function WatchlistRemindersProvider({ initialEntries, persist, children }
         }
       },
     }),
-    [store]
+    [store, readOnly, promptSignIn]
   )
 
   return <Context.Provider value={value}>{children}</Context.Provider>

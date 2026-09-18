@@ -10,7 +10,7 @@ Discover → Follow → Schedule → Watchlist → Reminder → Watch → Histor
 
 MatchBase is a full-stack Next.js application backed by PostgreSQL. Its interesting parts are not the pages but the decisions underneath them: a participant-based match model that serves NBA, League of Legends and Wimbledon doubles from one schema, a data-driven sport registry that keeps sport-specific conditionals out of the UI, and a provider-agnostic sync pipeline whose first real adapter is the Sportradar Tennis API.
 
-> **Status at a glance.** Fully working end to end against a Neon PostgreSQL database with deterministic demo data. Reminder *preferences* are persisted and shown; reminder *delivery* is not built. The Sportradar adapter is implemented and fixture-tested; it has **not** been run against the live API because no key is configured. There is no authentication yet (a single demo user). See [Current limitations](#current-limitations).
+> **Status at a glance.** Fully working end to end against a Neon PostgreSQL database with deterministic demo data. Reminder *preferences* are persisted and shown; reminder *delivery* is not built. The Sportradar adapter is implemented and fixture-tested; it has **not** been run against the live API because no key is configured. Authentication is email and password through Better Auth with USER and ADMIN roles; the Admin area and every personal mutation are authorized on the server. See [Current limitations](#current-limitations).
 
 **Read next:** [Engineering case study](docs/case-study.md) · [Docs index](docs/README.md) · [Screenshot guide](docs/screenshots.md)
 
@@ -345,6 +345,14 @@ npm run db:seed                   # idempotent demo catalogue + demo user state
 npm run dev                       # http://localhost:3000 → /dashboard
 ```
 
+Create an account at `/sign-up`, then grant yourself the Admin area from the shell (the only path to the ADMIN role):
+
+```bash
+npm run admin:role -- grant you@example.com
+```
+
+Or, for local development only, set `MATCHBASE_DEV_LOGIN=true` and the four `MATCHBASE_DEV_*` values in `.env.local` (see `.env.example`) to get "Sign in as dev USER / ADMIN" buttons on `/sign-in`; they sign in through the normal Better Auth path and never activate on Vercel.
+
 Optional:
 
 ```bash
@@ -369,6 +377,11 @@ All variables are server-only. None is prefixed `NEXT_PUBLIC_`, none is imported
 | `SPORTRADAR_TENNIS_BASE_URL`, `_LANGUAGE`, `_SEASON_YEAR`, `_LEVELS`, `_COMPETITIONS`, `_REQUEST_INTERVAL_MS` | no | scope and pacing of the tennis sync; see `.env.example` |
 | `THESPORTSDB_API_KEY` | no (public free key `123`) | TheSportsDB V1 key, placed in the URL path on the server only |
 | `THESPORTSDB_BASE_URL`, `_REQUEST_INTERVAL_MS`, `_PAST_DAYS`, `_FUTURE_DAYS`, `_MAX_REQUESTS`, `_SEASON` | no | pacing, day window, per-run request budget and season override; see `.env.example` |
+| `BETTER_AUTH_SECRET` | yes | signs session cookies; random, at least 32 characters, different per environment |
+| `BETTER_AUTH_URL` | outside Vercel production/preview | public base URL for the auth endpoints; derived from Vercel's system variables when unset, inferred from the request in local development |
+| `AUTH_ALLOW_SIGN_UP` | no (`true`) | `false` closes public sign-up; existing accounts keep signing in |
+| `MATCHBASE_DEV_LOGIN`, `MATCHBASE_DEV_{USER,ADMIN}_{EMAIL,PASSWORD}` | no | local-only quick sign-in buttons on `/sign-in` for a dev USER and a dev ADMIN; refused outside a development environment; see [docs/security/authentication-and-authorization.md](docs/security/authentication-and-authorization.md) |
+| `ALLOW_PREVIEW_PROVIDER_SYNC` | no | Preview deployments refuse provider syncs unless this is `true` |
 | `CRON_SECRET` | for scheduled sync | sent by Vercel Cron as a Bearer token; the route refuses to run without it (at least 16 characters) |
 | `SYNC_*_MINUTES` | no | cadence tuning for freshness, the recency gate, the time budget and stale-lock recovery; see `.env.example` |
 | `PRISMA_QUERY_LOG` | no | `1` prints SQL |
@@ -383,7 +396,7 @@ Stated precisely, because the difference matters:
 | **TheSportsDB integration** | Adapter implemented and **run twice against the live V1 free API** for the Premier League: real fixtures, results, clubs, badges and venues ingested through the generic pipeline, idempotent | Free-tier listings are truncated (10 teams, 5 to 15 season events, 3 per day, 1 next and previous), so coverage is a window around the run, not a full season. No live match was observed, so live-phase statuses are fixture-tested only. Players are not synced |
 | **API credentials** | Read from the environment on the server; never in source, URLs or logs | No credential storage beyond environment variables |
 | **Demo data** | Deterministic timeline from `lib/data/mock.ts`, seeded relative to the current date (or `DEMO_ANCHOR`), idempotent, coherence-checked | It is still demo data: nothing advances between seeds, "live" matches are authored fixtures, and re-seeding is the only refresh |
-| **Authentication** | `getCurrentUserId()` is the single seam; all user tables are keyed by user id | No login, sessions or roles. Every request is the seeded demo user |
+| **Authentication** | Email and password sign-in through Better Auth, database sessions in an HttpOnly cookie, USER and ADMIN roles, `requireUser()` / `requireAdmin()` on every personal and admin mutation and loader, an operator CLI for the ADMIN role, a Preview guard on provider syncs; see [docs/security/authentication-and-authorization.md](docs/security/authentication-and-authorization.md) | No email verification, password reset or OAuth (no mail transport configured); Better Auth's rate limiting is per serverless instance; no security headers or CSP yet |
 | **Reminders** | Preference persisted per watchlisted match, validated, shown on four surfaces | **No notification is ever delivered.** No scheduler, worker, push, email or in-app delivery log |
 | **Synchronization** | Manual (Admin "Sync now", `npm run sync:manual`) and scheduled: a daily Vercel Cron Job through `/api/cron/sync` with a database-backed run lock and Admin freshness; see [docs/scheduled-sync.md](docs/scheduled-sync.md) | Daily only, because Vercel Hobby allows nothing more frequent; no live-score streaming, no deletion reconciliation, no `DataSource.provider` column (binding is in code) |
 | **Time zones** | Instants stored in UTC; reminder arithmetic is zone-free | Day boundaries ("today", schedule days) use the server's local time; the decided Asia/Taipei presentation zone is not applied yet |

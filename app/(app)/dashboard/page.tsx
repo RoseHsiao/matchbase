@@ -9,6 +9,7 @@ import { UpcomingMatches } from "@/components/dashboard/upcoming-matches";
 import { WatchlistPreview } from "@/components/dashboard/watchlist-preview";
 import { PageHeader } from "@/components/layout/page-header";
 import { buttonVariants } from "@/components/ui/button";
+import { getViewer } from "@/lib/auth/session";
 import { getQuickStats, getTodaysMatches } from "@/lib/data/queries";
 import { formatLongDate } from "@/lib/format";
 import { getNavItem } from "@/lib/navigation";
@@ -29,14 +30,14 @@ export const metadata: Metadata = {
 export default async function DashboardPage() {
   // One reference time for the whole page so every "Today" label agrees.
   const now = new Date();
-  const [today, stats] = await Promise.all([getTodaysMatches(now), getQuickStats()]);
+  const [viewer, today, stats] = await Promise.all([getViewer(), getTodaysMatches(now), getQuickStats()]);
   const live = today.filter((match) => match.status === "live").length;
 
   return (
     <>
       <PageHeader
         title="Dashboard"
-        description={`${formatLongDate(now)} · Your sports and esports command center: follow, save, set a reminder, watch.`}
+        description={`${formatLongDate(now)} · ${viewer ? "Your sports and esports command center: follow, save, set a reminder, watch." : "Today across every league. Sign in to follow, save and set reminders."}`}
         actions={
           <Link
             href="/schedule"
@@ -50,7 +51,7 @@ export default async function DashboardPage() {
 
       <DashboardSummary followedLeagues={stats.followedLeagues} todayCount={today.length} liveCount={live} />
 
-      <TodaysMatches matches={today} now={now} />
+      <TodaysMatches matches={today} now={now} personal={viewer !== null} />
 
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="min-w-0 xl:col-span-2">

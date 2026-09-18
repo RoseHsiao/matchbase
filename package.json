@@ -11,14 +11,17 @@
     "test": "tsx --test \"tests/**/*.test.ts\"",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "sync:manual": "tsx scripts/sync-data-source.mts"
+    "sync:manual": "tsx scripts/sync-data-source.mts",
+    "admin:role": "tsx scripts/admin-role.mts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
+    "@better-auth/prisma-adapter": "^1.7.5",
     "@neon/config": "^1.4.2",
     "@neon/env": "^1.3.2",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
+    "better-auth": "^1.7.5",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.2.6",
     "lucide-react": "^1.43.0",

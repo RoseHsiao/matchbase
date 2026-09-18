@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { BellRingIcon, StarIcon, UsersIcon, type LucideIcon } from "lucide-react"
 
+import { useViewer } from "@/components/auth/viewer-provider"
 import { usePlayerFollows } from "@/components/players/player-follows-provider"
 import { useFollows } from "@/components/teams/follows-provider"
 import { useWatchlist } from "@/components/watchlist/watchlist-provider"
@@ -28,6 +29,7 @@ function plural(count: number, noun: string, nounPlural = `${noun}s`): string {
  * never from the clock, so the server and client render the same numbers.
  */
 export function DashboardSummary({ followedLeagues, todayCount, liveCount }: DashboardSummaryProps) {
+  const viewer = useViewer()
   const teams = useFollows().count
   const players = usePlayerFollows().count
   const { ids: watchlist } = useWatchlist()
@@ -40,23 +42,23 @@ export function DashboardSummary({ followedLeagues, todayCount, liveCount }: Das
     {
       icon: UsersIcon,
       label: "Following",
-      value: [plural(teams, "team"), plural(players, "player"), plural(followedLeagues, "league")].join(" · "),
+      value: viewer ? [plural(teams, "team"), plural(players, "player"), plural(followedLeagues, "league")].join(" · ") : "Sign in to follow",
       hint: todayCount > 0 ? `${plural(todayCount, "match", "matches")} today${liveCount > 0 ? `, ${liveCount} live` : ""}` : "Nothing today",
-      href: "/teams",
+      href: viewer ? "/teams" : "/sign-in?next=%2Fdashboard",
     },
     {
       icon: StarIcon,
       label: "Watchlist",
-      value: plural(watchlist.size, "saved match", "saved matches"),
+      value: viewer ? plural(watchlist.size, "saved match", "saved matches") : "Sign in to save matches",
       hint: upcoming.length > 0 ? `${upcoming.length} still to come` : watchlist.size > 0 ? "Nothing upcoming" : "Save matches from the schedule",
-      href: "/watchlist",
+      href: viewer ? "/watchlist" : "/sign-in?next=%2Fdashboard",
     },
     {
       icon: BellRingIcon,
       label: "Reminders",
-      value: plural(withReminder, "reminder"),
+      value: viewer ? plural(withReminder, "reminder") : "Sign in to set reminders",
       hint: upcoming.length > withReminder ? `${upcoming.length - withReminder} saved without one` : withReminder > 0 ? "Every upcoming saved match covered" : "Set them on a saved match",
-      href: "/watchlist",
+      href: viewer ? "/watchlist" : "/sign-in?next=%2Fdashboard",
     },
   ]
 

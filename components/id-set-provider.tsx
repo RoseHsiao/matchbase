@@ -2,6 +2,7 @@
 
 import * as React from "react"
 
+import { useSignInPrompt } from "@/components/auth/viewer-provider"
 import { createIdSetStore, type IdSetStore } from "@/lib/id-set-store"
 
 /** Saves one membership change on the server. `present` is the new state. */
@@ -15,6 +16,12 @@ type IdSetProviderProps = {
    * session-only. On failure the optimistic change is rolled back.
    */
   persist?: PersistIdChange
+  /**
+   * True for an anonymous visitor: a change attempt prompts sign-in instead
+   * of touching the store. The server rejects the write regardless; this
+   * only keeps the UI honest.
+   */
+  readOnly?: boolean
   children: React.ReactNode
 }
 
@@ -39,9 +46,10 @@ function sameMembers(current: ReadonlySet<string>, ids: readonly string[]): bool
 export function createIdSetProvider(name: string) {
   const Context = React.createContext<ContextValue | null>(null)
 
-  function Provider({ initialIds, persist, children }: IdSetProviderProps) {
+  function Provider({ initialIds, persist, readOnly = false, children }: IdSetProviderProps) {
     const [store] = React.useState(() => createIdSetStore(initialIds))
     const persistRef = React.useRef(persist)
+    const promptSignIn = useSignInPrompt()
 
     React.useEffect(() => {
       persistRef.current = persist
@@ -55,6 +63,10 @@ export function createIdSetProvider(name: string) {
       () => ({
         store,
         mutate(id, present) {
+          if (readOnly) {
+            promptSignIn()
+            return
+          }
           if (store.has(id) === present) return
           if (present) store.add(id)
           else store.remove(id)
@@ -68,7 +80,7 @@ export function createIdSetProvider(name: string) {
           })
         },
       }),
-      [store]
+      [store, readOnly, promptSignIn]
     )
 
     return <Context.Provider value={value}>{children}</Context.Provider>
