@@ -15,11 +15,13 @@ import { resolveRuntimeEnvironment } from "../lib/env/runtime-environment"
  * the database and never calls a provider. Exit code 1 when any check fails
  * for the evaluated environment, 0 otherwise.
  *
- * Run it in the shell whose variables mirror the target deployment (for
- * Vercel: `vercel env pull .env.production.local --environment=production`,
- * then `set -a; . ./.env.production.local; set +a` before this command),
- * or on the deployment itself. The same evaluation runs at server startup
- * (instrumentation.ts), where a failing check stops Production.
+ * Run it in an operator shell that holds the target environment's database
+ * URLs and label (Vercel's sensitive variables cannot be pulled, so the
+ * operator keeps a git-ignored file outside the repository with values from
+ * Neon; see docs/deployment/production-deployment.md step 10). In such a
+ * shell the auth and cron secrets are absent by design and those two checks
+ * fail; the same evaluation runs at server startup (instrumentation.ts),
+ * where the real values are present and a failing check stops Production.
  */
 
 for (const file of [".env.local", ".env"]) {
@@ -70,8 +72,11 @@ if (withDb) {
       } else {
         console.log("  PASS db-privileges: the runtime role cannot alter the schema.")
       }
-      const applied = await prisma.$queryRaw<{ migration_name: string; finished_at: Date | null; rolled_back_at: Date | null }[]>`SELECT migration_name, finished_at, rolled_back_at FROM "_prisma_migrations" ORDER BY started_at`
       const local = existsSync("prisma/migrations") ? readdirSync("prisma/migrations").filter((name) => /^\d{14}_/.test(name)).sort() : []
+      const [ledger] = await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '_prisma_migrations'`
+      // A database that was never migrated has no ledger table; that is a defined state (9.3B applies everything), not an error.
+      const applied = ledger.n === 0 ? [] : await prisma.$queryRaw<{ migration_name: string; finished_at: Date | null; rolled_back_at: Date | null }[]>`SELECT migration_name, finished_at, rolled_back_at FROM "_prisma_migrations" ORDER BY started_at`
+      if (ledger.n === 0) console.log(`  info db-ledger: no _prisma_migrations table; the database has never been migrated.`)
       const appliedNames = new Set(applied.filter((row) => row.finished_at && !row.rolled_back_at).map((row) => row.migration_name))
       const pending = local.filter((name) => !appliedNames.has(name))
       const failed = applied.filter((row) => !row.finished_at && !row.rolled_back_at)
@@ -87,15 +92,20 @@ if (withDb) {
       const [tables] = await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('User','Session','Account','Verification','RateLimit','DataSource','SyncLog')`
       console.log(`  ${tables.n === 7 ? "PASS" : "FAIL"} db-schema: ${tables.n} of 7 expected auth and sync tables present.`)
       if (tables.n !== 7) dbFailures++
-      const [running] = await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM "SyncLog" WHERE status = 'RUNNING' AND "startedAt" < now() - interval '15 minutes'`
-      console.log(`  ${running.n === 0 ? "PASS" : "WARN"} db-sync-locks: ${running.n} stale RUNNING sync log(s) (the next run recovers them).`)
-      const [admins] = await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM "User" WHERE role = 'ADMIN'`
-      console.log(`  ${admins.n > 0 ? "PASS" : "WARN"} db-admins: ${admins.n} administrator account(s).`)
-      const [demo] = await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM "User" WHERE id = 'demo-user' OR email LIKE '%@matchbase.local'`
-      if (resolveRuntimeEnvironment(env) === "production") console.log(`  ${demo.n === 0 ? "PASS" : "WARN"} db-demo-data: ${demo.n} demo or development account(s) present in a Production database.`)
-      else console.log(`  info db-demo-data: ${demo.n} demo or development account(s).`)
+      if (tables.n === 0) {
+        console.log("  info db-empty: no application tables; the remaining table checks are skipped until migrations run.")
+      } else {
+        const [running] = await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM "SyncLog" WHERE status = 'RUNNING' AND "startedAt" < now() - interval '15 minutes'`
+        console.log(`  ${running.n === 0 ? "PASS" : "WARN"} db-sync-locks: ${running.n} stale RUNNING sync log(s) (the next run recovers them).`)
+        const [admins] = await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM "User" WHERE role = 'ADMIN'`
+        console.log(`  ${admins.n > 0 ? "PASS" : "WARN"} db-admins: ${admins.n} administrator account(s).`)
+        const [demo] = await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM "User" WHERE id = 'demo-user' OR email LIKE '%@matchbase.local'`
+        if (resolveRuntimeEnvironment(env) === "production") console.log(`  ${demo.n === 0 ? "PASS" : "WARN"} db-demo-data: ${demo.n} demo or development account(s) present in a Production database.`)
+        else console.log(`  info db-demo-data: ${demo.n} demo or development account(s).`)
+      }
     } catch (error) {
-      console.log(`  FAIL db: ${error instanceof Error ? error.message.split("\n")[0].slice(0, 200) : "database check failed"}`)
+      const line = error instanceof Error ? error.message.split("\n").map((l) => l.trim()).filter(Boolean)[0] ?? error.name : "database check failed"
+      console.log(`  FAIL db: ${line.slice(0, 200)}`)
       dbFailures++
     } finally {
       await prisma.$disconnect()

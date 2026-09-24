@@ -76,8 +76,14 @@ export function readAuthEnv(env: EnvLike): AuthEnvConfig {
   if (environment !== "development" && !baseURL) {
     throw new AuthConfigError("BETTER_AUTH_URL is not set and no Vercel deployment URL is available; the auth base URL must be explicit outside local development.")
   }
-  // A preview also trusts the production origin so links between them keep working; nothing else is trusted.
-  const candidates = [baseURL, environment === "preview" ? withScheme(env.VERCEL_PROJECT_PRODUCTION_URL) : undefined]
+  // A preview deployment answers on two generated hosts (the deployment URL and the git-branch URL) and also
+  // trusts the production origin so links between them keep working; nothing else is trusted, never a wildcard.
+  const candidates = [
+    baseURL,
+    environment === "preview" ? withScheme(env.VERCEL_URL) : undefined,
+    environment === "preview" ? withScheme(env.VERCEL_BRANCH_URL) : undefined,
+    environment === "preview" ? withScheme(env.VERCEL_PROJECT_PRODUCTION_URL) : undefined,
+  ]
   const trustedOrigins = [...new Set(candidates.filter((value): value is string => Boolean(value)))]
   return { secret, baseURL, trustedOrigins, allowSignUp: isSignUpAllowed(env), environment }
 }

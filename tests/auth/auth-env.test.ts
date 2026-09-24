@@ -67,9 +67,13 @@ describe("readAuthEnv", () => {
   it("trusts only the deployment origin, plus production from a preview", () => {
     const prod = readAuthEnv({ BETTER_AUTH_SECRET: SECRET, VERCEL_ENV: "production", VERCEL_PROJECT_PRODUCTION_URL: "matchbase.example", VERCEL_URL: "dep.vercel.app" })
     assert.deepEqual(prod.trustedOrigins, ["https://matchbase.example"])
-    const preview = readAuthEnv({ BETTER_AUTH_SECRET: SECRET, VERCEL_ENV: "preview", VERCEL_PROJECT_PRODUCTION_URL: "matchbase.example", VERCEL_URL: "dep.vercel.app" })
-    assert.deepEqual(preview.trustedOrigins, ["https://dep.vercel.app", "https://matchbase.example"])
+    const preview = readAuthEnv({ BETTER_AUTH_SECRET: SECRET, VERCEL_ENV: "preview", VERCEL_PROJECT_PRODUCTION_URL: "matchbase.example", VERCEL_URL: "dep.vercel.app", VERCEL_BRANCH_URL: "site-git-x.vercel.app" })
+    assert.deepEqual(preview.trustedOrigins, ["https://dep.vercel.app", "https://site-git-x.vercel.app", "https://matchbase.example"])
     assert.equal(preview.environment, "preview")
+    // An explicit BETTER_AUTH_URL on a preview still keeps both generated hosts trusted; nothing is wildcarded.
+    const explicitPreview = readAuthEnv({ BETTER_AUTH_SECRET: SECRET, VERCEL_ENV: "preview", BETTER_AUTH_URL: "https://staging.example", VERCEL_URL: "dep.vercel.app", VERCEL_BRANCH_URL: "site-git-x.vercel.app" })
+    assert.deepEqual(explicitPreview.trustedOrigins, ["https://staging.example", "https://dep.vercel.app", "https://site-git-x.vercel.app"])
+    assert.equal(explicitPreview.trustedOrigins.some((o) => o.includes("*")), false)
   })
   it("sign-up is open by default and closes with AUTH_ALLOW_SIGN_UP=false", () => {
     assert.equal(isSignUpAllowed({}), true)

@@ -357,6 +357,8 @@ Optional:
 
 ```bash
 npm run production:check                      # configuration readiness (add --db for read-only database checks)
+npm run bootstrap:system                      # sports + live data-source rows for an empty database (no demo data)
+npm run account:create -- you@example.com     # operator account creation while public sign-up is closed
 npm run sync:manual -- ds-mock-basketball     # run the mock provider through the real pipeline
 npm run sync:manual -- ds-tennis-sportradar   # requires SPORTRADAR_API_KEY; calls the live API
 npm run sync:manual -- ds-thesportsdb-epl     # calls the live TheSportsDB free API (about 75 s, 25 paced requests)

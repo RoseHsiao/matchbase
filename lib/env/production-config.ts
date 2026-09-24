@@ -52,6 +52,14 @@ function isLoopback(baseURL: string): boolean {
   }
 }
 
+function hostnameOf(value: string): string | null {
+  try {
+    return new URL(value).hostname || null
+  } catch {
+    return null
+  }
+}
+
 function distinctCharacters(value: string): number {
   return new Set(value).size
 }
@@ -104,10 +112,12 @@ export function evaluateProductionReadiness(env: EnvLike): ReadinessReport {
   else if (distinctCharacters(secret) < 12) add({ id: "auth-secret", status: "fail", detail: "BETTER_AUTH_SECRET looks low-entropy (too few distinct characters); generate it with `openssl rand -base64 32`." })
   else add({ id: "auth-secret", status: "pass", detail: "BETTER_AUTH_SECRET is set and long enough." })
   const baseURL = resolveAuthBaseUrl(env)
+  const baseHost = baseURL ? hostnameOf(baseURL) : null
   if (environment === "development") add({ id: "auth-url", status: "info", detail: baseURL ? "BETTER_AUTH_URL is set." : "BETTER_AUTH_URL unset; inferred from the request in development." })
   else if (!baseURL) add({ id: "auth-url", status: "fail", detail: "No auth base URL: set BETTER_AUTH_URL or deploy on Vercel where it derives from the system URLs." })
+  else if (!baseHost) add({ id: "auth-url", status: "fail", detail: "The auth base URL is not a valid URL (check BETTER_AUTH_URL; a value pulled from a sensitive Vercel variable reads as a placeholder)." })
   else if (production && !baseURL.startsWith("https://") && !isLoopback(baseURL)) add({ id: "auth-url", status: "fail", detail: "The Production auth base URL must be https." })
-  else add({ id: "auth-url", status: "pass", detail: `Auth base URL resolves (${new URL(baseURL).hostname}).` })
+  else add({ id: "auth-url", status: "pass", detail: `Auth base URL resolves (${baseHost}).` })
 
   const cron = env.CRON_SECRET?.trim() ?? ""
   if (production) {

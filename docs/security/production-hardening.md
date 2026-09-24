@@ -39,6 +39,12 @@ Mode A. There is no mail transport, so Mode B (verification, reset, non-enumerat
 
 Enabling public sign-up later: add a mail transport, set `requireEmailVerification: true` with `sendVerificationEmail`, add `sendResetPassword` with `revokeSessionsOnPasswordReset: true`, wire the two forms, then set `AUTH_ALLOW_SIGN_UP=true`. No authorization code changes.
 
+## First account and system bootstrap (Phase 9.3A)
+
+With sign-up closed, the first Production account is created by `npm run account:create -- <email>`: Better Auth's own sign-up API on a server-side instance with sign-up allowed for that call only (same validation, same scrypt hash, same User and Account rows), role USER, the bootstrap session discarded, password from `MATCHBASE_NEW_PASSWORD` or a hidden prompt, never printed. `npm run admin:role -- grant` promotes it in a separate step. Tested end to end in `tests/db/account-create.test.ts`, including sign-in on a closed-sign-up instance and the subsequent grant.
+
+A migrated but empty database needs only the rows the code registries define: `npm run bootstrap:system` creates the six sports (lib/sports.ts) and one ACTIVE DataSource row per live provider binding in the sync registry (no mock feed unless `--include-mock`). Leagues, seasons, clubs, venues and matches come from the first provider sync. The demo seed is never used as bootstrap. Tested in `tests/domain/system-bootstrap.test.ts` and `tests/db/system-bootstrap.test.ts`.
+
 ## Password recovery
 
 No "Forgot password" link exists and none is faked. For the controlled first deployment, recovery is an operator procedure: `npm run account:password -- <email>` reads the new password from `MATCHBASE_NEW_PASSWORD` or a hidden prompt, hashes it with Better Auth's own `hashPassword` (scrypt, `better-auth/crypto`), verifies the hash with `verifyPassword`, writes it to the credential row, and revokes every session of the account. It prints a status line only. Against a production-labelled database it needs `MATCHBASE_OPERATOR_TARGET=production`. Tested end to end in `tests/db/account-password.test.ts`. When mail delivery exists, the built-in reset flow replaces this.
@@ -139,6 +145,8 @@ The non-secret `MATCHBASE_DATABASE_LABEL` (development | preview | production) s
 | `npm run admin:role -- grant/revoke/list` | operator confirmation on production label | emails and roles |
 | `npm run account:password -- <email>` | operator confirmation on production label | status line |
 | `npm run sync:manual -- <id>` | operator confirmation on production label; real provider call | run summary |
+| `npm run bootstrap:system [-- --include-mock] [-- --dry-run]` | operator confirmation on production label | ids and counts |
+| `npm run account:create -- <email>` | operator confirmation on production label | email, role, credential type |
 | `npm run production:check [--db] [--env …]` | none; read-only | check lines |
 
 None prints a connection string, a secret or a password. Automation stays possible: the confirmation is an environment variable, not an interactive prompt.

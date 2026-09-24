@@ -55,6 +55,7 @@ describe("evaluateProductionReadiness", () => {
       [{ BETTER_AUTH_SECRET: "a".repeat(40) }, "auth-secret"],
       [{ VERCEL_PROJECT_PRODUCTION_URL: undefined }, "auth-url"],
       [{ BETTER_AUTH_URL: "http://matchbase.example" }, "auth-url"],
+      [{ BETTER_AUTH_URL: "https://[SENSITIVE]" }, "auth-url"],
       [{ CRON_SECRET: undefined }, "cron-secret"],
       [{ CRON_SECRET: "short" }, "cron-secret"],
       [{ CRON_SECRET: SECRET }, "secret-separation"],

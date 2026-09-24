@@ -1,11 +1,10 @@
-import { createInterface } from "node:readline/promises"
-
 import { PrismaPg } from "@prisma/adapter-pg"
 import { hashPassword, verifyPassword } from "better-auth/crypto"
 
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "../lib/auth/password-policy"
 import { operatorPolicy } from "../lib/env/runtime-environment"
 import { PrismaClient } from "../lib/generated/prisma/client"
+import { readOperatorPassword } from "./shared/read-password"
 
 /**
  * Operator password reset for an existing email/password account, for a
@@ -49,29 +48,7 @@ if (!connectionString) {
   process.exit(2)
 }
 
-async function readPassword(): Promise<string> {
-  const fromEnv = process.env.MATCHBASE_NEW_PASSWORD
-  if (fromEnv) return fromEnv
-  if (!process.stdin.isTTY) {
-    console.error("No TTY: set MATCHBASE_NEW_PASSWORD for this invocation.")
-    process.exit(1)
-  }
-  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true })
-  // Hide the typed characters: readline echoes through the output stream, so mute it while the answer is typed.
-  const output = process.stdout as NodeJS.WriteStream & { muted?: boolean }
-  const originalWrite = output.write.bind(output)
-  output.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => (String(chunk).includes("New password") ? originalWrite(chunk, ...(rest as [])) : true)) as typeof output.write
-  try {
-    const answer = await rl.question(`New password for ${email}: `)
-    originalWrite("\n")
-    return answer
-  } finally {
-    output.write = originalWrite
-    rl.close()
-  }
-}
-
-const password = await readPassword()
+const password = await readOperatorPassword("MATCHBASE_NEW_PASSWORD", `New password for ${email}: `)
 if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
   console.error(`The password must be ${PASSWORD_MIN_LENGTH} to ${PASSWORD_MAX_LENGTH} characters.`)
   process.exit(1)
