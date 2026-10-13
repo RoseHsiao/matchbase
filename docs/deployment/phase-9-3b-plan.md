@@ -32,4 +32,36 @@ Rollback at any step: a configuration error → fix the Vercel variable and rede
 
 ## Result
 
-Not yet performed.
+**Performed 2026-09-24 to 2026-10-13. Production is live at https://matchbase-drab.vercel.app.**
+
+| Fact | Value |
+|---|---|
+| Deployment | `matchbase-qpwrcby1l-rose-6555.vercel.app`, aliased to `matchbase-drab.vercel.app`, region `sin1` |
+| Deployed commit | `82b83c4` on `main` |
+| Build | READY in 58 s; `prisma generate && next build` only, no migration, seed or provider call |
+| Migrations | 6 of 6 applied 2026-09-24 by `MATCHBASE_OPERATOR_TARGET=production npm run db:migrate`; `_prisma_migrations` holds exactly those six, all finished, none rolled back |
+| Runtime credential | `matchbase_app` on the pooled host: cannot CREATE in `public`, does not own the database, cannot write `_prisma_migrations`, can read it |
+| Migration credential | `neondb_owner` on the direct host, operator shell only |
+| System bootstrap | 6 `Sport` rows and 2 live `DataSource` rows; no demo, dev or mock data at any point |
+| First account | created 2026-10-13 with `account:create` as USER, bootstrap session discarded; promoted with `admin:role -- grant`; exactly 1 ADMIN |
+| Public sign-up | closed throughout; the live endpoint answers `400 EMAIL_PASSWORD_SIGN_UP_DISABLED` |
+
+### Steps satisfied by the scheduled cron rather than by a one-off run
+
+The daily Vercel Cron job has run since the deployment, so steps 14 to 19 are evidenced by Production itself and a controlled manual sync was deliberately **not** repeated:
+
+- **19 consecutive runs**, 2026-09-25 to 2026-10-13, every one at 03:00 UTC, **all SUCCESS**, 27 to 58 records each, about 60 s per run, zero rows carrying an error message.
+- Step 14 (provider sync) and step 15 (SyncLog): the 19 rows are the evidence; `ds-thesportsdb-epl.lastSyncedAt` tracks the newest run.
+- Step 16 (Monitoring) and step 17 (catalogue): the catalogue those runs produced is live and verified anonymously, 1 League (English Premier League, `externalId` 4328), 1 Season, 20 Teams with https badges, 14 Venues, 30 Matches, 60 MatchParticipants, 0 Players (the adapter syncs none). Every catalogue row carries a provider identity; none was hand-made.
+- Step 18 (cron secret): the route answered 401 to a missing and a wrong bearer on 2026-09-24, proving the secret is configured; the authorized path is proven by the runs themselves.
+- Step 19 (scheduled cron): 19 days of 03:00 UTC invocations.
+
+Still open from this plan: the Monitoring and Admin pages have not been viewed as an authenticated ADMIN (database evidence only), and the ADMIN half of the smoke checklist.
+
+### Defect found in acceptance and its resolution
+
+**Found 2026-10-13.** Every public page that renders a kick-off time logged **React error #418** (hydration mismatch) in Production. Cause: the `Intl.DateTimeFormat` instances and the day arithmetic in `lib/format.ts` pinned no time zone, so they used the *runtime's* zone. The Vercel function runs in UTC and the visitor's browser does not, so the same instant rendered as two different strings. Measured on the live site: server HTML `11:30 AM`, hydrated DOM in Asia/Taipei `7:30 PM`; a browser forced to UTC produced no error, which isolated the cause exactly.
+
+Impact: visitors saw UTC kick-off times at first paint before React corrected them, plus a console error on `/matches`, `/schedule`, `/history` and match detail. No data was affected and no authorization path was involved.
+
+**Resolved in Phase 9.4** (not yet deployed): the presentation zone is now pinned on every formatter and every day boundary. See [../security/production-hardening.md](../security/production-hardening.md) for the hardening context and the Phase 9.4 notes in [../demo-data-and-time.md](../demo-data-and-time.md).

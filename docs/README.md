@@ -45,6 +45,9 @@ Start with the [project README](../README.md) for the overview, then the [case s
 | 9.1 | 2026-09-17 | (uncommitted) | authentication and authorization: Better Auth (email and password), `User` extended with role and the session/account tables, `requireUser` / `requireAdmin` in the data-access layer, anonymous read-only experience, operator CLI for ADMIN, Preview guard on provider syncs; 2026-09-18: optional development quick sign-in |
 | 9.3A | 2026-09-22 | (uncommitted) | production preflight: Neon and Vercel state inspected, topology decided (separate Production project), `bootstrap:system` and `account:create` operator commands, environment matrix, 9.3B plan; no infrastructure created, nothing deployed |
 | 9.2 | 2026-09-18 | `699ee4a` | production hardening: closed sign-up, operator password reset, database-backed auth rate limiting, headers and nonce CSP, image URL validation, environment model with database labels, startup configuration guard, guarded migrations and seed, runtime-role template, readiness check, deployment runbook and smoke-test plan; no deployment |
+| 9.3A | 2026-09-22 | `82b83c4` | production infrastructure: Neon topology (separate Production project, Preview branch), Vercel project linked to GitHub, environment matrix, `bootstrap:system` and `account:create` operator commands, readiness preflight |
+| 9.3B | 2026-09-24 to 2026-10-13 | `82b83c4` | first Production deployment: migrations applied, least-privilege runtime role, system bootstrap, first ADMIN, 19 days of successful scheduled syncs ([record](deployment/phase-9-3b-plan.md#result)) |
+| 9.4 | 2026-10-13 | (uncommitted) | presentation time zone: one zone literal in `lib/time-zone.ts`, pinned on every formatter and day boundary, fixing the Production hydration mismatch (React #418) |
 
 ## Conventions in these documents
 

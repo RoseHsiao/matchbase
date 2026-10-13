@@ -15,27 +15,31 @@ import {
 } from "@/components/ui/select"
 import {
   addDays,
+  addMonths,
   dayKey,
+  dayOfMonth,
   formatDate,
   formatDateTime,
   formatMonthYear,
+  hourOfDay,
   isSameDay,
+  minuteOfHour,
+  monthNumber,
   parseLocalDate,
+  startOfMonth,
   weekdayLabels,
+  weekdayNumber,
 } from "@/lib/format"
 
 /**
  * Date pickers rendered in the app locale. Native date inputs follow the
  * operating system language, which made them disagree with the rest of the UI.
+ *
+ * Every calendar value comes from lib/format.ts, so the grid, the selected
+ * day and the "today" marker are all the presentation zone's calendar days,
+ * not the browser's. A visitor outside Taipei would otherwise see cell
+ * numbers from their own zone while the day keys came from Taipei.
  */
-
-function startOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1)
-}
-
-function addMonths(date: Date, months: number): Date {
-  return new Date(date.getFullYear(), date.getMonth() + months, 1)
-}
 
 type CalendarGridProps = {
   month: Date
@@ -47,7 +51,7 @@ type CalendarGridProps = {
 function CalendarGrid({ month, onMonthChange, selected, onSelect }: CalendarGridProps) {
   const today = new Date()
   const first = startOfMonth(month)
-  const gridStart = addDays(first, -first.getDay()) // Sunday-first week
+  const gridStart = addDays(first, -weekdayNumber(first)) // Sunday-first week
   const cells = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i))
   const labels = weekdayLabels()
 
@@ -85,7 +89,7 @@ function CalendarGrid({ month, onMonthChange, selected, onSelect }: CalendarGrid
           </span>
         ))}
         {cells.map((date) => {
-          const inMonth = date.getMonth() === first.getMonth()
+          const inMonth = monthNumber(date) === monthNumber(first)
           const isSelected = !!selected && isSameDay(date, selected)
           const isToday = isSameDay(date, today)
           return (
@@ -102,7 +106,7 @@ function CalendarGrid({ month, onMonthChange, selected, onSelect }: CalendarGrid
                 isSelected && "bg-primary text-primary-foreground hover:bg-primary/90"
               )}
             >
-              {date.getDate()}
+              {dayOfMonth(date)}
             </button>
           )
         })}
@@ -177,10 +181,11 @@ const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "
 const PERIODS = ["AM", "PM"] as const
 
 function splitTime(date: Date | undefined) {
-  const hours24 = date?.getHours() ?? 12
+  // Wall-clock fields in the presentation zone, matching what parseLocalDate consumed.
+  const hours24 = date ? hourOfDay(date) : 12
   return {
     hour: String(hours24 % 12 === 0 ? 12 : hours24 % 12),
-    minute: String(Math.floor((date?.getMinutes() ?? 0) / 5) * 5).padStart(2, "0"),
+    minute: String(Math.floor((date ? minuteOfHour(date) : 0) / 5) * 5).padStart(2, "0"),
     period: hours24 >= 12 ? "PM" : "AM",
   }
 }

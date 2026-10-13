@@ -10,25 +10,32 @@
  *   the demo stays populated as the calendar moves;
  * - tests pass a fixed anchor, so they never read the wall clock.
  *
- * Day-relative offsets are evaluated in `DEMO_TIME_ZONE`, the presentation
- * zone the product is designed around, so "tomorrow at 21:00" means 21:00 in
- * Taipei whatever zone the seeding machine runs in. Instants are UTC.
+ * Day-relative offsets are evaluated in `DEMO_TIME_ZONE`, which is an alias of
+ * the application's `PRESENTATION_TIME_ZONE` (lib/time-zone.ts), so "tomorrow
+ * at 21:00" means 21:00 in Taipei whatever zone the seeding machine runs in,
+ * and the seeded timeline agrees with the day boundaries the UI renders.
+ * Instants are UTC. The zoned calendar primitives live in lib/time-zone.ts;
+ * this module only adds the anchor-relative offsets.
  *
  * Nothing here is global or mutable: a clock is a plain frozen object, and
  * `Date` is never patched. Real provider data never passes through this
  * module; it carries its own timestamps.
  */
 
-export const DEMO_TIME_ZONE = "Asia/Taipei"
+import {
+  addCalendarDays,
+  instantToZoned,
+  PRESENTATION_TIME_ZONE,
+  zonedToInstant,
+  type CalendarDate,
+  type ZonedDateTime,
+} from "@/lib/time-zone"
 
-/** Wall-clock fields in a specific time zone. `month` is 1-12. */
-export type ZonedDateTime = {
-  year: number
-  month: number
-  day: number
-  hour: number
-  minute: number
-}
+/** The zone demo offsets are evaluated in: the presentation zone, under its demo-facing name. */
+export const DEMO_TIME_ZONE = PRESENTATION_TIME_ZONE
+
+export type { ZonedDateTime }
+export { instantToZoned, zonedToInstant }
 
 export type DemoClock = {
   /** The reference instant; "now" for the demo. */
@@ -43,61 +50,7 @@ export type DemoClock = {
    */
   at(dayOffset: number, hour: number, minute?: number): Date
   /** The anchor's calendar date in `timeZone`. */
-  anchorDate(): Pick<ZonedDateTime, "year" | "month" | "day">
-}
-
-const partFormatters = new Map<string, Intl.DateTimeFormat>()
-
-function formatter(timeZone: string): Intl.DateTimeFormat {
-  let cached = partFormatters.get(timeZone)
-  if (!cached) {
-    cached = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hourCycle: "h23",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    })
-    partFormatters.set(timeZone, cached)
-  }
-  return cached
-}
-
-/** The wall-clock fields of `instant` in `timeZone`. */
-export function instantToZoned(instant: Date, timeZone: string): ZonedDateTime {
-  const fields: Record<string, number> = {}
-  for (const part of formatter(timeZone).formatToParts(instant)) {
-    if (part.type !== "literal") fields[part.type] = Number(part.value)
-  }
-  return { year: fields.year, month: fields.month, day: fields.day, hour: fields.hour, minute: fields.minute }
-}
-
-/** Milliseconds the zone is ahead of UTC at `instant` (Asia/Taipei: 8 h). */
-function zoneOffsetMs(instant: Date, timeZone: string): number {
-  const z = instantToZoned(instant, timeZone)
-  const seconds = Number(formatter(timeZone).formatToParts(instant).find((p) => p.type === "second")?.value ?? 0)
-  const asUtc = Date.UTC(z.year, z.month - 1, z.day, z.hour, z.minute, seconds)
-  return asUtc - instant.getTime()
-}
-
-/**
- * The instant at which a wall clock in `timeZone` reads `zoned`. Correct
- * across DST transitions for zones that have them; Asia/Taipei does not.
- */
-export function zonedToInstant(zoned: ZonedDateTime, timeZone: string): Date {
-  const guess = Date.UTC(zoned.year, zoned.month - 1, zoned.day, zoned.hour, zoned.minute, 0, 0)
-  const first = guess - zoneOffsetMs(new Date(guess), timeZone)
-  const second = guess - zoneOffsetMs(new Date(first), timeZone)
-  return new Date(second)
-}
-
-/** Add whole days to a calendar date, letting Date.UTC normalise month and year. */
-function addCalendarDays(date: Pick<ZonedDateTime, "year" | "month" | "day">, days: number): Pick<ZonedDateTime, "year" | "month" | "day"> {
-  const shifted = new Date(Date.UTC(date.year, date.month - 1, date.day + days))
-  return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() }
+  anchorDate(): CalendarDate
 }
 
 export function createDemoClock(options: { anchor: Date; timeZone?: string }): DemoClock {
@@ -105,7 +58,7 @@ export function createDemoClock(options: { anchor: Date; timeZone?: string }): D
   if (Number.isNaN(anchor.getTime())) throw new Error("Demo clock anchor is not a valid date.")
   const timeZone = options.timeZone ?? DEMO_TIME_ZONE
   // Validate the zone once; Intl throws on unknown zones.
-  formatter(timeZone)
+  instantToZoned(anchor, timeZone)
   const anchorDate = () => {
     const { year, month, day } = instantToZoned(anchor, timeZone)
     return { year, month, day }

@@ -407,7 +407,7 @@ Stated precisely, because the difference matters:
 | **Production readiness** | Security headers and an enforced nonce CSP, environment model with database labels and a startup configuration guard, guarded migrations and seed, a least-privilege runtime-role template, `npm run production:check`, a deployment runbook; see [docs/security/production-hardening.md](docs/security/production-hardening.md) | Not deployed yet; the Neon runtime role and the Vercel configuration are Phase 9.3 operator steps ([docs/deployment/production-deployment.md](docs/deployment/production-deployment.md)) |
 | **Reminders** | Preference persisted per watchlisted match, validated, shown on four surfaces | **No notification is ever delivered.** No scheduler, worker, push, email or in-app delivery log |
 | **Synchronization** | Manual (Admin "Sync now", `npm run sync:manual`) and scheduled: a daily Vercel Cron Job through `/api/cron/sync` with a database-backed run lock and Admin freshness; see [docs/scheduled-sync.md](docs/scheduled-sync.md) | Daily only, because Vercel Hobby allows nothing more frequent; no live-score streaming, no deletion reconciliation, no `DataSource.provider` column (binding is in code) |
-| **Time zones** | Instants stored in UTC; reminder arithmetic is zone-free | Day boundaries ("today", schedule days) use the server's local time; the decided Asia/Taipei presentation zone is not applied yet |
+| **Time zones** | Instants stored in UTC; reminder arithmetic is zone-free; every date, time and day boundary is rendered in one presentation zone (Asia/Taipei), pinned in `lib/time-zone.ts`, so the server and every browser agree | One fixed zone for all visitors: there is no per-user time zone, so someone outside Taipei sees Taipei kick-off times and Taipei day grouping |
 | **Admin** | Catalogue CRUD, data sources, sync logs, and a Monitoring overview of source health | Analytics and Settings are reserved "Coming soon" placeholders; there is no alerting |
 | **Match detail** | Aggregate score per side, live detail string | No per-set / per-map scores, rankings or seeds |
 
@@ -419,7 +419,7 @@ Next phase candidates, in rough priority order. None is started.
 2. **Authentication** behind the existing `getCurrentUserId()` seam; the user tables need no change.
 3. **Reminder delivery**: a scheduler over `UserWatchlistMatch × Match.startsAt`, an idempotent delivery log, and one channel (in-app via the header bell first).
 4. A `DataSource.provider` column so bindings live in data (scheduled synchronization itself now exists).
-5. **Presentation time zone** applied to day boundaries (the seed already evaluates its timeline in Asia/Taipei).
+5. **Per-user time zones**, if the audience ever extends beyond one zone (the single presentation zone landed in Phase 9.4).
 6. A second team-sport provider to prove the "one adapter file, one registry entry, one DataSource row" claim against a live feed.
 
 ---

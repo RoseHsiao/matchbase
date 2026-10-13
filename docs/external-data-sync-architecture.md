@@ -96,7 +96,7 @@ An unknown status is never mapped to FINISHED. Scores are stored only when both 
 
 ## Time handling
 
-Adapters hand over ISO 8601 instants; the service parses them with `new Date()` and stores `timestamptz`, so UTC is preserved and nothing is converted to a local zone during sync. Season bounds are calendar dates. The existing presentation debt (day boundaries use the server's local time; Asia/Taipei display is a documented decision not yet implemented) is unchanged by this phase.
+Adapters hand over ISO 8601 instants; the service parses them with `new Date()` and stores `timestamptz`, so UTC is preserved and nothing is converted to a local zone during sync. Season bounds are calendar dates. The presentation debt noted here (day boundaries using the server's local time) was paid in Phase 9.4: display and day boundaries pin `PRESENTATION_TIME_ZONE`. Sync is unaffected either way, because it never converts to a local zone.
 
 ## Errors, retries, rate limits
 

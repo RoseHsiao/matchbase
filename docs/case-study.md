@@ -203,7 +203,7 @@ Stated precisely.
 - **Authentication is email and password only.** Better Auth with database sessions, USER and ADMIN roles, and server-side guards on every personal and admin mutation ([security/authentication-and-authorization.md](security/authentication-and-authorization.md)). No email verification, password reset or OAuth yet, because no mail transport or provider credentials exist; the ADMIN role is granted only from an operator shell.
 - **Scheduled sync is daily.** A Vercel Cron Job runs the provider-neutral scheduler once a day (the Hobby plan's minimum interval) through the same pipeline as the CLI and Admin, guarded by a database run lock ([scheduled-sync.md](scheduled-sync.md)). No live-score streaming, no deletion reconciliation, and the DataSource → provider binding lives in code rather than a column.
 - **Demo data is relative, not live.** The seed lays a fixed timeline of offsets over the current date (or `DEMO_ANCHOR`), evaluated in Asia/Taipei, and refuses any anchor for which statuses and times would contradict. Nothing advances between seeds; a "live" match is an authored fixture. See [demo-data-and-time.md](demo-data-and-time.md).
-- **Presentation time zone.** Instants are stored in UTC and reminder arithmetic is zone-free, but day boundaries still use the server's local zone; the decided Asia/Taipei rule is not applied.
+- **Presentation time zone.** Resolved in Phase 9.4. Instants are stored in UTC and rendered in one zone, `PRESENTATION_TIME_ZONE` (Asia/Taipei), pinned on every formatter and day boundary in `lib/format.ts`. Before that the server (UTC on Vercel) and the browser disagreed, which showed up in Production as React hydration error #418 on every page with kick-off times.
 - **Monitoring is visibility only.** Admin → Monitoring derives per-source health from sync logs and readiness ([operational-monitoring.md](operational-monitoring.md)); nothing alerts anyone.
 - **Schema gaps known and accepted.** No partial unique index for "one CURRENT season per league" (repository-enforced). No per-set or per-map scores, rankings or seeds. Admin Analytics, Monitoring and Settings are placeholders.
 
@@ -215,7 +215,7 @@ In rough priority order; none is started.
 2. Hardening after authentication: rate limiting with database storage, security headers and CSP, a least-privilege database role ([security/production-security-audit.md](security/production-security-audit.md) P1).
 3. Reminder delivery: a scheduler over `UserWatchlistMatch × Match.startsAt`, an idempotent delivery log, and in-app delivery through the existing header bell first.
 4. Scheduled synchronization and a `DataSource.provider` column.
-5. Apply the presentation time zone to day boundaries.
+5. ~~Apply the presentation time zone to day boundaries.~~ Done in Phase 9.4.
 6. A second team-sport live provider to test the "one adapter file, one registry entry, one DataSource row" claim against a real feed.
 
 ---

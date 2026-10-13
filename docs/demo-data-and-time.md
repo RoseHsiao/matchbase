@@ -56,7 +56,9 @@ The seed prints the anchor it used, both as an instant and as a Taipei date. To 
 
 Day-relative offsets are interpreted in `Asia/Taipei`, the presentation zone the product was designed around (decisions §12). The conversion is explicit: `zonedToInstant` and `instantToZoned` use `Intl.DateTimeFormat` with the named zone, so the seeding machine's zone never leaks in, and the same code is correct for zones with daylight saving time (tested against Europe/Berlin and America/New_York). No date library was added.
 
-What this phase does **not** change is the application's own day boundaries. `startOfDay`, `dayKey` and the schedule window in `lib/format.ts` and `lib/data/queries.ts` still use the server's local zone, so "Today" is a Taipei day on a Taipei machine and a UTC day on a UTC host. That is the pre-existing debt from decisions §12 and it is unchanged; see Limitations.
+What this phase did **not** change was the application's own day boundaries: `startOfDay`, `dayKey` and the schedule window used the server's local zone, so "Today" was a Taipei day on a Taipei machine and a UTC day on a UTC host.
+
+**Resolved in Phase 9.4 (2026-10-13).** That debt became a Production defect: the server rendered UTC times and the browser re-rendered local ones, which React reported as hydration error #418. The zone literal now lives once in `lib/time-zone.ts` as `PRESENTATION_TIME_ZONE`, `DEMO_TIME_ZONE` is an alias of it, and `lib/format.ts` pins the zone on every formatter and every day boundary. "Today", day grouping and the schedule window are the Taipei calendar day for every visitor, and server and client render identical text.
 
 ## What the timeline contains
 
@@ -106,7 +108,7 @@ None of them reads the wall clock.
 
 ## Limitations
 
-- Presentation day boundaries still follow the server's zone (decisions §12, unchanged).
+- ~~Presentation day boundaries still follow the server's zone~~ — resolved in Phase 9.4; they follow `PRESENTATION_TIME_ZONE`.
 - The seed anchor is the seed *moment*: a demo seeded on Monday shows Monday's "today" until it is seeded again. Re-seeding is the refresh; nothing runs on a schedule by design.
 - Season windows in the catalogue are fixed 2026 and 2027 dates and do not move with the anchor.
 - "Live" matches are authored fixtures with a fixed minute; no clock advances them.

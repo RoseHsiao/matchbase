@@ -26,15 +26,20 @@ describeDb("user-state isolation between two users (database)", () => {
   let teamId = ""
   let playerId = ""
   let leagueId = ""
+  let seasonId = ""
+  /** Set per transaction: the test creates its own upcoming match (see withTwoUsers). */
   let upcomingId = ""
 
   before(async () => {
-    ;[teamId, playerId, leagueId, upcomingId] = await Promise.all([
+    // Only catalogue rows that do not age are read from the seed. The upcoming
+    // match is created inside each rolled-back transaction instead, because a
+    // seeded "upcoming" fixture becomes past as the calendar moves and used to
+    // fail this suite weeks after a seed (docs/demo-data-and-time.md).
+    ;[teamId, playerId, leagueId, seasonId] = await Promise.all([
       prisma.team.findFirstOrThrow({ orderBy: { id: "asc" }, select: { id: true } }).then((r) => r.id),
       prisma.player.findFirstOrThrow({ orderBy: { id: "asc" }, select: { id: true } }).then((r) => r.id),
-      prisma.league.findFirstOrThrow({ orderBy: { id: "asc" }, select: { id: true } }).then((r) => r.id),
-      prisma.match.findFirstOrThrow({ where: { status: "UPCOMING", startsAt: { gt: new Date(Date.now() + 3_600_000) } }, orderBy: { startsAt: "asc" }, select: { id: true } }).then((r) => r.id),
-    ])
+      prisma.season.findFirstOrThrow({ orderBy: { id: "asc" }, select: { id: true, leagueId: true } }).then((r) => { leagueId = r.leagueId; return r.id }),
+    ]).then(([team, player, season]) => [team, player, leagueId, season])
   })
 
   after(async () => {
@@ -45,10 +50,15 @@ describeDb("user-state isolation between two users (database)", () => {
     const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     await prisma
       .$transaction(async (tx) => {
-        const [a, b] = await Promise.all([
+        const [a, b, match] = await Promise.all([
           tx.user.create({ data: { email: `isolation-a-${stamp}@example.test`, name: "A" }, select: { id: true } }),
           tx.user.create({ data: { email: `isolation-b-${stamp}@example.test`, name: "B" }, select: { id: true } }),
+          tx.match.create({
+            data: { leagueId, seasonId, startsAt: new Date(Date.now() + 2 * 86_400_000), status: "UPCOMING", stage: `isolation-${stamp}` },
+            select: { id: true },
+          }),
         ])
+        upcomingId = match.id
         await work(createUserStateOps(tx), a.id, b.id)
         throw new Rollback()
       }, { timeout: 30_000, maxWait: 10_000 })
