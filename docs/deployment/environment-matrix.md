@@ -1,4 +1,4 @@
-# Environment variable matrix (Phase 9.3A)
+# Environment variable matrix (Phase 9.3A, mail variables added in Phase 10.1)
 
 Written 2026-09-22 from the code that reads each variable (`lib/env/runtime-environment.ts`, `lib/env/production-config.ts`, `lib/auth/auth-env.ts`, `lib/auth/dev-login.ts`, `lib/http/csp.ts`, `lib/data/sync/schedule-config.ts`, the provider adapters). No values appear here. "Scope" is the Vercel environment the variable is set for; "shell" means it is exported in an operator terminal for one command and never stored on Vercel.
 
@@ -32,6 +32,13 @@ Legend: **R** required, **O** optional, **F** forbidden (the readiness check fai
 | `DEMO_ANCHOR` | no | demo seed anchor | O | — | — |
 | `PRISMA_QUERY_LOG` | no | SQL logging | O | — | F (never in Production) |
 | `MATCHBASE_NEW_PASSWORD` | yes | password input for `account:create` / `account:password` | shell only | shell only | shell only |
+| `AUTH_PASSWORD_RESET_ENABLED` | no | requests self-service password recovery; honoured only with a deliverable transport (Phase 10, [account-recovery.md](../security/account-recovery.md)); not read by the auth instance until 10.3 | O | O (absent by default) | **F for now** (absent until a verified sending domain exists) |
+| `MAIL_TRANSPORT` | no | `resend`, `dev-outbox` or `disabled`; unset means disabled | O (`dev-outbox`) | O (`resend` only with an allowlist) | O (absent for now; later `resend`) |
+| `MAIL_FROM` | no | sender, `address` or `Name <address>` | O | R with `resend` | R with `resend`, on a verified own domain (not `resend.dev`) before recovery is enabled |
+| `MAIL_REPLY_TO` | no | single reply address | O | O | O |
+| `RESEND_API_KEY` | yes | Resend sending-only key, scoped to the sending domain | — | its own key, if any | its own key (absent for now) |
+| `MAIL_ALLOWED_RECIPIENTS` | no | exact addresses a non-Production Resend transport may mail | O (required with `resend`) | R with `resend` | **F** (refused; disables mail) |
+| `MAIL_DAILY_CAP` | no | daily send ceiling, default 100; enforced from 10.3 | O | O | O |
 | `NEON_BRANCH` | no | informational note in `.env.local` (not read by code) | O | — | — |
 
 Vercel system variables (`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_PROJECT_PRODUCTION_URL`) must be enabled in the project ("Enable access to System Environment Variables"); the environment model and the auth base URL derive from them.

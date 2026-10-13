@@ -67,3 +67,40 @@ describe("redactSensitiveText", () => {
     assert.equal(redactSensitiveText(text, env), text)
   })
 })
+
+describe("redactSensitiveText: account-recovery values (Phase 10 fallback)", () => {
+  test("a token in a URL fragment is masked; the rest of the URL survives", () => {
+    const out = redactSensitiveText("link was https://matchbase.example/reset-password#token=AbC123xyz_-987654 opened", {})
+    assert.ok(!out.includes("AbC123xyz_-987654"))
+    assert.match(out, /https:\/\/matchbase\.example\/reset-password#token=\[REDACTED\] opened/)
+  })
+
+  test("a token in a query string, also outside a full URL, is masked", () => {
+    for (const text of ["GET /api/auth/verify-email?token=eyJhbGciOi.payload.sig&callbackURL=/", "callback ?foo=1&token=Zz9Zz9Zz9Zz9 failed"]) {
+      const out = redactSensitiveText(text, {})
+      assert.ok(!out.includes("eyJhbGciOi") && !out.includes("Zz9Zz9Zz9Zz9"), out)
+    }
+    assert.ok(redactSensitiveText("callbackURL=/ kept", {}).includes("callbackURL=/ kept"))
+  })
+
+  test("Better Auth's reset link path and verification identifier are masked", () => {
+    const path = redactSensitiveText("GET /api/auth/reset-password/q8Zr2Kd9LmN4pX7wT1vB3cYh?callbackURL=%2Freset 302", {})
+    assert.equal(path, "GET /api/auth/reset-password/[REDACTED]?callbackURL=%2Freset 302")
+    const identifier = redactSensitiveText(`duplicate key (identifier)=(reset-password:q8Zr2Kd9LmN4pX7wT1vB3cYh) already exists`, {})
+    assert.equal(identifier, "duplicate key (identifier)=(reset-password:[REDACTED]) already exists")
+    assert.equal(redactSensitiveText("reset-password:[REDACTED]", {}), "reset-password:[REDACTED]", "idempotent")
+  })
+
+  test("a Resend API key is masked from the environment and by its prefix", () => {
+    const key = "re_AbCdEf123456_GhIjKl789012"
+    assert.ok(secretValuesFrom({ RESEND_API_KEY: key }).includes(key))
+    assert.ok(!redactSensitiveText(`auth failed with ${key}`, { RESEND_API_KEY: key }).includes(key))
+    assert.ok(!redactSensitiveText(`auth failed with ${key}`, {}).includes(key), "even when the key is not in this environment")
+  })
+
+  test("ordinary words and routes that merely mention reset are untouched", () => {
+    for (const text of ["Open /reset-password to choose a new password.", "Reset Password: User not found", "re_run the sync", "the token expired"]) {
+      assert.equal(redactSensitiveText(text, {}), text)
+    }
+  })
+})

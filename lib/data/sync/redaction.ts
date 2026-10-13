@@ -37,8 +37,22 @@ const AUTHORIZATION = /(authorization\s*[:=]\s*)(bearer|basic|token)?\s*([^\s,;"
 const API_KEY_HEADER = /((?:x-api-key|api[-_]?key|apikey|x-auth-token|x-cron-secret)\s*[:=]\s*)([^\s,;"']+)/gi
 const BEARER = /\b(bearer\s+)([A-Za-z0-9._~+/=-]{8,})/gi
 const URL = /\bhttps?:\/\/[^\s"'<>]+/gi
+/**
+ * Account-recovery values (Phase 10). The mail and auth code must not log
+ * them in the first place; these patterns are the fallback for an error
+ * message or a stray URL that carries one anyway:
+ * - a token in a URL fragment or query (`#token=…`, `?token=…`, `&token=…`),
+ *   which `redactUrl` does not see because fragments are not query parameters;
+ * - Better Auth's reset link path (`/reset-password/<token>`);
+ * - Better Auth's verification identifier (`reset-password:<token>`).
+ */
+const TOKEN_PARAMETER = /([#?&;]token=)[^&#\s"'<>]+/gi
+const RESET_PASSWORD_PATH = /(\/reset-password\/)[A-Za-z0-9_-]{8,}/gi
+const RESET_PASSWORD_IDENTIFIER = /(\breset-password:)(?!\[REDACTED\])[^\s"',;)}\]]+/gi
+/** Resend API keys have a fixed prefix; masked even when the key is not in this process's environment. */
+const RESEND_API_KEY = /\bre_[A-Za-z0-9_-]{16,}/g
 
-/** Scrubs credentials from free text: known secret values, connection-string passwords, auth headers, bearer tokens, key-like query parameters. */
+/** Scrubs credentials from free text: known secret values, connection-string passwords, auth headers, bearer tokens, key-like query parameters, account-recovery tokens, Resend keys. */
 export function redactSensitiveText(text: string, env: Record<string, string | undefined> = {}): string {
   let out = text
   for (const secret of secretValuesFrom(env)) out = out.split(secret).join(REDACTED)
@@ -47,5 +61,9 @@ export function redactSensitiveText(text: string, env: Record<string, string | u
   out = out.replace(API_KEY_HEADER, (_, prefix) => `${prefix}${REDACTED}`)
   out = out.replace(BEARER, (_, prefix) => `${prefix}${REDACTED}`)
   out = out.replace(URL, (url) => redactUrl(url))
+  out = out.replace(TOKEN_PARAMETER, (_, prefix) => `${prefix}${REDACTED}`)
+  out = out.replace(RESET_PASSWORD_PATH, (_, prefix) => `${prefix}${REDACTED}`)
+  out = out.replace(RESET_PASSWORD_IDENTIFIER, (_, prefix) => `${prefix}${REDACTED}`)
+  out = out.replace(RESEND_API_KEY, REDACTED)
   return out
 }

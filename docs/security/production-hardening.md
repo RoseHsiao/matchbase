@@ -47,7 +47,7 @@ A migrated but empty database needs only the rows the code registries define: `n
 
 ## Password recovery
 
-No "Forgot password" link exists and none is faked. For the controlled first deployment, recovery is an operator procedure: `npm run account:password -- <email>` reads the new password from `MATCHBASE_NEW_PASSWORD` or a hidden prompt, hashes it with Better Auth's own `hashPassword` (scrypt, `better-auth/crypto`), verifies the hash with `verifyPassword`, writes it to the credential row, and revokes every session of the account. It prints a status line only. Against a production-labelled database it needs `MATCHBASE_OPERATOR_TARGET=production`. Tested end to end in `tests/db/account-password.test.ts`. When mail delivery exists, the built-in reset flow replaces this.
+No "Forgot password" link exists and none is faked. For the controlled first deployment, recovery is an operator procedure: `npm run account:password -- <email>` reads the new password from `MATCHBASE_NEW_PASSWORD` or a hidden prompt, hashes it with Better Auth's own `hashPassword` (scrypt, `better-auth/crypto`), verifies the hash with `verifyPassword`, writes it to the credential row, and revokes every session of the account. It prints a status line only. Against a production-labelled database it needs `MATCHBASE_OPERATOR_TARGET=production`. Tested end to end in `tests/db/account-password.test.ts`. When mail delivery exists, the built-in reset flow replaces this. Phase 10 status and the mail foundation (10.1, no runtime sending yet): [account-recovery.md](account-recovery.md).
 
 ## Rate limiting
 

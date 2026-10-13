@@ -44,3 +44,6 @@ next-env.d.ts
 
 # prisma generated client (run `prisma generate`)
 /lib/generated/
+
+# development mail outbox (lib/mail/transports/dev-outbox.ts)
+/.mail-outbox/
