@@ -1,8 +1,10 @@
-import { MIN_AUTH_SECRET_LENGTH, resolveAuthBaseUrl, signUpPolicy } from "@/lib/auth/auth-env"
+import { MIN_AUTH_SECRET_LENGTH, resolveAuthBaseUrl } from "@/lib/auth/auth-env"
+import { accountPolicy } from "@/lib/auth/email-verification"
 import { DEV_LOGIN_FLAG } from "@/lib/auth/dev-login"
 import { readScheduleConfig } from "@/lib/data/sync/schedule-config"
 import { describeDataSourceProvider } from "@/lib/data/sync/providers/registry"
 import { CSP_MODE_VARIABLE, resolveCspMode } from "@/lib/http/csp"
+import { domainOf, PASSWORD_RESET_FLAG, parseSender, readMailEnv } from "@/lib/mail/mail-env"
 import { databaseLabelPolicy, isFlagEnabled, resolveRuntimeEnvironment, resolveRuntimePlatform, type EnvLike, type RuntimeEnvironment } from "@/lib/env/runtime-environment"
 
 /**
@@ -130,9 +132,10 @@ export function evaluateProductionReadiness(env: EnvLike): ReadinessReport {
   else if (secret && cron) add({ id: "secret-separation", status: "pass", detail: "Auth and cron secrets are distinct." })
 
   // Launch policy and development-only features
-  const signUp = signUpPolicy(env)
-  if (production) add({ id: "sign-up", status: signUp.open ? "warn" : "pass", detail: signUp.open ? "Public sign-up is OPEN in Production (AUTH_ALLOW_SIGN_UP=true). Without a mail transport, new accounts cannot verify or recover; see the launch policy." : "Public sign-up is closed (launch policy)." })
-  else add({ id: "sign-up", status: "info", detail: `Public sign-up is ${signUp.open ? "open" : "closed"} in ${environment}.` })
+  const accounts = accountPolicy(env)
+  if (accounts.refusal) add({ id: "sign-up", status: production ? "fail" : "warn", detail: accounts.refusal })
+  else if (production) add({ id: "sign-up", status: accounts.signUpOpen ? "warn" : "pass", detail: accounts.signUpOpen ? "Public sign-up is OPEN in Production (AUTH_ALLOW_SIGN_UP=true) with required email verification; confirm the release procedure in docs/security/account-recovery.md was followed." : "Public sign-up is closed (launch policy)." })
+  else add({ id: "sign-up", status: "info", detail: `Public sign-up is ${accounts.signUpOpen ? `open${accounts.requireEmailVerification ? " with required email verification" : " without verification (development, no mail transport)"}` : "closed"} in ${environment}.` })
   const devLoginFlag = isFlagEnabled(env[DEV_LOGIN_FLAG])
   if (environment !== "development" && devLoginFlag) add({ id: "dev-login", status: "fail", detail: `${DEV_LOGIN_FLAG} is set outside development; the feature refuses to activate, but the flag must not be present on a deployment.`, previewCritical: true })
   else if (environment !== "development" && (env.MATCHBASE_DEV_USER_PASSWORD || env.MATCHBASE_DEV_ADMIN_PASSWORD)) add({ id: "dev-login", status: "fail", detail: "Development account credentials are present on a deployment; remove the MATCHBASE_DEV_* variables.", previewCritical: true })
@@ -141,6 +144,41 @@ export function evaluateProductionReadiness(env: EnvLike): ReadinessReport {
   else add({ id: "seed", status: "pass", detail: "Demo seed is refused for Production (no ALLOW_PRODUCTION_SEED)." })
   if (production && isFlagEnabled(env.ALLOW_PREVIEW_PROVIDER_SYNC)) add({ id: "preview-sync", status: "warn", detail: "ALLOW_PREVIEW_PROVIDER_SYNC is set in Production; it has no effect there and belongs to Preview only." })
   else if (environment === "preview") add({ id: "preview-sync", status: isFlagEnabled(env.ALLOW_PREVIEW_PROVIDER_SYNC) ? "warn" : "pass", detail: isFlagEnabled(env.ALLOW_PREVIEW_PROVIDER_SYNC) ? "Provider sync is enabled on this Preview; confirm it uses its own database branch." : "Provider sync is disabled on Preview (default)." })
+
+  // Mail and password recovery (docs/security/account-recovery.md). Unconfigured mail is a safe state:
+  // nothing is sent and recovery is disabled, so it passes. A configuration the parser refused fails
+  // Production (and only warns elsewhere, where the parser has already fallen back to "disabled").
+  const mail = readMailEnv(env)
+  // The recovery flag's own issue is reported once, by the password-recovery check below.
+  for (const issue of mail.issues.filter((candidate) => candidate.variable !== PASSWORD_RESET_FLAG)) {
+    add({ id: `mail:${issue.variable}`, status: issue.severity === "error" ? (production ? "fail" : "warn") : "warn", detail: issue.message })
+  }
+  const transport = mail.transport
+  if (transport.kind === "disabled") {
+    add({ id: "mail-transport", status: production || mail.issues.length === 0 ? "pass" : "warn", detail: `Mail transport: disabled. ${transport.reason}` })
+  } else if (transport.kind === "dev-outbox") {
+    add({ id: "mail-transport", status: "info", detail: "Mail transport: development outbox (.mail-outbox/); nothing leaves this machine." })
+  } else {
+    const domain = domainOf(parseSender(transport.from)?.address ?? "")
+    const scope = transport.recipients.mode === "allowlist" ? `only to ${transport.recipients.recipients.size} allowlisted address${transport.recipients.recipients.size === 1 ? "" : "es"}` : "to any recipient"
+    add({ id: "mail-transport", status: "pass", detail: `Mail transport: Resend, sending ${scope}, from the ${domain} domain.` })
+    // Honest about its limits: this command reads variables only and cannot see DNS or the Resend dashboard.
+    add({ id: "mail-domain", status: "info", detail: `Not checked here: that ${domain} is verified in Resend (SPF and DKIM pass). Confirm it in the Resend dashboard before relying on delivery.` })
+    const key = transport.apiKey
+    if (key === env.BETTER_AUTH_SECRET?.trim() || key === env.CRON_SECRET?.trim()) add({ id: "mail-secret-separation", status: "fail", detail: "RESEND_API_KEY must not equal BETTER_AUTH_SECRET or CRON_SECRET.", previewCritical: true })
+  }
+  if (environment !== "production" && transport.kind === "disabled" && env.RESEND_API_KEY?.trim()) {
+    add({ id: "mail-key-unused", status: "info", detail: "RESEND_API_KEY is set but no Resend transport is active." })
+  }
+  add({
+    id: "password-recovery",
+    status: mail.passwordReset.enabled ? "pass" : mail.passwordReset.requested ? (production ? "fail" : "warn") : production ? "pass" : "info",
+    detail: mail.passwordReset.enabled
+      ? "Self-service password recovery is enabled."
+      : mail.passwordReset.requested
+        ? `Self-service password recovery was requested but stays disabled: ${mail.passwordReset.reason}`
+        : "Self-service password recovery is disabled (AUTH_PASSWORD_RESET_ENABLED unset); operators reset passwords with `npm run account:password`.",
+  })
 
   // Headers and CSP
   const cspRaw = env[CSP_MODE_VARIABLE]?.trim()

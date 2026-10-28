@@ -23,7 +23,8 @@ import { readRecipientPolicy, type RecipientPolicy } from "@/lib/mail/recipient-
  *   tests construct it directly, configuration can never select it.
  * - `AUTH_PASSWORD_RESET_ENABLED` is only a request. Recovery counts as
  *   enabled when a transport can deliver, and in Production only through
- *   Resend from a sending domain of our own (not Resend's shared test domain).
+ *   Resend from a sending domain of our own. A Production Resend transport on
+ *   Resend's shared test domain is refused outright, recovery or not.
  */
 
 export const MAIL_TRANSPORTS = ["resend", "dev-outbox", "disabled"] as const
@@ -66,8 +67,13 @@ export function parseSender(value: string | undefined): { address: string; forma
   return isMailAddress(raw) ? { address: raw.toLowerCase(), formatted: raw } : null
 }
 
-function domainOf(address: string): string {
+export function domainOf(address: string): string {
   return address.slice(address.lastIndexOf("@") + 1).toLowerCase()
+}
+
+function isResendTestDomain(address: string): boolean {
+  const domain = domainOf(address)
+  return domain === RESEND_TEST_DOMAIN || domain.endsWith(`.${RESEND_TEST_DOMAIN}`)
 }
 
 function readDailyCap(env: EnvLike, issues: MailIssue[]): number {
@@ -115,6 +121,7 @@ function readTransport(env: EnvLike, environment: RuntimeEnvironment, issues: Ma
   if (!allowlist.ok) return fail("MAIL_ALLOWED_RECIPIENTS", allowlist.message)
   if (environment === "production") {
     if (allowlist.policy.mode === "allowlist") return fail("MAIL_ALLOWED_RECIPIENTS", "MAIL_ALLOWED_RECIPIENTS is a Preview setting and is refused in Production; mail is disabled.")
+    if (isResendTestDomain(sender.address)) return fail("MAIL_FROM", "MAIL_FROM in Production must be on a sending domain of our own, not Resend's shared test domain; mail is disabled.")
     return { kind: "resend", from: sender.formatted, replyTo, apiKey, recipients: allowlist.policy }
   }
   if (allowlist.policy.mode !== "allowlist") {
@@ -134,7 +141,7 @@ function passwordResetAvailability(env: EnvLike, environment: RuntimeEnvironment
   if (environment === "production") {
     if (transport.kind !== "resend") return refuse(`Password recovery in Production requires MAIL_TRANSPORT=resend; it stays disabled.`)
     const sender = parseSender(transport.from)
-    if (!sender || domainOf(sender.address) === RESEND_TEST_DOMAIN || domainOf(sender.address).endsWith(`.${RESEND_TEST_DOMAIN}`)) {
+    if (!sender || isResendTestDomain(sender.address)) {
       return refuse("Password recovery in Production requires MAIL_FROM on a verified sending domain of our own; it stays disabled.")
     }
   }

@@ -1,6 +1,6 @@
 # Account recovery and email infrastructure (Phase 10)
 
-> **Status (2026-10-13).** Checkpoint **10.1, mail foundation, implemented**: provider-neutral `Mailer`, Resend / development-outbox / disabled / capture transports, environment parser, Preview recipient allowlist, recovery-token redaction, unit tests. **Nothing sends mail at runtime yet**: no code path constructs a mailer, Better Auth is unchanged, `/api/auth/request-password-reset` still answers 400 `RESET_PASSWORD_DISABLED`. Production recovery stays disabled; public sign-up stays closed. Next: 10.2 templates, 10.3 Better Auth wiring behind `AUTH_PASSWORD_RESET_ENABLED`.
+> **Status (2026-10-28).** Checkpoints **10.1–10.5 and 10.7 implemented and verified locally**: mail foundation, templates, Better Auth recovery wiring, recovery UI, mail readiness checks, email verification and the sign-up policy. Verification covered unit and database tests and headless-browser checks against the dev outbox. **10.6 (Preview real mail) is ready but not performed**: no real email has been sent or received. In Production: **no mail variables, recovery disabled, sign-up closed**, and `/api/auth/request-password-reset` answers 400 `RESET_PASSWORD_DISABLED`, exactly as before. Enabling recovery needs a verified sending domain and the runbook below; opening sign-up is a separate human release step.
 
 Companions: [production hardening](production-hardening.md) (the operator reset that remains the recovery path today), [authentication and authorization](authentication-and-authorization.md), [environment matrix](../deployment/environment-matrix.md).
 
@@ -16,6 +16,8 @@ Companions: [production hardening](production-hardening.md) (the operator reset 
 | Public sign-up | **closed** | `AUTH_ALLOW_SIGN_UP` stays absent; mail configuration never changes `isSignUpAllowed` (tested). |
 | Email verification | **Phase 10B** | separate rollout. Prerequisite there: the existing ADMIN must be verified before `requireEmailVerification` is turned on, or it is locked out. |
 | Reset ≠ verification | **a successful reset will not set `User.emailVerified`** | verification stays one explicit flow with its own semantics (10B), not a side effect of recovery. |
+| Reset link lifetime | **30 minutes**, single use | `PASSWORD_RESET_TOKEN_TTL_SECONDS` in lib/auth/password-policy.ts is the one value. The email wording reads it now; Better Auth's `resetPasswordTokenExpiresIn` will read it in 10.3, so the email can never promise a different lifetime than the server enforces. |
+| Operator reset and the notice | **`npm run account:password` sends no email** | it stays an independent emergency path that works without mail. The operator tells the person directly. Only the self-service reset (10.3) sends the password-changed notice. |
 | Delivery persistence | **deferred to Phase 11** | no `EmailDelivery` table, no migration in Phase 10A. Outcomes are logged as one redacted line (`describeMailResult`); Phase 11's notification architecture will decide durable delivery records. |
 
 ## Architecture (10.1)
@@ -91,11 +93,263 @@ The development outbox and the capture transport repeat the environment check in
 
 The primary control is not logging these values at all. Redaction exists for the unexpected error message that carries one anyway.
 
+## Templates (10.2)
+
+```
+lib/auth/password-policy.ts   PASSWORD_RESET_TOKEN_TTL_SECONDS = 30 * 60
+lib/auth/reset-link.ts        buildPasswordResetUrl(baseURL, token) / normalizePasswordResetUrl(url)
+lib/mail/templates/
+  render.ts                   EmailContent → plain text + minimal HTML; escapeHtml
+  display-name.ts             greetingName(name) → safe greeting text or null
+  password-reset.ts           passwordResetEmail({ to, resetUrl, name? }) → { ok, message } | { ok: false, reason }
+  password-changed.ts         passwordChangedEmail({ to, name? }) → MailMessage
+```
+
+**Building the link is separate from rendering.** `buildPasswordResetUrl` produces `<base>/reset-password#token=<token>`:
+
+- the base URL must be https, or http on a loopback host;
+- the base URL may carry no credentials, query or fragment;
+- the token must be 16–256 characters from `[A-Za-z0-9_-]`.
+
+The reset template validates the link again with `normalizePasswordResetUrl`. Any other shape is refused with `invalid-reset-url` and never mailed: a query-string token, Better Auth's own `/api/auth/reset-password/<token>` link, other paths, extra fragment parameters, quotes, whitespace, or a `javascript:` or `data:` URL. The 10.3 wiring must therefore build the link itself and ignore Better Auth's `url` argument.
+
+**Inputs are minimal.** The reset template takes the recipient, the link and an optional display name. The notice takes the recipient and an optional name. The recipient is used only as `MailMessage.to` and never appears in the subject or the content.
+
+### Content
+
+| | Password reset | Password changed |
+|---|---|---|
+| Subject | Reset your MatchBase password | Your MatchBase password was changed |
+| Heading | Reset your password | Your password was changed |
+| Body | a reset was requested for your MatchBase account; use the link to choose a new password | the password was just changed; no action needed if it was you |
+| Action | one **Reset password** button (HTML); the full URL on its own line (text) | **none**: no link, no token, no sign-in URL |
+| Lifetime | "This link expires in 30 minutes and can be used once." | n/a |
+| If not you | ignore the email; "Your password stays the same unless you choose a new one with this link." | someone may have access: use "Forgot password?" on the sign-in page straight away, and secure the mailbox, since reset links go there |
+| Footer | why the message was sent | why the notice was sent |
+
+The wording promises only what exists:
+
+- The notice names no support address or security contact, because none exists yet.
+- "Forgot password?" is true wherever the notice is sent: the notice comes from the self-service reset, which ships with the forgot-password page behind the same switch (10.3/10.4).
+- The reset email never suggests the password has already changed.
+- Neither email names an internal component (Better Auth, Resend, tokens, the database).
+
+### Escaping and security
+
+- **Plain strings only.** The renderer accepts no markup, and every string, including the subject in `<title>`, the name and the href, goes through `escapeHtml` (`& < > " '`). No template has a path for unescaped interpolation.
+- **Display names.** They are untrusted, and `greetingName` decides what is shown:
+  - control characters and bidirectional overrides are removed;
+  - whitespace is collapsed;
+  - text is cut at 60 characters;
+  - a name containing `@`, `://` or `www.` is dropped (greeting "Hi,"), so neither the recipient's address nor a lookalike link reaches the body.
+- **Inert HTML.** No images, scripts, stylesheets, fonts, forms, comments, hidden preheader or metadata, and no tracking. The markup is inline-styled tables and paragraphs, and the only link is the reset action.
+- **Where the reset URL appears.** Exactly once in the HTML (the href) and once in the text, never in the subject. Templates do not log. Output is deterministic (no timestamps or random ids).
+
+## Better Auth integration (10.3)
+
+`createAuth` (lib/auth/create-auth.ts) reads `readMailEnv(env)`. **Only when `passwordReset.enabled` is true** does it configure:
+
+- `sendResetPassword` and `onPasswordReset`, from `createRecoveryHooks` in lib/auth/recovery.ts;
+- `resetPasswordTokenExpiresIn: PASSWORD_RESET_TOKEN_TTL_SECONDS` (30 min);
+- `revokeSessionsOnPasswordReset: true`.
+
+Otherwise no hook exists, and Better Auth answers `400 RESET_PASSWORD_DISABLED` to every address alike. It stores no token and sends nothing. That is the Production state today.
+
+Always on: `verification.storeIdentifier: "hashed"`, which stores identifiers as SHA-256 digests, so a database read does not yield a usable reset link.
+
+| Concern | Behaviour |
+|---|---|
+| Token ownership | Better Auth generates, stores, expires and atomically consumes the token. MatchBase never creates or checks one. |
+| Emailed link | `buildPasswordResetUrl(origin, token)`, built from the configured base URL (or Better Auth's own origin in local development). Better Auth's `url` argument is never mailed. |
+| Who gets mail | only accounts with a `credential` row. A password-less user row is answered identically but receives nothing, because a reset would otherwise create a credential for it. |
+| Enumeration | known, unknown and password-less addresses get the same status and body (tested). Sends run through Next.js `after()` (`advanced.backgroundTasks`), so the response does not wait for the provider. A failed send is logged and still answers generically. |
+| Success | password updated, **every session of the account revoked**, every other outstanding reset row deleted, then the password-changed notice. `emailVerified` is **not** touched. |
+| Notice scope | only `onPasswordReset`, which runs only for the self-service reset and only when recovery is enabled. `/change-password` and the operator `account:password` send nothing (tested). |
+| Replay / expiry | a consumed or expired token is answered `400 INVALID_TOKEN` and changes nothing (tested). |
+| Rate limits | unchanged. `/request-password-reset` 5 per IP per hour, the default 60 per minute elsewhere, all through Better Auth's database limiter (tested per IP). No second mechanism. |
+| Blocked URL | `GET /api/auth/reset-password/<token>` (Better Auth's link, which redirects with `?token=`) answers 404 at the route boundary (lib/auth/blocked-auth-paths.ts). Better Auth's `disabledPaths` compares exact paths and cannot express it. |
+| Logs | one `describeMailResult` line per send, or a fixed sentence. Never an address, link, token or body (tested). |
+
+`MAIL_DAILY_CAP` is not applied to recovery: the per-IP limit is the recovery control, as decided for this phase, and no competing limiter is added. The cap is enforced by the Phase 11 notification pipeline.
+
+Build note: the development outbox's directory call carries `turbopackIgnore`. Without it, importing the mailer into the auth route made Turbopack trace the whole project into the server bundle, even though the outbox refuses to exist outside development.
+
+## Recovery UI (10.4)
+
+| Surface | Behaviour |
+|---|---|
+| Sign-in | a "Forgot password?" link next to the password label, **only when recovery is available** (the same `readMailEnv(...).passwordReset.enabled` the auth server uses). |
+| `/forgot-password` | if unavailable: "Password reset is not available", pointing to the operator, with no form and no pretend send. If available: an email form. Success reads "If an account exists for that address, a reset link is on its way", then the 30-minute lifetime and single use, and "Request another link". A rate-limit or network error is shown as an error, never as a confirmation. `noindex`. A signed-in visitor is redirected to the dashboard. |
+| `/reset-password` | the server renders a neutral shell ("Checking your reset link…"). The client reads `#token=` once (`readResetTokenFromHash`), keeps it in a ref, removes the fragment with `history.replaceState`, and re-reads on `hashchange` when another link is opened in the same tab. The form has a new password and a confirmation, enforces 10–128 characters and a match, and calls `authClient.resetPassword({ newPassword, token })`, which POSTs `/api/auth/reset-password`. Success: "Password changed … signed out everywhere", then Sign in. Invalid, expired or used: "This reset link can't be used", with "Request a new link". `noindex`, `referrer: no-referrer`. |
+| Redirects | `safeNextPath` never returns to `/forgot-password`, `/reset-password` or `/verify-email`. |
+
+**Browser verification (2026-10-28).** Headless Chrome over the DevTools protocol, against `next start` with `VERCEL_ENV=development`, the dev outbox, and a throwaway local test account. All 26 checks passed:
+
+- the sign-in link and the email field's autofocus;
+- the empty-email error, and the same generic confirmation for a known and an unknown address;
+- an outbox fragment link reached only the test account;
+- the fragment is removed from the URL, and the token is **absent from the DOM and history state**;
+- `no-referrer` and `noindex` meta tags;
+- mismatch error, then a successful reset;
+- the token **appears only in the body of the one `POST /api/auth/reset-password`**, in no URL or Referer;
+- no third-party requests, no token in the console, no exceptions;
+- the new password signs in and the old one is refused;
+- a replayed, malformed or missing link shows "can't be used" with a new-link action, and a malformed fragment is removed too;
+- keyboard order: email (autofocus), submit, back link;
+- no horizontal scroll at 390 px on all three pages.
+
+The server log held only `[mail] kind=… status=sent` and fixed `[auth]` lines: no address or token (checked by grepping for both). `GET /api/auth/reset-password/<token>` answered 404 over real HTTP.
+
+## Readiness checks (10.5)
+
+`evaluateProductionReadiness` (lib/env/production-config.ts), which backs `npm run production:check` and the startup guard, now evaluates `readMailEnv`:
+
+| Check | Production | Preview | Development |
+|---|---|---|---|
+| `mail:<VARIABLE>` (one per parser error) | **fail** (blocks startup) | warn (the parser already fell back to disabled) | warn |
+| `mail-transport` | pass when disabled or Resend | pass / warn | info for the outbox |
+| `mail-domain` | info: **"Not checked here"**: that the domain is verified in Resend; confirm in the dashboard | same | n/a |
+| `mail-secret-separation` | fail if `RESEND_API_KEY` equals the auth or cron secret | fail (preview-critical) | fail |
+| `password-recovery` | pass when enabled or unrequested; **fail** when requested but undeliverable | warn | pass / info |
+
+Detail lines name variables and counts, never values or addresses (tested). The check reads variables only. It does not and cannot confirm DNS, Resend domain status or inbox delivery, and it says so.
+
+## Production mail setup and rollback (operator, not performed)
+
+The Production state today: no mail variables, recovery disabled, the operator `account:password` path in use. Enabling mail takes these steps, in order; **none has been performed**:
+
+1. **Domain.** Own a domain and choose a sending subdomain (for example `mail.<domain>`). Add it in Resend, publish the SPF, DKIM and DMARC records it lists (DMARC `p=none` at first), and wait until Resend shows the domain as *Verified*.
+2. **Key.** Create a Resend API key with *sending access* restricted to that domain, used only for Production.
+3. **Preview first.** Complete the Preview procedure (10.6) with a real inbox.
+4. **Variables** (Vercel → Production): `MAIL_TRANSPORT=resend`, `MAIL_FROM=MatchBase <noreply@mail.<domain>>`, `RESEND_API_KEY` (sensitive). Leave `AUTH_PASSWORD_RESET_ENABLED` unset.
+5. **Check.** Run `npm run production:check` against the pulled Production variables. Expected: no failures, `mail-transport` pass, `password-recovery` pass (disabled), and the `mail-domain` info line.
+6. **Deploy and confirm** nothing changed for users: no "Forgot password?" link, and `/api/auth/request-password-reset` answers 400 `RESET_PASSWORD_DISABLED`.
+7. **Enable.** Set `AUTH_PASSWORD_RESET_ENABLED=true`, redeploy, and run the Production smoke test with the operator account: request, receive, reset, old session signed out, replay refused, unknown address answered the same, logs free of addresses and tokens.
+
+**Rollback**, at any step: unset `AUTH_PASSWORD_RESET_ENABLED` (recovery off, the link disappears, the endpoint refuses) or `MAIL_TRANSPORT` (all mail off), then redeploy. Outstanding reset links stop working when recovery is off, because no hook consumes them, and they expire within 30 minutes. `account:password` works throughout.
+
+## Preview real-mail verification (10.6)
+
+**Status: procedure ready; not performed.** Real-mail delivery is verified only when a person has run the steps below and confirmed receipt in a real inbox. Until then, everything above is verified with stubs and the dev outbox only.
+
+**What is already proven without a network** (tests/db/preview-mail.test.ts): a Preview-shaped environment runs the real handler, `createMailer` and Resend transport, with only `fetch` stubbed.
+
+- A non-allowlisted account gets the generic answer and **no outbound request**, logged as `status=suppressed` without the address.
+- An allowlisted account produces exactly one request to `https://api.resend.com/emails`, carrying the fragment link built from the Preview URL.
+- Logs hold only the outcome line.
+
+No extra test path was added: the recovery flow itself is the Preview test. A separate "send test email" command would be a second way to send mail that needs its own guards.
+
+**Sender options for Preview.** `resend.dev` is refused only in Production.
+
+- **(a) No custom domain yet:** `MAIL_FROM=MatchBase <onboarding@resend.dev>`. Resend delivers this shared sender only to the Resend account owner's address, so the allowlist must be exactly that address.
+- **(b) Domain verified:** `MAIL_FROM=MatchBase <noreply@mail.<domain>>`.
+
+### Human procedure
+
+1. **Resend:** create an account, or choose the domain for option (b) and wait for *Verified*. Create a sending-only API key for Preview, distinct from any future Production key.
+2. **Preview database:** the Preview deployment uses its own Neon branch (label `preview`). Create a test account there with `npm run account:create -- <your inbox address>`, using the Preview `DATABASE_URL_UNPOOLED` and `MATCHBASE_DATABASE_LABEL=preview`. Sign-up stays closed.
+3. **Vercel → Preview variables**, ideally scoped to one branch:
+
+   | Variable | Value |
+   |---|---|
+   | `MAIL_TRANSPORT` | `resend` |
+   | `MAIL_FROM` | (a) or (b) |
+   | `RESEND_API_KEY` | the Preview key, marked sensitive |
+   | `MAIL_ALLOWED_RECIPIENTS` | your inbox address, exactly |
+   | `AUTH_PASSWORD_RESET_ENABLED` | `true` |
+
+4. **Check:** `npm run production:check` with the Preview variables. Expected: no preview-critical failure, `mail-transport` reading "Resend, sending only to 1 allowlisted address", and `password-recovery` pass.
+5. **Deploy the branch** and open its URL. Deployment Protection may ask you to sign in to Vercel.
+6. **Run the checklist:**
+   - [ ] Sign-in shows "Forgot password?".
+   - [ ] Request a reset for the allowlisted address. The page shows the generic confirmation, and the email arrives. Check the sender, subject, button, plain-text URL, and the 30-minute wording.
+   - [ ] Message headers show SPF and DKIM pass (option b) and no tracking pixels or remote images.
+   - [ ] Open the link. The address bar shows `/reset-password` with **no `#token`**.
+   - [ ] Set a new password. "Password changed" appears, and a second browser that was signed in is signed out.
+   - [ ] The password-changed notice arrives, with no link in it.
+   - [ ] Open the same link again: "This reset link can't be used".
+   - [ ] Request again, wait 31 minutes, open the link: "can't be used" (expiry).
+   - [ ] Request a reset for a non-allowlisted address that has an account, and for an unknown address. Both show the same confirmation, and no email is sent. The log reads `status=suppressed` for the first.
+   - [ ] Search the Vercel runtime logs for your address and for `token`. Nothing beyond `[mail] … status=sent|suppressed` lines.
+7. **Record** the date, deployment and results here, then **remove** `AUTH_PASSWORD_RESET_ENABLED` and `RESEND_API_KEY` from Preview, or keep them branch-scoped.
+
+## Email verification and sign-up policy (10.7)
+
+**Token lifecycle: Better Auth's own.** Better Auth signs an HS256 token (`emailVerification.expiresIn = EMAIL_VERIFICATION_TOKEN_TTL_SECONDS`, 1 hour), verifies it and sets `User.emailVerified`. MatchBase stores no verification token. The differences from Better Auth's defaults are all about where the token travels:
+
+| Concern | Behaviour |
+|---|---|
+| Emailed link | `buildEmailVerificationUrl` → `/verify-email#token=<jwt>`, https outside loopback; rendered by `emailVerificationEmail` ("Confirm your email for MatchBase", one **Confirm email** action, "expires in 1 hour"). Better Auth's `/api/auth/verify-email?token=…` link is never mailed. |
+| Consuming | `GET /api/auth/verify-email` answers **404** at the route boundary. The page POSTs `{ token }` to `/api/auth/verify-email`, and `verifyEmailToken` (lib/auth/email-verification.ts) hands Better Auth the same GET **in-process**, so its rate limiter (10 per IP per 10 min) and checks run unchanged and the token never appears in a request URL. |
+| Single use | Better Auth answers a replay with the same success as the first use. The bridge runs each call in an AsyncLocalStorage scope that `afterEmailVerification` marks, so the first use reports `verified` and any later use `TOKEN_ALREADY_USED` (tested). No second token store. |
+| Sessions | `autoSignInAfterVerification: false`: a verification link never creates a session, first use or replay (tested). The person signs in afterwards. |
+| Enumeration | duplicate sign-up gets Better Auth's synthetic response (same keys, `token: null`) and mails nobody. Unauthenticated `/send-verification-email` answers alike for unknown, unconfirmed and confirmed addresses (tested). The auth logger masks email addresses. |
+| Not verification | requesting a link, password recovery and `account:create` never set `emailVerified`. Only the link, or the explicit operator command `account:verify`, does. |
+
+**Account policy** (`accountPolicy`, used by the auth server, the sign-in and sign-up pages, and the readiness check):
+
+| Sign-up requested (`AUTH_ALLOW_SIGN_UP` / dev default) | Mail deliverable | Result |
+|---|---|---|
+| no (**Production today**) | no / yes | sign-up closed; verification **not required**, so the operator ADMIN (`emailVerified=false`) is never locked out; with mail, a signed-in person can request a link |
+| yes | yes | sign-up open; **verification required**: no session at sign-up, sign-in answers `EMAIL_NOT_VERIFIED` and mails a new link after a correct password only |
+| yes | no, outside development | sign-up **refused** (the endpoint answers disabled; readiness fails in Production) |
+| yes | no, development | open and unverified, as before (the local form stays usable without mail) |
+
+**How unconfirmed users are restricted.**
+
+- While sign-up is open, an unconfirmed account cannot sign in at all, so it has no session and no personal feature.
+- While sign-up is closed, accounts are operator-created and may sign in unconfirmed. Email delivery of reminders (Phase 11) goes only to confirmed addresses.
+- Development fixtures (dev quick sign-in) are marked confirmed, so they keep working when a local transport turns verification on.
+
+**UI.**
+
+- Sign-up with verification required shows "Check your email". The wording is the same for a new and an existing address.
+- Sign-in shows "Confirm your email address first …" for `EMAIL_NOT_VERIFIED`.
+- `/verify-email` uses the same fragment, ref and `replaceState` handling as the reset page, plus `hashchange`. Outcomes: "Email confirmed" → Sign in; "Already confirmed"; "can't be used".
+
+**Browser verification (2026-10-28).** Headless Chrome against `next start` with sign-up open and the dev outbox. All 17 checks passed:
+
+- "Check your email" with **no session cookie** (read through DevTools, since the cookie is HttpOnly);
+- sign-in before confirming explains it and mails a second link;
+- the fragment link is mailed;
+- "Email confirmed", with the fragment removed and the token absent from the DOM;
+- the token appears only in the body of `POST /api/auth/verify-email`;
+- no console token or exceptions, and confirming did not sign in;
+- a replay shows "Already confirmed", and a garbage link "can't be used";
+- `GET /api/auth/verify-email?token=` answers 404;
+- sign-in afterwards reaches the dashboard with a session;
+- no horizontal scroll at 390 px.
+
+The recovery browser checks were re-run in Production's shape (sign-up closed) with fresh browser profiles: all 30 checks passed.
+
+### Opening public sign-up in Production: release procedure (human, **not performed**)
+
+Sign-up is a separate release from recovery. **Nothing in the code opens it.**
+
+1. Recovery is live in Production, with verified mail delivery (the runbook above, steps 1–7).
+2. The Preview procedure (10.6) is repeated with sign-up open on Preview (`AUTH_ALLOW_SIGN_UP=true` scoped to the branch). Sign up, receive the confirmation, confirm, sign in; a duplicate address gets the same screen; an unconfirmed sign-in is refused.
+3. **Confirm the operator accounts first.** Sign in as the ADMIN and request confirmation (once the Phase 11 settings page offers it), or run `MATCHBASE_OPERATOR_TARGET=production npm run account:verify -- confirm <admin email>` with the Production direct connection. Check with `account:verify -- status`. Without this, turning on required verification blocks the ADMIN's sign-in until they open an emailed link.
+4. Decide the abuse posture (see "Residual risks"): the current controls are 5 sign-ups per IP per hour and required verification. A CAPTCHA (Better Auth's `captcha` plugin) would need CSP changes and a third-party script, so it is not added by default.
+5. Publish a privacy notice for stored accounts, which public sign-up makes necessary.
+6. Set `AUTH_ALLOW_SIGN_UP=true` for Production and redeploy. `production:check` should then report `sign-up` as a **warn** ("OPEN … required email verification"), never a fail.
+7. Smoke-test: sign up with a fresh inbox, confirm, sign in. **Rollback:** unset the variable and redeploy.
+
 ## Development use
 
 Set in `.env.local`: `MAIL_TRANSPORT=dev-outbox` and `MAIL_FROM=MatchBase <dev@localhost.test>`. Messages appear in `.mail-outbox/`, which git ignores; the files are mode 0600. Nothing in 10.1 sends yet. The outbox is used from 10.3.
 
 ## Tests
+
+- `tests/mail/templates.test.ts`:
+  - exact plain-text bodies for both emails;
+  - the one HTML action, the 30-minute wording read from the constant, and where the URL appears (count and subject);
+  - no recipient in the content, and no markup that loads, runs or hides anything;
+  - escaping of malicious-looking names, and dropping link- or address-like names;
+  - refusal of malformed or unsafe reset URLs, and link-builder rules;
+  - the notice contains no link, token or invented contact;
+  - output is deterministic and compatible with `MailMessage` through the capture transport;
+  - global `fetch` replaced with a thrower.
 
 - `tests/mail/mail-env.test.ts`:
   - the configuration matrix for each environment;
@@ -112,15 +366,44 @@ Set in `.env.local`: `MAIL_TRANSPORT=dev-outbox` and `MAIL_FROM=MatchBase <dev@l
   - provider body never read and no sensitive value in the result or log line;
   - the allowlist sits in front of `fetch`;
   - disabled, capture and dev outbox behaviour.
+- `tests/db/password-recovery.test.ts` (real handler, development database, capture mailer, global `fetch` replaced):
+  - identical answers for known, unknown and password-less addresses;
+  - hashed storage, the 30-minute expiry and the fragment link;
+  - a valid reset revokes sessions, sends one notice and leaves `emailVerified` unchanged;
+  - replay, expiry and sibling-link invalidation;
+  - a mail failure still answers generically and logs safely;
+  - no notice from `/change-password`;
+  - with recovery disabled, every address gets the same refusal;
+  - the per-IP limit holds, and the GET link is blocked.
+- `tests/auth/recovery-ui.test.ts`: fragment parsing, redirect exclusions, error wording, and server-rendered markup (the reset shell has no form or token; the unavailable state has no form and no fake confirmation).
+- `tests/env/production-readiness.test.ts` ("mail and password-recovery readiness"):
+  - today's Production passes;
+  - an own domain with recovery on passes, and says what it did not check;
+  - nine unsafe Production combinations fail and block startup;
+  - Preview allowlist rules, and no addresses printed;
+  - development is information only, and the key is never printed.
+- `tests/db/preview-mail.test.ts`: the Preview configuration end to end with a stubbed `fetch`: suppression before any request, one Resend request for the allowlisted address, outcome-only logs.
+- `tests/db/email-verification.test.ts`:
+  - open sign-up requires verification (no session, one fragment link);
+  - duplicate sign-up is answered alike with no address logged;
+  - an unconfirmed sign-in is refused, and only a correct password mails a new link;
+  - valid once, then a refused replay with no session;
+  - expired, malformed, foreign-signature and unknown-account tokens are refused;
+  - resend answers alike;
+  - with sign-up closed, an unconfirmed operator ADMIN signs in and can confirm on request;
+  - without mail, verification is refused and Production sign-up stays closed;
+  - the GET endpoint is blocked.
+- `tests/auth/account-policy.test.ts`: the policy matrix, the verification link rules and the template.
+- `tests/db/account-verify.test.ts`: the operator guard, status, a single confirm that changes nothing else, and idempotence.
 - `tests/domain/sync-redaction.test.ts`: the recovery-token and Resend-key patterns, plus ordinary text that must stay untouched.
 
-## Next checkpoints
+## Next checkpoints (as planned in 10.1; superseded by the sections above)
 
-- **10.2:** password-reset and password-changed templates (text and HTML, escaped, no remote assets).
 - **10.3:**
   - add `sendResetPassword` behind `passwordReset.enabled`;
-  - build the link with a fragment (`/reset-password#token=…`) from the base URL;
-  - hash tokens at rest (`verification.storeIdentifier`), 30-minute TTL, `revokeSessionsOnPasswordReset`;
+  - build the link with `buildPasswordResetUrl(baseURL, token)`, ignoring Better Auth's `url`, and render it with `passwordResetEmail`;
+  - hash tokens at rest (`verification.storeIdentifier`), `resetPasswordTokenExpiresIn: PASSWORD_RESET_TOKEN_TTL_SECONDS`, `revokeSessionsOnPasswordReset`;
+  - send `passwordChangedEmail` from `onPasswordReset`;
   - per-user throttle and daily cap;
   - background sending through `after()`;
   - disable the GET `/reset-password/:token` callback;

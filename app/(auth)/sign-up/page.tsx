@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { SignUpForm } from "@/components/auth/sign-up-form";
-import { isSignUpAllowed } from "@/lib/auth/auth-env";
+import { accountPolicy } from "@/lib/auth/email-verification";
 import { safeNextPath } from "@/lib/auth/redirect";
 import { getViewer } from "@/lib/auth/session";
 
@@ -15,5 +15,6 @@ export default async function SignUpPage({ searchParams }: { searchParams: Promi
   const [viewer, params] = await Promise.all([getViewer(), searchParams]);
   const next = safeNextPath(params.next);
   if (viewer) redirect(next);
-  return <SignUpForm next={next} allowed={isSignUpAllowed(process.env)} />;
+  const policy = accountPolicy(process.env);
+  return <SignUpForm next={next} allowed={policy.signUpOpen} requiresVerification={policy.requireEmailVerification} />;
 }

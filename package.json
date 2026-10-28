@@ -14,6 +14,7 @@
     "production:check": "tsx scripts/production-check.mts",
     "account:password": "tsx scripts/account-password.mts",
     "account:create": "tsx scripts/account-create.mts",
+    "account:verify": "tsx scripts/account-verify.mts",
     "bootstrap:system": "tsx scripts/bootstrap-system.mts",
     "sync:manual": "tsx scripts/sync-data-source.mts",
     "admin:role": "tsx scripts/admin-role.mts"

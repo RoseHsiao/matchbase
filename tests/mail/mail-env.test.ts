@@ -145,9 +145,10 @@ describe("readMailEnv: password recovery availability", () => {
     for (const from of ["onboarding@resend.dev", "MatchBase <noreply@resend.dev>", "x@sub.resend.dev"]) {
       const env = { ...resendProd, MAIL_FROM: from, AUTH_PASSWORD_RESET_ENABLED: "true" }
       const config = readMailEnv(env)
-      assert.equal(config.transport.kind, "resend", "the transport itself is valid")
+      assert.equal(config.transport.kind, "disabled", "a Production Resend transport on the test domain is refused outright")
       assert.equal(config.passwordReset.enabled, false, from)
-      assert.deepEqual(errorsOf(env), ["AUTH_PASSWORD_RESET_ENABLED"])
+      assert.deepEqual(errorsOf(env), ["MAIL_FROM", "AUTH_PASSWORD_RESET_ENABLED"])
+      assert.deepEqual(errorsOf({ ...resendProd, MAIL_FROM: from }), ["MAIL_FROM"], "also without the recovery flag")
     }
   })
 

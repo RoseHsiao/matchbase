@@ -266,8 +266,9 @@ model Match {
   venue      Venue?      @relation(fields: [venueId], references: [id], onDelete: SetNull)
   dataSource DataSource? @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
 
-  participants  MatchParticipant[]
-  watchlistedBy UserWatchlistMatch[]
+  participants           MatchParticipant[]
+  notificationDeliveries NotificationDelivery[]
+  watchlistedBy          UserWatchlistMatch[]
 
   @@unique([dataSourceId, externalId])
   // Schedule window, "today", history: ordered scans by start time.
@@ -327,21 +328,25 @@ enum UserRole {
 /// user fields; the seed's demo user keeps this shape too but never has an
 /// Account row, so nobody can sign in as it.
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  name          String   @default("")
-  emailVerified Boolean  @default(false)
-  image         String?
-  role          UserRole @default(USER)
-  createdAt     DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String   @default("")
+  emailVerified  Boolean  @default(false)
+  image          String?
+  role           UserRole @default(USER)
+  /// Phase 11 opt-in: email the user's watchlist reminders. Off by default; mail
+  /// is sent only to a confirmed address (emailVerified) on a deployment with mail.
+  reminderEmails Boolean  @default(false)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @default(now()) @updatedAt @db.Timestamptz(3)
 
-  sessions      Session[]
-  accounts      Account[]
-  teamFollows   UserTeamFollow[]
-  playerFollows UserPlayerFollow[]
-  leagueFollows UserLeagueFollow[]
-  watchlist     UserWatchlistMatch[]
+  sessions               Session[]
+  accounts               Account[]
+  teamFollows            UserTeamFollow[]
+  playerFollows          UserPlayerFollow[]
+  leagueFollows          UserLeagueFollow[]
+  watchlist              UserWatchlistMatch[]
+  notificationDeliveries NotificationDelivery[]
 }
 
 /// Better Auth database session. The browser holds only the random `token`
@@ -468,6 +473,60 @@ model UserWatchlistMatch {
 
   @@id([userId, matchId])
   @@index([matchId])
+}
+
+/// Where a notification is in its delivery (docs/notifications.md).
+/// PENDING → SENDING (claimed under a lease) → SENT, or RETRY (transient
+/// failure, bounded) → SENDING …; terminal: SENT, SUPPRESSED (recipient policy),
+/// SKIPPED (no longer eligible, or too late), FAILED (permanent or attempts used up).
+enum NotificationStatus {
+  PENDING
+  SENDING
+  RETRY
+  SENT
+  SUPPRESSED
+  SKIPPED
+  FAILED
+}
+
+/// One notification intent and its delivery state (Phase 11). The unique key
+/// (user, match, kind, dueAt) makes planning idempotent: a second planner run,
+/// or a concurrent one, cannot create a second row for the same reminder. A
+/// rescheduled match or a changed reminder offset has a different dueAt and
+/// becomes a new intent; the old one is skipped at send time. Holds delivery
+/// metadata only: no address, no content, no token.
+model NotificationDelivery {
+  id                String             @id @default(cuid())
+  userId            String
+  matchId           String
+  /// "match-reminder" for now; the column keeps the table reusable for later kinds.
+  kind              String
+  /// The offset the intent was planned from; checked again at send time.
+  reminder          WatchlistReminder
+  /// When the notification is due (UTC): match start minus the offset.
+  dueAt             DateTime           @db.Timestamptz(3)
+  status            NotificationStatus @default(PENDING)
+  attempts          Int                @default(0)
+  /// Earliest instant the next attempt may run (backoff for RETRY).
+  nextAttemptAt     DateTime           @db.Timestamptz(3)
+  /// While SENDING: the claim expires here; a later run may reclaim it.
+  leaseUntil        DateTime?          @db.Timestamptz(3)
+  sentAt            DateTime?          @db.Timestamptz(3)
+  providerMessageId String?
+  /// MailFailureCategory of the last failed attempt (timeout, rate-limit, …).
+  lastErrorCategory String?
+  /// Why the row ended SKIPPED, SUPPRESSED or FAILED (a fixed slug).
+  outcomeReason     String?
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime           @default(now()) @updatedAt @db.Timestamptz(3)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, matchId, kind, dueAt])
+  @@index([status, nextAttemptAt])
+  @@index([matchId])
+  @@index([sentAt])
 }
 
 // ---------------------------------------------------------------------------

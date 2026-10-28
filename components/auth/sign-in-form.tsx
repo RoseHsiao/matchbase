@@ -14,6 +14,8 @@ type SignInFormProps = {
   /** Same-origin path to return to, already validated on the server. */
   next: string
   signUpAllowed: boolean
+  /** Shows the "Forgot password?" link; false when this deployment has no self-service recovery. */
+  recoveryAvailable: boolean
 }
 
 /**
@@ -22,7 +24,7 @@ type SignInFormProps = {
  * HttpOnly), and on success the router re-renders the tree so the server
  * seeds every store for the signed-in viewer.
  */
-export function SignInForm({ next, signUpAllowed }: SignInFormProps) {
+export function SignInForm({ next, signUpAllowed, recoveryAvailable }: SignInFormProps) {
   const router = useRouter()
   const [error, setError] = React.useState<string | null>(null)
   const [pending, setPending] = React.useState(false)
@@ -68,7 +70,14 @@ export function SignInForm({ next, signUpAllowed }: SignInFormProps) {
           <Input id="sign-in-email" name="email" type="email" autoComplete="email" required autoFocus />
         </div>
         <div className="grid gap-2">
-          <Label htmlFor="sign-in-password">Password</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="sign-in-password">Password</Label>
+            {recoveryAvailable ? (
+              <Link href="/forgot-password" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                Forgot password?
+              </Link>
+            ) : null}
+          </div>
           <Input id="sign-in-password" name="password" type="password" autoComplete="current-password" required />
         </div>
         {error ? (

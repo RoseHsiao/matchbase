@@ -32,7 +32,9 @@ export type DevOutboxOptions = {
 export function createDevOutboxMailer(options: DevOutboxOptions): Mailer {
   const environment = resolveRuntimeEnvironment(options.env ?? process.env)
   if (environment !== "development") throw new Error(`The development mail outbox is refused in the ${environment} environment.`)
-  const dir = path.resolve(options.dir ?? DEFAULT_DEV_OUTBOX_DIR)
+  // Not traced into the server bundle: the outbox refuses to exist outside development (the line above),
+  // so no deployed function ever touches this directory.
+  const dir = path.resolve(/*turbopackIgnore: true*/ options.dir ?? DEFAULT_DEV_OUTBOX_DIR)
   const log = options.log ?? ((line: string) => console.info(line))
 
   return {

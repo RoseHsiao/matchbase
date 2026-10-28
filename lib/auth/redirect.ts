@@ -14,7 +14,7 @@ export function safeNextPath(value: unknown, fallback = DEFAULT_AFTER_SIGN_IN): 
   if (value.length === 0 || value.length > 2000) return fallback
   if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return fallback
   if (UNSAFE_CHARACTERS.test(value)) return fallback
-  if (value.startsWith("/sign-in") || value.startsWith("/sign-up") || value.startsWith("/api/")) return fallback
+  if (["/sign-in", "/sign-up", "/forgot-password", "/reset-password", "/verify-email", "/api/"].some((prefix) => value.startsWith(prefix))) return fallback
   return value
 }
 

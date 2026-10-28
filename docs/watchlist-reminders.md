@@ -1,6 +1,6 @@
 # Watchlist reminders (Phase 6A)
 
-Status: implemented 2026-09-15. Reminder *preferences* are stored and shown; reminder *delivery* is intentionally not built (see "Future architecture").
+Status: implemented 2026-09-15. Reminder *preferences* are stored and shown. **Update 2026-10-28 (Phase 11):** email delivery of these reminders is implemented for users who opt in. See [notifications.md](notifications.md); the "Future architecture" section below is kept as written.
 
 ## Product loop
 

@@ -2,8 +2,9 @@ import { createAuthClient } from "better-auth/react"
 
 /**
  * Browser client for the auth endpoints mounted at /api/auth. Same origin,
- * so no base URL is needed. Only the sign-in, sign-up and sign-out calls are
- * used; who the viewer is comes from the server through ViewerProvider, never
+ * so no base URL is needed. Sign-in, sign-up, sign-out, the two password
+ * recovery calls (request a link, set a new password) and the verification
+ * request are used; who the viewer is comes from the server through ViewerProvider, never
  * from client-side session state.
  */
 export const authClient = createAuthClient()
@@ -30,6 +31,17 @@ export function describeAuthError(error: AuthClientError | null | undefined): st
     case "SIGNUP_DISABLED":
     case "EMAIL_PASSWORD_SIGN_UP_DISABLED":
       return "Sign-up is closed on this deployment."
+    case "INVALID_TOKEN":
+    case "TOKEN_EXPIRED":
+      return "This link is invalid, expired or already used. Request a new one."
+    case "EMAIL_NOT_VERIFIED":
+      return "Confirm your email address first. We've sent a new confirmation link to it; open the link, then sign in."
+    case "TOKEN_ALREADY_USED":
+      return "This link was already used, or the address is already confirmed. You can sign in."
+    case "RATE_LIMITED":
+      return "Too many attempts. Wait a moment and try again."
+    case "RESET_PASSWORD_DISABLED":
+      return "Password reset by email is not available on this deployment."
     default:
       if (error?.status === 429) return "Too many attempts. Wait a moment and try again."
       return "Something went wrong. Please try again."

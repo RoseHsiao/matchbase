@@ -12,8 +12,8 @@ Legend: **R** required, **O** optional, **F** forbidden (the readiness check fai
 | `MATCHBASE_OPERATOR_TARGET` | no | per-command confirmation for a production-labelled database | — | — | shell only, `production`, never on Vercel |
 | `BETTER_AUTH_SECRET` | yes | signs session cookies; 32+ random characters, 12+ distinct | R (local value) | R (its own value) | R (its own value, different from Preview and from `CRON_SECRET`) |
 | `BETTER_AUTH_URL` | no | auth base URL; derived from Vercel system variables when unset | O (unset; inferred per request) | O (unset; derived from `VERCEL_URL`) | O (derived from `VERCEL_PROJECT_PRODUCTION_URL`) or R as `https://<custom domain>` when the primary domain differs |
-| `AUTH_ALLOW_SIGN_UP` | no | opens public sign-up | O (unset means open in development) | F for launch (absent) | F for launch (absent or `false`) |
-| `CRON_SECRET` | yes | bearer token Vercel sends to `/api/cron/sync`; 16+ random characters | O (local smoke test only) | F (absent; the route answers 503) | R (its own value) |
+| `AUTH_ALLOW_SIGN_UP` | no | requests public sign-up; honoured outside development only with deliverable mail, and then with **required email verification** (Phase 10.7) | O (unset means open in development) | F for launch (absent) | F for launch (absent or `false`) |
+| `CRON_SECRET` | yes | bearer token for `/api/cron/sync` and `/api/cron/notifications` (Phase 11, not scheduled yet); 16+ random characters | O (local smoke test only) | F (absent; the route answers 503) | R (its own value) |
 | `MATCHBASE_DEV_LOGIN` | no | dev quick sign-in switch | O | F (absent) | F (absent; presence blocks startup) |
 | `MATCHBASE_DEV_USER_EMAIL` | no | dev USER account | O | F | F |
 | `MATCHBASE_DEV_USER_PASSWORD` | yes | dev USER password | O | F | F (presence blocks startup) |
@@ -32,13 +32,14 @@ Legend: **R** required, **O** optional, **F** forbidden (the readiness check fai
 | `DEMO_ANCHOR` | no | demo seed anchor | O | — | — |
 | `PRISMA_QUERY_LOG` | no | SQL logging | O | — | F (never in Production) |
 | `MATCHBASE_NEW_PASSWORD` | yes | password input for `account:create` / `account:password` | shell only | shell only | shell only |
-| `AUTH_PASSWORD_RESET_ENABLED` | no | requests self-service password recovery; honoured only with a deliverable transport (Phase 10, [account-recovery.md](../security/account-recovery.md)); not read by the auth instance until 10.3 | O | O (absent by default) | **F for now** (absent until a verified sending domain exists) |
+| (no variable) `account:verify` | — | operator command that marks an address confirmed (lockout fallback before opening sign-up) | shell | shell | shell, with `MATCHBASE_OPERATOR_TARGET=production` |
+| `AUTH_PASSWORD_RESET_ENABLED` | no | requests self-service password recovery; honoured only with a deliverable transport (Phase 10, [account-recovery.md](../security/account-recovery.md)); when honoured, the auth server configures the reset hooks and the "Forgot password?" UI appears | O | O (absent by default) | **F for now** (absent until a verified sending domain exists) |
 | `MAIL_TRANSPORT` | no | `resend`, `dev-outbox` or `disabled`; unset means disabled | O (`dev-outbox`) | O (`resend` only with an allowlist) | O (absent for now; later `resend`) |
-| `MAIL_FROM` | no | sender, `address` or `Name <address>` | O | R with `resend` | R with `resend`, on a verified own domain (not `resend.dev`) before recovery is enabled |
+| `MAIL_FROM` | no | sender, `address` or `Name <address>` | O | R with `resend` (`onboarding@resend.dev` allowed for an owner-inbox test) | R with `resend`, on a verified own domain; `resend.dev` is **refused** (fails the readiness check and disables mail) |
 | `MAIL_REPLY_TO` | no | single reply address | O | O | O |
-| `RESEND_API_KEY` | yes | Resend sending-only key, scoped to the sending domain | — | its own key, if any | its own key (absent for now) |
+| `RESEND_API_KEY` | yes | Resend sending-only key, scoped to the sending domain; must differ from `BETTER_AUTH_SECRET` and `CRON_SECRET` | — | its own key, if any | its own key (absent for now) |
 | `MAIL_ALLOWED_RECIPIENTS` | no | exact addresses a non-Production Resend transport may mail | O (required with `resend`) | R with `resend` | **F** (refused; disables mail) |
-| `MAIL_DAILY_CAP` | no | daily send ceiling, default 100; enforced from 10.3 | O | O | O |
+| `MAIL_DAILY_CAP` | no | daily ceiling (UTC day) for reminder emails, enforced by the Phase 11 pipeline, default 100; recovery is governed by the per-IP auth limit instead | O | O | O |
 | `NEON_BRANCH` | no | informational note in `.env.local` (not read by code) | O | — | — |
 
 Vercel system variables (`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_PROJECT_PRODUCTION_URL`) must be enabled in the project ("Enable access to System Environment Variables"); the environment model and the auth base URL derive from them.
@@ -46,5 +47,6 @@ Vercel system variables (`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_PROJECT_P
 ## Launch invariants the readiness check enforces
 
 - Production: label `production`; `verify-full` on both URLs; auth secret strong and different from the cron secret; https base URL; `CRON_SECRET` present; sign-up closed; no `MATCHBASE_DEV_*`, no `ALLOW_PRODUCTION_SEED`; CSP not off; TheSportsDB configured.
+- Mail (Phase 10.5): unconfigured mail passes, because it is a safe state. In Production, any configuration the mail parser refuses fails and blocks startup: dev outbox, capture or unknown transport, `resend.dev` sender, allowlist, malformed key or sender, the recovery flag without a deliverable transport, and a Resend key equal to another secret. DNS and domain verification are reported as **not checked** (info).
 - Preview: label not `production`; no dev-login flag or credentials; no seed flag; no secret reuse (checked as "auth ≠ cron" within the environment; cross-environment reuse is an operator rule that cannot be verified from one environment).
 - Development: warnings only.

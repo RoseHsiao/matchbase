@@ -80,6 +80,15 @@ const monthYearFormatter = formatter({
   year: "numeric",
 })
 
+const zonedKickoffFormatter = formatter({
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZoneName: "short",
+})
+
 function toDate(value: Date | string): Date {
   return typeof value === "string" ? new Date(value) : value
 }
@@ -176,6 +185,15 @@ export function formatKickoff(
   now: Date = new Date()
 ): string {
   return `${formatDayLabel(value, now)} · ${formatTime(value)}`
+}
+
+/**
+ * "Sat, Nov 1, 7:30 PM GMT+8 (Asia/Taipei)": an absolute kick-off with its
+ * zone spelled out, for text read outside the app (reminder emails), where
+ * the reader's own zone may differ from the presentation zone.
+ */
+export function formatKickoffWithZone(value: Date | string): string {
+  return `${zonedKickoffFormatter.format(toDate(value))} (${PRESENTATION_TIME_ZONE})`
 }
 
 /** "September 2026" */

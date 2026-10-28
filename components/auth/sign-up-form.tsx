@@ -16,6 +16,8 @@ type SignUpFormProps = {
   next: string
   /** False when the deployment has closed sign-up (AUTH_ALLOW_SIGN_UP=false). */
   allowed: boolean
+  /** New accounts must confirm their address before signing in (lib/auth/email-verification.ts). */
+  requiresVerification: boolean
 }
 
 /**
@@ -23,10 +25,11 @@ type SignUpFormProps = {
  * role is a server-owned field the auth server refuses from input, so every
  * new account is a regular user.
  */
-export function SignUpForm({ next, allowed }: SignUpFormProps) {
+export function SignUpForm({ next, allowed, requiresVerification }: SignUpFormProps) {
   const router = useRouter()
   const [error, setError] = React.useState<string | null>(null)
   const [pending, setPending] = React.useState(false)
+  const [awaitingConfirmation, setAwaitingConfirmation] = React.useState(false)
   const signInHref = next === "/dashboard" ? "/sign-in" : `/sign-in?next=${encodeURIComponent(next)}`
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -46,6 +49,12 @@ export function SignUpForm({ next, allowed }: SignUpFormProps) {
       setPending(false)
       return
     }
+    // With verification required the server creates no session and answers an existing address
+    // exactly like a new one, so the next step is the same for both: check the inbox.
+    if (requiresVerification) {
+      setAwaitingConfirmation(true)
+      return
+    }
     router.push(next)
     router.refresh()
   }
@@ -54,6 +63,16 @@ export function SignUpForm({ next, allowed }: SignUpFormProps) {
     return (
       <AuthCard title="Account creation is not open" description="This deployment does not accept public sign-up yet." footer={<Link href={signInHref} className="font-medium text-foreground underline-offset-4 hover:underline">Sign in</Link>}>
         <p className="text-sm text-muted-foreground">Existing accounts can sign in as usual. To get an account, ask the operator of this deployment.</p>
+      </AuthCard>
+    )
+  }
+
+  if (awaitingConfirmation) {
+    return (
+      <AuthCard title="Check your email" description="Confirm your address to finish creating your account." footer={<Link href={signInHref} className="font-medium text-foreground underline-offset-4 hover:underline">Sign in</Link>}>
+        <p className="text-sm text-muted-foreground" role="status">
+          If this address can be used for a new account, a confirmation link is on its way. Open it, then sign in. If the address already has an account, sign in or reset its password instead.
+        </p>
       </AuthCard>
     )
   }

@@ -35,7 +35,9 @@ export async function provisionDevAccounts(deps: { auth: DevAccountsAuth; prisma
       throw new Error(`${account.email} exists without a sign-in credential; choose a different development email.`)
     }
     const roleChanged = existing.role !== account.role
-    if (roleChanged) await deps.prisma.user.update({ where: { id: existing.id }, data: { role: account.role } })
+    // Development fixtures only (the caller checked resolveDevLogin): the accounts are confirmed so the quick
+    // sign-in keeps working when a local mail transport turns on required verification.
+    await deps.prisma.user.update({ where: { id: existing.id }, data: { role: account.role, emailVerified: true } })
     results.push({ role: account.role, email: account.email, created, roleChanged })
   }
   return results
