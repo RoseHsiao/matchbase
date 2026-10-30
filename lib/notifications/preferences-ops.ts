@@ -1,4 +1,6 @@
+import type { EnvLike } from "@/lib/env/runtime-environment"
 import type { Prisma } from "@/lib/generated/prisma/client"
+import { readMailEnv } from "@/lib/mail/mail-env"
 
 /**
  * The email-reminder preference (User.reminderEmails), against an injected
@@ -6,6 +8,16 @@ import type { Prisma } from "@/lib/generated/prisma/client"
  * inside rolled-back transactions. The user id always comes from the caller's
  * session (lib/notifications/actions.ts); nothing here takes it from input.
  */
+
+/**
+ * Whether the Watchlist offers email reminders at all. They go only to confirmed
+ * addresses, and confirming needs verification mail, so the offer follows
+ * AUTH_EMAIL_VERIFICATION_ENABLED (with a deliverable transport), not the mere
+ * presence of a transport.
+ */
+export function reminderEmailsAvailable(env: EnvLike): boolean {
+  return readMailEnv(env).emailVerification.enabled
+}
 
 export type PreferenceClient = Pick<Prisma.TransactionClient, "user">
 

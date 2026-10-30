@@ -7,6 +7,7 @@ import { PrismaPg } from "@prisma/adapter-pg"
 
 import { createAuth, type Auth } from "../../lib/auth/create-auth"
 import { PrismaClient } from "../../lib/generated/prisma/client"
+import { createCaptureMailer } from "../../lib/mail/transports/capture"
 
 /**
  * The operator password reset (scripts/account-password.mts) and the operator
@@ -79,6 +80,33 @@ describeDb("operator password reset (database)", () => {
     await assert.rejects(() => auth.api.signInEmail({ body: { email, password: OLD } }))
     const { response } = await auth.api.signInEmail({ body: { email, password: NEW }, returnHeaders: true })
     assert.equal(response.user.email, email)
+  })
+
+  it("invalidates an outstanding self-service reset link, so it cannot be used after the operator reset", async () => {
+    // A recovery-enabled instance (development shape, capture mailer) issues a real Better Auth reset token.
+    const capture = createCaptureMailer({})
+    const recovery = createAuth({
+      prisma,
+      env: { DATABASE_URL: url, BETTER_AUTH_SECRET: "test-only-secret-0123456789abcdef0123456789", NODE_ENV: "development", BETTER_AUTH_URL: "http://localhost:3000", AUTH_ALLOW_SIGN_UP: "false", MAIL_TRANSPORT: "dev-outbox", MAIL_FROM: "dev@example.test", AUTH_PASSWORD_RESET_ENABLED: "true" },
+      mailer: capture,
+    })
+    await recovery.api.requestPasswordReset({ body: { email } })
+    const token = /#token=([A-Za-z0-9_-]+)/.exec(capture.messages.at(-1)?.text ?? "")?.[1]
+    assert.ok(token, "a reset link was issued")
+    const user = await prisma.user.findUniqueOrThrow({ where: { email }, select: { id: true } })
+    assert.equal(await prisma.verification.count({ where: { value: user.id } }), 1)
+
+    const r = runScript("scripts/account-password.mts", [email], { MATCHBASE_NEW_PASSWORD: NEW })
+    assert.equal(r.code, 0, r.out)
+    assert.match(r.out, /1 outstanding reset link\(s\) invalidated/)
+    assert.equal(await prisma.verification.count({ where: { value: user.id } }), 0)
+    await assert.rejects(
+      () => recovery.api.resetPassword({ body: { token, newPassword: "attacker-chosen-password" } }),
+      (error: { body?: { code?: string } }) => error.body?.code === "INVALID_TOKEN"
+    )
+    const { response } = await recovery.api.signInEmail({ body: { email, password: NEW }, returnHeaders: true })
+    assert.equal(response.user.email, email, "the operator's password still works")
+    await prisma.session.deleteMany({ where: { user: { email } } })
   })
 
   it("refuses an unknown account and a short password", () => {

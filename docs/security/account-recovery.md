@@ -1,6 +1,6 @@
 # Account recovery and email infrastructure (Phase 10)
 
-> **Status (2026-10-28).** Checkpoints **10.1–10.5 and 10.7 implemented and verified locally**: mail foundation, templates, Better Auth recovery wiring, recovery UI, mail readiness checks, email verification and the sign-up policy. Verification covered unit and database tests and headless-browser checks against the dev outbox. **10.6 (Preview real mail) is ready but not performed**: no real email has been sent or received. In Production: **no mail variables, recovery disabled, sign-up closed**, and `/api/auth/request-password-reset` answers 400 `RESET_PASSWORD_DISABLED`, exactly as before. Enabling recovery needs a verified sending domain and the runbook below; opening sign-up is a separate human release step.
+> **Status (2026-10-28, after the pre-release remediation).** Checkpoints **10.1–10.5 and 10.7 implemented and verified locally** (unit and database tests, headless-browser checks against the dev outbox). **10.6 (Preview real mail) is ready but not performed**: no real email has been sent or received. Every user-facing mail feature has its own switch: `AUTH_PASSWORD_RESET_ENABLED` for recovery and `AUTH_EMAIL_VERIFICATION_ENABLED` for confirmation links, which also gate the Watchlist reminder offer and open sign-up. A configured transport alone sends nothing to users. In Production: **no mail variables, recovery disabled, verification mail disabled, sign-up closed**. The build that contains these checkpoints also contains the Phase 11 migration, which must be applied **before** that build is deployed ("Release order" below).
 
 Companions: [production hardening](production-hardening.md) (the operator reset that remains the recovery path today), [authentication and authorization](authentication-and-authorization.md), [environment matrix](../deployment/environment-matrix.md).
 
@@ -12,12 +12,13 @@ Companions: [production hardening](production-hardening.md) (the operator reset 
 | Abstraction | provider-neutral `Mailer` (`lib/mail/mailer.ts`) | password recovery (10A), email verification (10B) and match reminders (Phase 11) all send through it; no caller sees a Resend type. |
 | Application URL | the existing Vercel Production URL, unchanged | `BETTER_AUTH_URL` stays derived from `VERCEL_PROJECT_PRODUCTION_URL`. Reset links will be built from that base URL, never from the request Host. |
 | Sending domain | **required before real Production mail; not available yet** | a `*.vercel.app` host cannot carry SPF/DKIM. Resend's shared `resend.dev` sender only delivers to the account owner. The parser refuses to report Production recovery as available while `MAIL_FROM` is on `resend.dev`. |
-| Production recovery | **disabled** | `AUTH_PASSWORD_RESET_ENABLED` is absent and nothing reads it yet. The operator command `npm run account:password` remains the recovery path. |
-| Public sign-up | **closed** | `AUTH_ALLOW_SIGN_UP` stays absent; mail configuration never changes `isSignUpAllowed` (tested). |
-| Email verification | **Phase 10B** | separate rollout. Prerequisite there: the existing ADMIN must be verified before `requireEmailVerification` is turned on, or it is locked out. |
+| Production recovery | **disabled** | `AUTH_PASSWORD_RESET_ENABLED` is absent, so no reset hook is configured. The operator command `npm run account:password` remains the recovery path. |
+| Public sign-up | **closed** | `AUTH_ALLOW_SIGN_UP` stays absent. Mail configuration never opens sign-up; open sign-up additionally needs verification mail (tested). |
+| Email verification | **implemented in 10.7; own switch `AUTH_EMAIL_VERIFICATION_ENABLED`** | Separate from the transport so that configuring mail changes nothing for users until each feature is switched on. Before opening sign-up, the existing ADMIN must be confirmed, or required verification locks them out. |
+| Operator commands and mail | **never send mail** | `account:create` overrides every mail variable of the operator shell (`MAIL_OFF_ENV`); `account:password` and `account:verify` build no auth instance at all (tested with a full Resend configuration in the shell). |
 | Reset ≠ verification | **a successful reset will not set `User.emailVerified`** | verification stays one explicit flow with its own semantics (10B), not a side effect of recovery. |
 | Reset link lifetime | **30 minutes**, single use | `PASSWORD_RESET_TOKEN_TTL_SECONDS` in lib/auth/password-policy.ts is the one value. The email wording reads it now; Better Auth's `resetPasswordTokenExpiresIn` will read it in 10.3, so the email can never promise a different lifetime than the server enforces. |
-| Operator reset and the notice | **`npm run account:password` sends no email** | it stays an independent emergency path that works without mail. The operator tells the person directly. Only the self-service reset (10.3) sends the password-changed notice. |
+| Operator reset and the notice | **`npm run account:password` sends no email** | It stays an independent emergency path that works without mail; the operator tells the person directly. It does invalidate the account's outstanding self-service reset links: Better Auth's own `Verification` rows for the user are deleted in the same transaction, so no second token system is involved. Only the self-service reset (10.3) sends the password-changed notice. |
 | Delivery persistence | **deferred to Phase 11** | no `EmailDelivery` table, no migration in Phase 10A. Outcomes are logged as one redacted line (`describeMailResult`); Phase 11's notification architecture will decide durable delivery records. |
 
 ## Architecture (10.1)
@@ -78,9 +79,11 @@ No mail module logs a recipient, a subject, a body or a link. Callers log `descr
 | `resend` | needs `MAIL_ALLOWED_RECIPIENTS` | needs `MAIL_ALLOWED_RECIPIENTS` | allowlist **refused** (a leaked Preview setting) |
 | `capture` or any other value | refused | refused | refused |
 | `MAIL_FROM` | address or `Name <address>`, one line | same | same |
-| recovery available (`passwordReset.enabled`) | flag + any deliverable transport | flag + Resend to the allowlist | flag + Resend + `MAIL_FROM` not on `resend.dev` |
+| recovery available (`passwordReset.enabled`) | `AUTH_PASSWORD_RESET_ENABLED` + any deliverable transport | the flag + Resend to the allowlist | the flag + Resend from an own domain |
+| verification mail (`emailVerification.enabled`) | `AUTH_EMAIL_VERIFICATION_ENABLED` + any deliverable transport | the flag + Resend to the allowlist | the flag + Resend from an own domain |
+| a transport with neither flag | nothing user-facing is sent | same | same |
 
-The development outbox and the capture transport repeat the environment check in their own constructors. That is the boundary, so a hand-built configuration cannot get past it either. `MAIL_DAILY_CAP` (default 100, 1–10 000) is parsed now and enforced from 10.3; an invalid value is a warning and falls back to the default.
+The development outbox and the capture transport repeat the environment check in their own constructors. That is the boundary, so a hand-built configuration cannot get past it either. `MAIL_DAILY_CAP` (default 100, 1–10 000) caps reminder emails per UTC day (Phase 11); recovery is governed by the per-IP auth limit. An invalid value is a warning and falls back to the default.
 
 ## Redaction (fallback only)
 
@@ -211,22 +214,49 @@ The server log held only `[mail] kind=… status=sent` and fixed `[auth]` lines:
 | `mail-domain` | info: **"Not checked here"**: that the domain is verified in Resend; confirm in the dashboard | same | n/a |
 | `mail-secret-separation` | fail if `RESEND_API_KEY` equals the auth or cron secret | fail (preview-critical) | fail |
 | `password-recovery` | pass when enabled or unrequested; **fail** when requested but undeliverable | warn | pass / info |
+| `email-verification` | pass when enabled or unrequested; **fail** when requested but undeliverable | warn | pass / info |
+| `--db`: `db-schema`, `db-table-privileges` | **fail** when an expected table (including `NotificationDelivery`) is missing, or the runtime role lacks SELECT, INSERT, UPDATE or DELETE on any application table, or privileges cannot be read | same | same |
 
 Detail lines name variables and counts, never values or addresses (tested). The check reads variables only. It does not and cannot confirm DNS, Resend domain status or inbox delivery, and it says so.
 
-## Production mail setup and rollback (operator, not performed)
+## Release order and Production mail setup (operator, not performed)
 
-The Production state today: no mail variables, recovery disabled, the operator `account:password` path in use. Enabling mail takes these steps, in order; **none has been performed**:
+**The migration comes before the build.** This build's Prisma client reads `User.reminderEmails` (migration `20261028080000_notification_delivery`). Better Auth's adapter selects every column of `User` for each session lookup. So **deploying this build to a database without the migration breaks sign-in and every signed-in page.** The migration is additive, and older builds keep working on a migrated database. Vercel deploys Production on every push to `main`, and migrations are a manual operator step. Therefore:
+
+- **Preview:** run `npm run db:migrate` against the Preview branch database (label `preview`) **before** the branch's Preview deployment is used.
+- **Production:** run `MATCHBASE_OPERATOR_TARGET=production npm run db:migrate` with the Production owner connection **before merging to `main`**. Then run `npm run production:check -- --env production --db` with the runtime `DATABASE_URL` and expect:
+  - `db-migrations` pass, with all migrations applied;
+  - `db-schema` pass, with `NotificationDelivery` present;
+  - `db-table-privileges` pass.
+
+  A privilege failure means the default privileges did not reach the new table. Re-run the grant loop in prisma/sql/runtime-role.sql as the owner role. The check never grants anything itself.
+
+**Production today:** no mail variables, every mail feature off, the operator `account:password` path in use. Enabling mail takes these steps, in order; **none has been performed**:
 
 1. **Domain.** Own a domain and choose a sending subdomain (for example `mail.<domain>`). Add it in Resend, publish the SPF, DKIM and DMARC records it lists (DMARC `p=none` at first), and wait until Resend shows the domain as *Verified*.
 2. **Key.** Create a Resend API key with *sending access* restricted to that domain, used only for Production.
 3. **Preview first.** Complete the Preview procedure (10.6) with a real inbox.
-4. **Variables** (Vercel → Production): `MAIL_TRANSPORT=resend`, `MAIL_FROM=MatchBase <noreply@mail.<domain>>`, `RESEND_API_KEY` (sensitive). Leave `AUTH_PASSWORD_RESET_ENABLED` unset.
-5. **Check.** Run `npm run production:check` against the pulled Production variables. Expected: no failures, `mail-transport` pass, `password-recovery` pass (disabled), and the `mail-domain` info line.
-6. **Deploy and confirm** nothing changed for users: no "Forgot password?" link, and `/api/auth/request-password-reset` answers 400 `RESET_PASSWORD_DISABLED`.
-7. **Enable.** Set `AUTH_PASSWORD_RESET_ENABLED=true`, redeploy, and run the Production smoke test with the operator account: request, receive, reset, old session signed out, replay refused, unknown address answered the same, logs free of addresses and tokens.
+4. **Variables** (Vercel → Production): `MAIL_TRANSPORT=resend`, `MAIL_FROM=MatchBase <noreply@mail.<domain>>`, `RESEND_API_KEY` (sensitive). Leave `AUTH_PASSWORD_RESET_ENABLED` and `AUTH_EMAIL_VERIFICATION_ENABLED` unset.
+5. **Check.** Run `npm run production:check` against the pulled Production variables. Expected:
+   - no failures;
+   - `mail-transport` pass;
+   - `password-recovery` and `email-verification` pass, both disabled;
+   - the `mail-domain` info line.
+6. **Deploy and confirm nothing changed for users:**
+   - no "Forgot password?" link;
+   - `/api/auth/request-password-reset` answers 400 `RESET_PASSWORD_DISABLED`;
+   - the Watchlist card says email delivery isn't available;
+   - `/api/auth/send-verification-email` answers 400 `VERIFICATION_EMAIL_NOT_ENABLED`.
 
-**Rollback**, at any step: unset `AUTH_PASSWORD_RESET_ENABLED` (recovery off, the link disappears, the endpoint refuses) or `MAIL_TRANSPORT` (all mail off), then redeploy. Outstanding reset links stop working when recovery is off, because no hook consumes them, and they expire within 30 minutes. `account:password` works throughout.
+   With both switches off, a configured transport sends nothing to users.
+7. **Enable recovery.** Set `AUTH_PASSWORD_RESET_ENABLED=true`, redeploy, and run the Production smoke test with the operator account:
+   - request, receive, reset;
+   - the old session is signed out, and a replay is refused;
+   - an unknown address is answered the same;
+   - logs are free of addresses and tokens.
+8. **Enable verification mail** when wanted: `AUTH_EMAIL_VERIFICATION_ENABLED=true`. This turns on confirmation links and the Watchlist "Send confirmation link" action. It also lets confirmed users opt in to reminder emails, which are delivered only once a schedule exists (docs/notifications.md), so enable it together with, or after, the reminder schedule.
+
+**Rollback**, at any step: unset the feature switch (`AUTH_PASSWORD_RESET_ENABLED` or `AUTH_EMAIL_VERIFICATION_ENABLED`) or `MAIL_TRANSPORT` (all mail off), then redeploy. Outstanding reset links stop working when recovery is off, because no hook consumes them, and they expire within 30 minutes. `account:password` works throughout and also invalidates any outstanding reset link of the account.
 
 ## Preview real-mail verification (10.6)
 
@@ -248,7 +278,9 @@ No extra test path was added: the recovery flow itself is the Preview test. A se
 ### Human procedure
 
 1. **Resend:** create an account, or choose the domain for option (b) and wait for *Verified*. Create a sending-only API key for Preview, distinct from any future Production key.
-2. **Preview database:** the Preview deployment uses its own Neon branch (label `preview`). Create a test account there with `npm run account:create -- <your inbox address>`, using the Preview `DATABASE_URL_UNPOOLED` and `MATCHBASE_DATABASE_LABEL=preview`. Sign-up stays closed.
+2. **Preview database:** the Preview deployment uses its own Neon branch (label `preview`). With the Preview `DATABASE_URL_UNPOOLED` and `MATCHBASE_DATABASE_LABEL=preview`:
+   - **first** apply the migrations: `npm run db:migrate`. A Preview build on an unmigrated branch cannot sign anyone in.
+   - then create a test account: `npm run account:create -- <your inbox address>`. This sends no mail, whatever mail variables the shell holds. Sign-up stays closed.
 3. **Vercel → Preview variables**, ideally scoped to one branch:
 
    | Variable | Value |
@@ -258,10 +290,25 @@ No extra test path was added: the recovery flow itself is the Preview test. A se
    | `RESEND_API_KEY` | the Preview key, marked sensitive |
    | `MAIL_ALLOWED_RECIPIENTS` | your inbox address, exactly |
    | `AUTH_PASSWORD_RESET_ENABLED` | `true` |
+   | `AUTH_EMAIL_VERIFICATION_ENABLED` | `true` (for the confirmation and reminder checks) |
+   | `CRON_SECRET` | **temporary**, only for the reminder check: a fresh random value (`openssl rand -base64 32`) used nowhere else, marked sensitive. The environment matrix forbids it on Preview otherwise; remove it afterwards. Provider sync stays refused on Preview regardless (`ALLOW_PREVIEW_PROVIDER_SYNC` unset). |
 
-4. **Check:** `npm run production:check` with the Preview variables. Expected: no preview-critical failure, `mail-transport` reading "Resend, sending only to 1 allowlisted address", and `password-recovery` pass.
-5. **Deploy the branch** and open its URL. Deployment Protection may ask you to sign in to Vercel.
-6. **Run the checklist:**
+4. **Check:** `npm run production:check` with the Preview variables. Expected:
+   - no preview-critical failure;
+   - `mail-transport` reading "Resend, sending only to 1 allowlisted address";
+   - `password-recovery` and `email-verification` pass;
+   - a `cron-secret` warn, expected while the temporary secret is set.
+5. **Deploy the branch** and open its URL. Deployment Protection may ask you to sign in to Vercel in the browser.
+6. **Calling the cron route from a terminal** (reminder check). A protected Preview rejects requests without a Vercel session, so create a *Protection Bypass for Automation* secret (Project → Settings → Deployment Protection) and send it as a header. Read both values from your shell, never paste them into files or chat:
+
+   ```sh
+   curl -sS "https://<preview-deployment-host>/api/cron/notifications" \
+     -H "Authorization: Bearer $PREVIEW_CRON_SECRET" \
+     -H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET"
+   ```
+
+   Expect `{"ok":true,"planned":…,"sent":…}`. A 401 means a wrong or missing cron secret. An HTML login page means the bypass header is missing or wrong.
+7. **Run the checklist:**
    - [ ] Sign-in shows "Forgot password?".
    - [ ] Request a reset for the allowlisted address. The page shows the generic confirmation, and the email arrives. Check the sender, subject, button, plain-text URL, and the 30-minute wording.
    - [ ] Message headers show SPF and DKIM pass (option b) and no tracking pixels or remote images.
@@ -272,7 +319,7 @@ No extra test path was added: the recovery flow itself is the Preview test. A se
    - [ ] Request again, wait 31 minutes, open the link: "can't be used" (expiry).
    - [ ] Request a reset for a non-allowlisted address that has an account, and for an unknown address. Both show the same confirmation, and no email is sent. The log reads `status=suppressed` for the first.
    - [ ] Search the Vercel runtime logs for your address and for `token`. Nothing beyond `[mail] … status=sent|suppressed` lines.
-7. **Record** the date, deployment and results here, then **remove** `AUTH_PASSWORD_RESET_ENABLED` and `RESEND_API_KEY` from Preview, or keep them branch-scoped.
+8. **Record** the date, deployment and results here. Then **remove** the temporary `CRON_SECRET` and the bypass secret, and remove `AUTH_PASSWORD_RESET_ENABLED`, `AUTH_EMAIL_VERIFICATION_ENABLED` and `RESEND_API_KEY` from Preview or keep them branch-scoped.
 
 ## Email verification and sign-up policy (10.7)
 
@@ -289,12 +336,12 @@ No extra test path was added: the recovery flow itself is the Preview test. A se
 
 **Account policy** (`accountPolicy`, used by the auth server, the sign-in and sign-up pages, and the readiness check):
 
-| Sign-up requested (`AUTH_ALLOW_SIGN_UP` / dev default) | Mail deliverable | Result |
+| Sign-up requested (`AUTH_ALLOW_SIGN_UP` / dev default) | Verification mail (`AUTH_EMAIL_VERIFICATION_ENABLED` + a deliverable transport) | Result |
 |---|---|---|
-| no (**Production today**) | no / yes | sign-up closed; verification **not required**, so the operator ADMIN (`emailVerified=false`) is never locked out; with mail, a signed-in person can request a link |
-| yes | yes | sign-up open; **verification required**: no session at sign-up, sign-in answers `EMAIL_NOT_VERIFIED` and mails a new link after a correct password only |
-| yes | no, outside development | sign-up **refused** (the endpoint answers disabled; readiness fails in Production) |
-| yes | no, development | open and unverified, as before (the local form stays usable without mail) |
+| no (**Production today**) | off / on | sign-up closed; verification **not required**, so the operator ADMIN (`emailVerified=false`) is never locked out; with verification mail on, a signed-in person can request a link |
+| yes | on | sign-up open; **verification required**: no session at sign-up, sign-in answers `EMAIL_NOT_VERIFIED` and mails a new link after a correct password only |
+| yes | off (with or without a transport), outside development | sign-up **refused** (the endpoint answers disabled; readiness fails in Production) |
+| yes | off, development | open and unverified, as before (the local form stays usable without mail) |
 
 **How unconfirmed users are restricted.**
 
@@ -332,8 +379,22 @@ Sign-up is a separate release from recovery. **Nothing in the code opens it.**
 3. **Confirm the operator accounts first.** Sign in as the ADMIN and request confirmation (once the Phase 11 settings page offers it), or run `MATCHBASE_OPERATOR_TARGET=production npm run account:verify -- confirm <admin email>` with the Production direct connection. Check with `account:verify -- status`. Without this, turning on required verification blocks the ADMIN's sign-in until they open an emailed link.
 4. Decide the abuse posture (see "Residual risks"): the current controls are 5 sign-ups per IP per hour and required verification. A CAPTCHA (Better Auth's `captcha` plugin) would need CSP changes and a third-party script, so it is not added by default.
 5. Publish a privacy notice for stored accounts, which public sign-up makes necessary.
-6. Set `AUTH_ALLOW_SIGN_UP=true` for Production and redeploy. `production:check` should then report `sign-up` as a **warn** ("OPEN … required email verification"), never a fail.
+6. With `AUTH_EMAIL_VERIFICATION_ENABLED=true` already live (step 8 of the mail runbook), set `AUTH_ALLOW_SIGN_UP=true` for Production and redeploy. `production:check` then reports `sign-up` as a **warn** ("OPEN … required email verification"). It reports a **fail**, and sign-up stays refused, if verification mail is off.
 7. Smoke-test: sign up with a fresh inbox, confirm, sign in. **Rollback:** unset the variable and redeploy.
+
+## Pre-release remediation (2026-10-28)
+
+Findings of the read-only pre-release audit, fixed in code and tests:
+
+| Finding | Fix | Test |
+|---|---|---|
+| `account:create` passed the operator shell's mail variables to its auth instance (a verification hook ran and stopped only because the shell had no base URL) | `MAIL_OFF_ENV` overrides every mail variable for that instance | tests/db/account-create.test.ts: full Resend configuration plus an allowlist for the new address in the shell, with a preloaded `fetch` recorder. No request is attempted and no mail hook runs. The test failed before the fix. |
+| A configured transport switched verification mail and the Watchlist offer on by itself | `AUTH_EMAIL_VERIFICATION_ENABLED`; open sign-up now also needs it | tests/auth/account-policy.test.ts, tests/env/production-readiness.test.ts, tests/db/email-verification.test.ts ("a transport without the verification switch …") |
+| `account:password` left outstanding reset links usable | deletes the user's reset rows in its transaction | tests/db/account-password.test.ts: an issued link answers `INVALID_TOKEN` after the operator reset. The test failed before the fix. |
+| `production:check --db` did not know `NotificationDelivery` or check runtime privileges | lib/env/db-readiness.ts: read-only `has_table_privilege` per privilege, per table | tests/env/db-readiness.test.ts |
+| The release order allowed deploying before migrating | "Release order" above | — |
+
+Resend 409 handling and the notification run budget are recorded in docs/notifications.md.
 
 ## Development use
 

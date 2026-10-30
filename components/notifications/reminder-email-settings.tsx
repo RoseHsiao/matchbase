@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { authClient, describeAuthError } from "@/lib/auth/client"
 import { setReminderEmailsEnabled } from "@/lib/notifications/actions"
+import { reminderSettingsState } from "@/lib/notifications/reminder-settings-view"
 
 type ReminderEmailSettingsProps = {
   /** This deployment has a mail transport. */
@@ -44,10 +45,27 @@ export function ReminderEmailSettings({ available, email, confirmed, enabled }: 
     setMessage(result.error ? { tone: "error", text: describeAuthError(result.error) } : { tone: "info", text: "Confirmation link sent. Open it from your inbox, then come back here." })
   }
 
+  const state = reminderSettingsState({ available, confirmed, enabled: on })
+  const switchButton = (
+    <Button type="button" variant={on ? "outline" : "default"} size="sm" role="switch" aria-checked={on} aria-describedby="reminder-email-status" disabled={pending} onClick={toggle}>
+      {pending ? "Saving…" : on ? "Turn off email reminders" : "Email me my reminders"}
+    </Button>
+  )
+
   let body: React.ReactNode
-  if (!available) {
+  if (state === "off-unavailable") {
     body = <p className="text-sm text-muted-foreground">Email delivery isn&apos;t available on this deployment. Your reminders still appear in the app under the bell.</p>
-  } else if (!confirmed) {
+  } else if (state === "on-not-delivering") {
+    // Opted in, but nothing is emailed right now: say so, and keep the way out.
+    body = (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground" id="reminder-email-status">
+          {available ? `Email reminders are on, but ${email} isn't confirmed, so none are sent.` : "Email reminders are on, but email delivery isn't available on this deployment right now, so none are sent."} Your reminders still appear in the app.
+        </p>
+        {switchButton}
+      </div>
+    )
+  } else if (state === "unconfirmed") {
     body = (
       <div className="grid gap-3">
         <p className="text-sm text-muted-foreground">Confirm {email} to receive reminders by email.</p>
@@ -60,11 +78,9 @@ export function ReminderEmailSettings({ available, email, confirmed, enabled }: 
     body = (
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground" id="reminder-email-status">
-          {on ? `Reminders are emailed to ${email} at the time you chose for each match.` : `Reminders are shown in the app only.`}
+          {state === "on" ? `Reminders are emailed to ${email} at the time you chose for each match.` : `Reminders are shown in the app only.`}
         </p>
-        <Button type="button" variant={on ? "outline" : "default"} size="sm" role="switch" aria-checked={on} aria-describedby="reminder-email-status" disabled={pending} onClick={toggle}>
-          {pending ? "Saving…" : on ? "Turn off email reminders" : "Email me my reminders"}
-        </Button>
+        {switchButton}
       </div>
     )
   }

@@ -25,7 +25,7 @@ The Phase 9.0 findings and the Phase 9.1 carry-overs, classified against MatchBa
 | Rate limiting on user and admin mutations | C | authentication plus idempotency is the defence; documented |
 | Pagination everywhere | C | deferred; bounds documented |
 | Prisma CLI transitive advisories | C | reachability documented |
-| Email verification and reset flows | C until mail exists | deferred with the sign-up policy |
+| Email verification and reset flows | implemented, switched off (Phase 10) | each behind its own switch; see [account-recovery.md](account-recovery.md) |
 
 ## Documentation verified before implementing
 
@@ -34,6 +34,8 @@ Read on 2026-09-18: Better Auth email/password (including `disableSignUp`, `send
 Facts that shaped decisions: Better Auth's database rate-limit storage expires rows itself, so no cleanup job is needed; Vercel already sends HSTS; nonces require dynamic rendering, which every MatchBase page already has; Vercel cron only ever invokes Production; Prisma's own guidance is to run `migrate deploy` from automation with the direct connection, not `migrate dev` or `db push`.
 
 ## Launch sign-up policy: CLOSED
+
+**Update (Phase 10, 2026-10-28):** the mail-dependent parts now exist and are off by default. The sign-up decision is `accountPolicy` (lib/auth/email-verification.ts): it opens sign-up only when `AUTH_ALLOW_SIGN_UP=true` **and** verification mail is on (`AUTH_EMAIL_VERIFICATION_ENABLED` plus a deliverable transport), and then it requires verification. Without verification mail, sign-up stays refused outside development and the readiness check fails. The paragraph below is the 9.2 record.
 
 Mode A. There is no mail transport, so Mode B (verification, reset, non-enumerating responses, sender domain) cannot be built honestly. `isSignUpAllowed` (lib/auth/auth-env.ts) returns false outside local development unless `AUTH_ALLOW_SIGN_UP=true` is set explicitly; the value feeds Better Auth's `emailAndPassword.disableSignUp`, so `/api/auth/sign-up/email` answers 400 `EMAIL_PASSWORD_SIGN_UP_DISABLED` regardless of what the page shows. The sign-up page renders "Account creation is not open" and the sign-in page says the same in its footer. Development keeps sign-up open so the form stays exercised; dev quick sign-in and the operator ADMIN grant are unaffected; the readiness check reports open sign-up in Production as a warning that names the recovery gap.
 
@@ -47,7 +49,9 @@ A migrated but empty database needs only the rows the code registries define: `n
 
 ## Password recovery
 
-No "Forgot password" link exists and none is faked. For the controlled first deployment, recovery is an operator procedure: `npm run account:password -- <email>` reads the new password from `MATCHBASE_NEW_PASSWORD` or a hidden prompt, hashes it with Better Auth's own `hashPassword` (scrypt, `better-auth/crypto`), verifies the hash with `verifyPassword`, writes it to the credential row, and revokes every session of the account. It prints a status line only. Against a production-labelled database it needs `MATCHBASE_OPERATOR_TARGET=production`. Tested end to end in `tests/db/account-password.test.ts`. When mail delivery exists, the built-in reset flow replaces this. Phase 10 status and the mail foundation (10.1, no runtime sending yet): [account-recovery.md](account-recovery.md).
+**Update (Phase 10):** self-service recovery exists behind `AUTH_PASSWORD_RESET_ENABLED` and is off in Production; the "Forgot password?" link appears only when it is on. The operator procedure below **stays** as an independent path that needs no mail. It now also invalidates the account's outstanding reset links. The 9.2 record follows.
+
+No "Forgot password" link exists and none is faked. For the controlled first deployment, recovery is an operator procedure: `npm run account:password -- <email>` reads the new password from `MATCHBASE_NEW_PASSWORD` or a hidden prompt, hashes it with Better Auth's own `hashPassword` (scrypt, `better-auth/crypto`), verifies the hash with `verifyPassword`, writes it to the credential row, and revokes every session of the account. It prints a status line only. Against a production-labelled database it needs `MATCHBASE_OPERATOR_TARGET=production`. Tested end to end in `tests/db/account-password.test.ts`. When mail delivery is enabled, the self-service flow sits **beside** this command; it does not replace it. Phase 10: [account-recovery.md](account-recovery.md).
 
 ## Rate limiting
 
@@ -57,7 +61,8 @@ Threat model after 9.1:
 |---|---|---|---|
 | `/api/auth/sign-in/email` | credential stuffing, brute force | scrypt, generic errors | 10 per IP per minute |
 | `/api/auth/sign-up/email` | account flooding (when open) | closed at launch | 5 per IP per hour |
-| `/api/auth/request-password-reset` | enumeration, mail flooding (future) | not wired | 5 per IP per hour |
+| `/api/auth/request-password-reset` | enumeration, mail flooding | identical answers, hashed single-use 30-min tokens; off unless `AUTH_PASSWORD_RESET_ENABLED` | 5 per IP per hour |
+| `/api/auth/send-verification-email`, `/api/auth/verify-email` (POST bridge) | enumeration, mail flooding, token guessing | identical answers, signed 1-hour tokens; off unless `AUTH_EMAIL_VERIFICATION_ENABLED` | 5 per IP per hour; 10 per IP per 10 min |
 | `/api/auth/change-password` | online guessing with a stolen session | session required | 5 per IP per 10 min |
 | other auth endpoints | scraping, session churn | session required | 60 per IP per minute |
 | follow, watchlist, reminder actions | write spam | `requireUser`, composite keys make writes idempotent, one row per (user, target) | none |
@@ -171,7 +176,7 @@ Watchlist page and dashboard preview now read only the viewer's saved matches (`
 
 ## Remaining risks (intentionally deferred)
 
-- Email verification and self-service password reset until a mail transport exists.
+- Email verification and self-service password reset are implemented but stay off until a verified sending domain exists (Phase 10, [account-recovery.md](account-recovery.md)).
 - The least-privilege runtime role must be created by the operator (template provided); until then runtime and migrations share the owner credential.
 - `style-src 'unsafe-inline'` in the CSP.
 - No pagination beyond the caps above.

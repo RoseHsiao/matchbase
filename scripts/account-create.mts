@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto"
 import { PrismaPg } from "@prisma/adapter-pg"
 
 import { createAuth } from "../lib/auth/create-auth"
+import { MAIL_OFF_ENV } from "../lib/mail/mail-env"
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "../lib/auth/password-policy"
 import { operatorPolicy } from "../lib/env/runtime-environment"
 import { PrismaClient } from "../lib/generated/prisma/client"
@@ -71,8 +72,9 @@ try {
   const secret = process.env.BETTER_AUTH_SECRET && process.env.BETTER_AUTH_SECRET.length >= 32 ? process.env.BETTER_AUTH_SECRET : randomBytes(32).toString("base64")
   const auth = createAuth({
     prisma,
-    // Operator context: the process environment for redaction, sign-up allowed for this call only, never a deployment base URL.
-    env: { ...process.env, BETTER_AUTH_SECRET: secret, AUTH_ALLOW_SIGN_UP: "true", NODE_ENV: "development", VERCEL_ENV: undefined, BETTER_AUTH_URL: undefined },
+    // Operator context: the process environment for redaction, sign-up allowed for this call only, never a deployment
+    // base URL, and every mail feature off whatever the shell carries: creating an account never sends email.
+    env: { ...process.env, ...MAIL_OFF_ENV, BETTER_AUTH_SECRET: secret, AUTH_ALLOW_SIGN_UP: "true", NODE_ENV: "development", VERCEL_ENV: undefined, BETTER_AUTH_URL: undefined },
   })
   const result = await auth.api.signUpEmail({ body: { name, email, password } })
   const revoked = await prisma.session.deleteMany({ where: { userId: result.user.id } })

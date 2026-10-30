@@ -6,6 +6,7 @@ import { PrismaPg } from "@prisma/adapter-pg"
 
 import { applySystemBootstrap } from "../../lib/data/repositories/system-bootstrap-ops"
 import { PrismaClient } from "../../lib/generated/prisma/client"
+import { lockSharedCatalogue } from "./shared-catalogue-lock"
 
 /**
  * The system bootstrap against the real database, inside a rolled-back
@@ -33,6 +34,7 @@ describeDb("system bootstrap (database)", () => {
     await prisma
       .$transaction(
         async (tx) => {
+          await lockSharedCatalogue(tx)
           await work(tx as never)
           throw new Rollback()
         },

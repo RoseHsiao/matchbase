@@ -8,7 +8,9 @@ import { invalidMessageReason, invalidMessageResult, type Mailer, type MailFailu
  * What never leaves this module: the API key (only in the Authorization
  * header), the request payload, and the provider's response text. A failed
  * response body is discarded unread, so a provider error that echoes the
- * recipient or the content cannot reach application code or logs. This
+ * recipient or the content cannot reach application code or logs. The one
+ * exception is a 409, whose `name` identifier (and nothing else) decides
+ * whether an idempotent request is still in progress or already processed. This
  * module logs nothing; the caller logs `describeMailResult`.
  *
  * No retries here: whether a failed send is retried is the caller's
@@ -17,6 +19,7 @@ import { invalidMessageReason, invalidMessageResult, type Mailer, type MailFailu
 
 export const RESEND_ENDPOINT = "https://api.resend.com/emails"
 export const DEFAULT_RESEND_TIMEOUT_MS = 10_000
+export const RESEND_USER_AGENT = "MatchBase/1.0 (transactional mail)"
 
 export type ResendTransportOptions = {
   apiKey: string
@@ -49,9 +52,33 @@ export function buildResendRequest(message: MailMessage, options: Pick<ResendTra
     // Resend tag values allow letters, digits, underscores and dashes; the kind slug is already that.
     tags: [{ name: "kind", value: message.kind }],
   }
-  const headers: Record<string, string> = { authorization: `Bearer ${options.apiKey}`, "content-type": "application/json" }
+  // An explicit User-Agent: Resend documents 403 (code 1010) for requests without one.
+  const headers: Record<string, string> = { authorization: `Bearer ${options.apiKey}`, "content-type": "application/json", "user-agent": RESEND_USER_AGENT }
   if (message.idempotencyKey) headers["idempotency-key"] = message.idempotencyKey
   return { url: RESEND_ENDPOINT, init: { method: "POST", headers, body: JSON.stringify(body) }, body }
+}
+
+/** Resend's error identifiers for 409 (the `name` field of its error body), and what each means for a retry. */
+const CONFLICTS: Record<string, { category: MailFailureCategory; retryable: boolean }> = {
+  concurrent_idempotent_requests: { category: "in-progress", retryable: true },
+  resource_locked: { category: "in-progress", retryable: true },
+  invalid_idempotent_request: { category: "idempotency-conflict", retryable: false },
+}
+
+/**
+ * The 409 identifier, read from a body of at most a few kilobytes. Only a known identifier
+ * is kept; the message and anything else in the body are dropped. An unknown or unreadable
+ * 409 is treated as in progress, because a 409 always means the provider holds a request.
+ */
+export async function categorizeResendConflict(response: Response): Promise<{ category: MailFailureCategory; retryable: boolean }> {
+  try {
+    const text = (await response.text()).slice(0, 4096)
+    const name = (JSON.parse(text) as { name?: unknown } | null)?.name
+    if (typeof name === "string" && Object.hasOwn(CONFLICTS, name)) return CONFLICTS[name]
+  } catch {
+    // fall through
+  }
+  return CONFLICTS.concurrent_idempotent_requests
 }
 
 export function categorizeResendStatus(status: number): { category: MailFailureCategory; retryable: boolean } {
@@ -99,6 +126,7 @@ export function createResendMailer(options: ResendTransportOptions): Mailer {
         return { status: "failed", transport: "resend", category: "network", retryable: true }
       }
       if (response.ok) return { status: "sent", transport: "resend", providerMessageId: await readMessageId(response) }
+      if (response.status === 409) return { status: "failed", transport: "resend", ...(await categorizeResendConflict(response)), httpStatus: 409 }
       await discard(response)
       return { status: "failed", transport: "resend", ...categorizeResendStatus(response.status), httpStatus: response.status }
     },

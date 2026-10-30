@@ -41,6 +41,18 @@ export type MailFailureCategory =
   | "provider-4xx"
   /** The provider failed (5xx). */
   | "provider-5xx"
+  /**
+   * The provider is still processing an earlier request with the same idempotency key, or the
+   * resource is locked (Resend 409 concurrent_idempotent_requests / resource_locked). That earlier
+   * request may succeed: retry later with the same key, which then returns its outcome.
+   */
+  | "in-progress"
+  /**
+   * The provider already processed a request with this idempotency key but a different payload
+   * (Resend 409 invalid_idempotent_request). The earlier request may have been delivered, so this
+   * is not a delivery failure and must not be resent under a new key.
+   */
+  | "idempotency-conflict"
   /** The transport failed on our side without reaching a provider (the dev outbox could not write its file). */
   | "transport-error"
   /** Refused before any transport saw it: malformed address, header characters, oversized content. */

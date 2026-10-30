@@ -21,7 +21,6 @@ export async function GET(request: Request): Promise<Response> {
   const mail = readMailEnv(process.env)
   return handleCronNotifications(request, {
     env: process.env,
-    mailDeliverable: mail.transport.kind !== "disabled",
     run: (now) => runReminderDelivery({ prisma: db, mailer: createMailer(mail, { env: process.env }), baseURL: resolveAuthBaseUrl(process.env), dailyCap: mail.dailyCap, now }),
   })
 }

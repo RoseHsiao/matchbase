@@ -74,17 +74,20 @@ describe("evaluateProductionReadiness", () => {
   })
 
   it("warns, rather than fails, on open sign-up with verification mail, identical database roles and report-only CSP", () => {
-    const mail = { MAIL_TRANSPORT: "resend", MAIL_FROM: "noreply@mail.matchbase.example", RESEND_API_KEY: "re_TestKey_0123456789abcdef" }
+    const mail = { MAIL_TRANSPORT: "resend", MAIL_FROM: "noreply@mail.matchbase.example", RESEND_API_KEY: "re_TestKey_0123456789abcdef", AUTH_EMAIL_VERIFICATION_ENABLED: "true" }
     const report = evaluateProductionReadiness({ ...production, ...mail, AUTH_ALLOW_SIGN_UP: "true", DATABASE_URL_UNPOOLED: DB, CSP_MODE: "report-only" })
     assert.deepEqual(ids(report.failures), [])
     assert.deepEqual(ids(report.warnings), ["csp", "database-roles", "sign-up"])
     assert.match(report.warnings.find((c) => c.id === "sign-up")?.detail ?? "", /OPEN.*required email verification.*release procedure/)
   })
 
-  it("Phase 10.7: open sign-up without deliverable mail is refused and fails Production", () => {
-    const report = evaluateProductionReadiness({ ...production, AUTH_ALLOW_SIGN_UP: "true" })
-    assert.ok(ids(report.failures).includes("sign-up"))
-    assert.match(report.failures.find((c) => c.id === "sign-up")?.detail ?? "", /no mail transport can deliver verification email; sign-up stays closed/)
+  it("Phase 10.7: open sign-up without verification mail is refused and fails Production, with or without a transport", () => {
+    const resend = { MAIL_TRANSPORT: "resend", MAIL_FROM: "noreply@mail.matchbase.example", RESEND_API_KEY: "re_TestKey_0123456789abcdef" }
+    for (const extra of [{}, resend]) {
+      const report = evaluateProductionReadiness({ ...production, ...extra, AUTH_ALLOW_SIGN_UP: "true" })
+      assert.ok(ids(report.failures).includes("sign-up"), JSON.stringify(extra))
+      assert.match(report.failures.find((c) => c.id === "sign-up")?.detail ?? "", /verification mail is not available.*sign-up stays closed/)
+    }
   })
 
   it("Preview blocks only what could reach Production", () => {
@@ -164,6 +167,16 @@ describe("mail and password-recovery readiness", () => {
     assert.ok(blockingChecks(shared).some((c) => c.id === "mail-secret-separation"))
     const outbox = evaluateProductionReadiness({ ...preview, MAIL_TRANSPORT: "dev-outbox", MAIL_FROM: "dev@example.com" })
     assert.equal(outbox.checks.find((c) => c.id === "mail:MAIL_TRANSPORT")?.status, "warn")
+  })
+
+  it("verification mail is its own reported switch: off passes, on with Resend passes, requested without a transport fails", () => {
+    assert.equal(status(production, "email-verification"), "pass")
+    assert.match(evaluateProductionReadiness({ ...production, ...resend }).checks.find((c) => c.id === "email-verification")?.detail ?? "", /disabled.*public sign-up cannot open/)
+    assert.equal(status({ ...production, ...resend, AUTH_EMAIL_VERIFICATION_ENABLED: "true" }, "email-verification"), "pass")
+    const broken = { ...production, AUTH_EMAIL_VERIFICATION_ENABLED: "true" }
+    assert.equal(status(broken, "email-verification"), "fail")
+    assert.ok(blockingChecks(evaluateProductionReadiness(broken)).some((c) => c.id === "email-verification"))
+    assert.equal(evaluateProductionReadiness(broken).checks.filter((c) => c.id === "mail:AUTH_EMAIL_VERIFICATION_ENABLED").length, 0, "reported once")
   })
 
   it("development: the outbox is information, never a failure", () => {

@@ -11,6 +11,7 @@ import { runSync } from "../../lib/data/sync/sync-core"
 import type { Provider } from "../../lib/data/sync/types"
 import { HttpError } from "../../lib/data/sync/utils/http"
 import { PrismaClient } from "../../lib/generated/prisma/client"
+import { lockSharedCatalogue } from "./shared-catalogue-lock"
 import { broken, configured, doublesLive, fakeApi, NOW, singlesClosed } from "../sync/fixtures/sportradar-tennis"
 
 /**
@@ -47,6 +48,7 @@ describeDb("sync pipeline (database, fixtures, no credentials)", () => {
     await prisma
       .$transaction(
         async (tx) => {
+          await lockSharedCatalogue(tx)
           await body(tx)
           throw new Rollback()
         },

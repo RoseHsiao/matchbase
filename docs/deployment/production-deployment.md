@@ -105,6 +105,15 @@ MATCHBASE_OPERATOR_TARGET=production npm run db:migrate
 - This runs `prisma migrate deploy` only. Never `migrate dev`, `db push` or a reset against Production.
 - Check: `npm run production:check -- --env production --db` now shows "all N migrations applied".
 - If a migration fails: read the error, fix forward (a new migration) or mark it resolved with `npx prisma migrate resolve`, re-run; do not reset.
+
+**Later releases that carry a migration (added 2026-10-28, Phase 11).** Vercel deploys Production on every push to `main`, and migrations are this manual step. For any build that contains a new migration:
+
+1. migrate the Preview branch database first, before using the branch's Preview deployment;
+2. migrate Production with the command above **before merging to `main`**;
+3. confirm with `npm run production:check -- --env production --db` that `db-migrations`, `db-schema` and `db-table-privileges` pass;
+4. only then merge.
+
+Migrations are written to be additive, so the build already running keeps working on the migrated database. The reverse is not true: the new Prisma client reads columns the old database lacks. For `20261028080000_notification_delivery`, that breaks every session lookup.
 - Then perform step 2's SQL (runtime role) if not done, and re-run the `--db` check as the runtime role.
 
 ## 11b. System bootstrap (no demo data)

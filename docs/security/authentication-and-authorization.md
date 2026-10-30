@@ -27,7 +27,7 @@ Current Better Auth documentation (installation, database concepts, session mana
 
 **Better Auth 1.7.5** with the Prisma adapter, as the audit recommended: identity lives in MatchBase's own PostgreSQL, the session is readable from Server Components and Server Actions, no middleware is required, and the role is a column MatchBase owns. No second provider was introduced.
 
-**Email and password** is the first method. Reasons: it needs no third-party credentials or mail transport, which this deployment does not have; Better Auth hashes with scrypt and applies stricter built-in limits to the sign-in endpoint; and OAuth or magic links can be added later as configuration without touching the authorization boundary, because nothing outside `lib/auth` knows how a session was created. Email verification is off (`requireEmailVerification: false`) because there is no mail transport; turning it on is one option plus a `sendVerificationEmail` function.
+**Email and password** is the first method. Reasons: it needs no third-party credentials or mail transport, which this deployment does not have; Better Auth hashes with scrypt and applies stricter built-in limits to the sign-in endpoint; and OAuth or magic links can be added later as configuration without touching the authorization boundary, because nothing outside `lib/auth` knows how a session was created. Email verification is off (`requireEmailVerification: false`) because there is no mail transport; turning it on is one option plus a `sendVerificationEmail` function. **Update (Phase 10.7):** verification is implemented. `requireEmailVerification` follows `accountPolicy`: it is required exactly when public sign-up is open, which in turn needs `AUTH_EMAIL_VERIFICATION_ENABLED` and a deliverable transport ([account-recovery.md](account-recovery.md)).
 
 Password policy: 10 to 128 characters (`lib/auth/password-policy.ts`, shared by the server configuration and the sign-up form). **Since Phase 9.2 sign-up is closed by default outside local development** (launch policy in [production-hardening.md](production-hardening.md)); `AUTH_ALLOW_SIGN_UP=true` opens it, `false` closes it anywhere. Better Auth's `disableSignUp` enforces the choice server-side. Password recovery is an operator command (`npm run account:password`) until a mail transport exists.
 
@@ -149,7 +149,7 @@ Better Auth's logger is routed through `redactSensitiveText` (the same scrubber 
 
 ## Limitations
 
-- Email verification, password reset and account deletion flows are not exposed (no mail transport). Better Auth's endpoints for them exist but are not wired into the UI.
+- Email verification and password reset are implemented (Phase 10) and switched off in Production by `AUTH_EMAIL_VERIFICATION_ENABLED` and `AUTH_PASSWORD_RESET_ENABLED`; account deletion is still not exposed.
 - `nextCookies` is now part of the application instance (not the tests'), which also makes Better Auth skip its session refresh during Server Component renders where no cookie can be written.
 - Rate limiting: since 9.2 the auth endpoints use database storage shared by every instance (`RateLimit` table).
 - Security headers and an enforced nonce CSP exist since 9.2.

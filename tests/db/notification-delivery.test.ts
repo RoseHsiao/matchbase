@@ -9,7 +9,12 @@ import type { MailMessage, MailResult } from "../../lib/mail/mailer"
 import { createCaptureMailer } from "../../lib/mail/transports/capture"
 import { planReminders, runReminderDelivery } from "../../lib/notifications/delivery"
 import { MAX_ATTEMPTS } from "../../lib/notifications/policy"
-import { readReminderEmailSettings, setReminderEmails } from "../../lib/notifications/preferences-ops"
+
+/** A fresh, otherwise unused instant for cases that arrange several reminders around one moment. */
+let windowNo = 0
+const freshWindow = () => new Date(BASE_TIME + 200 * 86_400_000 + ++windowNo * 3 * 86_400_000)
+import { handleCronNotifications } from "../../lib/api/cron-notifications"
+import { readReminderEmailSettings, reminderEmailsAvailable, setReminderEmails } from "../../lib/notifications/preferences-ops"
 
 /**
  * The reminder pipeline against the development database. Concurrency needs
@@ -47,7 +52,11 @@ describeDb("reminder delivery pipeline (database)", () => {
   let caseNo = 0
 
   before(async () => {
-    const season = await prisma.season.findFirstOrThrow({ orderBy: { id: "asc" }, select: { id: true, leagueId: true } })
+    // A league no sync test touches (they sync basketball, tennis and the EPL), so the committed rows this suite
+    // creates for the length of its run never overlap a parallel sync test's data. Falls back to any season.
+    const season =
+      (await prisma.season.findFirst({ where: { leagueId: "lec" }, select: { id: true, leagueId: true } })) ??
+      (await prisma.season.findFirstOrThrow({ orderBy: { id: "asc" }, select: { id: true, leagueId: true } }))
     ;[leagueId, seasonId] = [season.leagueId, season.id]
     teams = (await prisma.team.findMany({ where: { leagueId }, orderBy: { id: "asc" }, take: 2, select: { id: true } })).map((t) => t.id)
     if (teams.length < 2) teams = (await prisma.team.findMany({ orderBy: { id: "asc" }, take: 2, select: { id: true } })).map((t) => t.id)
@@ -67,9 +76,9 @@ describeDb("reminder delivery pipeline (database)", () => {
   })
 
   /** A fresh opted-in, confirmed user with one saved match starting `startOffsetMs` after a case-specific base. */
-  async function scenario(options: { reminder?: "AT_START" | "MIN_15" | "HOUR_1"; confirmed?: boolean; optedIn?: boolean; status?: "UPCOMING" | "LIVE" } = {}) {
+  async function scenario(options: { reminder?: "AT_START" | "MIN_15" | "HOUR_1"; confirmed?: boolean; optedIn?: boolean; status?: "UPCOMING" | "LIVE"; startsAt?: Date } = {}) {
     const n = ++caseNo
-    const startsAt = new Date(BASE_TIME + n * 3 * 86_400_000)
+    const startsAt = options.startsAt ?? new Date(BASE_TIME + n * 3 * 86_400_000)
     const user = await prisma.user.create({ data: { email: `notify-${n}-${stamp}@example.test`, name: `Fan ${n}`, emailVerified: options.confirmed ?? true, reminderEmails: options.optedIn ?? true }, select: { id: true, email: true } })
     const match = await prisma.match.create({
       data: { leagueId, seasonId, startsAt, status: options.status ?? "UPCOMING", stage: `notify-${stamp}-${n}`, participants: { create: [{ side: "A", order: 1, teamId: teams[0] }, { side: "B", order: 1, teamId: teams[1] }] } },
@@ -223,7 +232,8 @@ describeDb("reminder delivery pipeline (database)", () => {
     await prisma.match.update({ where: { id: b.matchId }, data: { startsAt: a.startsAt } })
     const cap = await prisma.notificationDelivery.count({ where: { status: "SENT", sentAt: { gte: new Date(Date.UTC(a.dueAt.getUTCFullYear(), a.dueAt.getUTCMonth(), a.dueAt.getUTCDate())) } } })
     const summary = await runReminderDelivery(deps(a.dueAt, { dailyCap: cap + 1 }))
-    assert.equal(summary.sent, 1)
+    const sentTo = capture.messages.map((m) => (m.to === a.user.email ? "a" : m.to === b.user.email ? "b" : "other"))
+    assert.equal(summary.sent, 1, JSON.stringify({ cap, summary, sentTo }))
     const next = await runReminderDelivery(deps(new Date(a.dueAt.getTime() + MIN), { dailyCap: cap + 1 }))
     assert.equal(next.capReached, true)
     assert.equal(next.claimed, 0)
@@ -249,6 +259,200 @@ describeDb("reminder delivery pipeline (database)", () => {
     assert.deepEqual(await setReminderEmails(prisma, s.user.id, true, false), { ok: false, error: "Email reminders aren't available on this deployment." })
     assert.deepEqual(await setReminderEmails(prisma, s.user.id, "yes", true), { ok: false, error: "Invalid setting." })
     assert.deepEqual(await setReminderEmails(prisma, s.user.id, false, false), { ok: true, enabled: false })
+  })
+
+  it("claims only what the time budget can finish; the rest stays PENDING, unclaimed, for the next run", async () => {
+    const start = freshWindow()
+    const rows = [await scenario({ startsAt: start }), await scenario({ startsAt: start }), await scenario({ startsAt: start })]
+    const dueAt = rows[0].dueAt
+    let elapsed = 0
+    const slow = { transport: capture.transport, send: async (m: MailMessage): Promise<MailResult> => ((elapsed += 6_000), capture.send(m)) }
+    // Budget 15 s, worst case 10 s per send: one row is affordable; after its 6 s send only 9 s remain, which affords none.
+    const summary = await runReminderDelivery(deps(dueAt, { mailer: slow, clock: () => elapsed, budgetMs: 15_000, worstCaseSendMs: 10_000 }))
+    assert.equal(summary.planned, 3)
+    assert.equal(summary.claimed, 1, "never more claims than the budget can finish")
+    assert.equal(summary.sent, 1)
+    assert.equal(summary.budgetExhausted, true)
+    const states = (await Promise.all(rows.map((r) => rowsOf(r.user.id)))).map(([row]) => [row.status, row.attempts])
+    assert.deepEqual(states.filter(([status]) => status === "PENDING"), [["PENDING", 0], ["PENDING", 0]], "unsent rows were never claimed, so no attempt was spent")
+    const next = await runReminderDelivery(deps(new Date(dueAt.getTime() + MIN)))
+    assert.equal(next.sent, 2, "the next run delivers the rest inside the lateness window")
+  })
+
+  it("plans due reminders earliest-due first under the plan limit, never crowded out by already-planned or not-due rows", async () => {
+    const now = freshWindow()
+    // Due 10 min ago, 5 min ago, and now; plus one not due for another 5 minutes.
+    const a = await scenario({ reminder: "MIN_15", startsAt: new Date(now.getTime() + 5 * MIN) })
+    const b = await scenario({ reminder: "MIN_15", startsAt: new Date(now.getTime() + 10 * MIN) })
+    const c = await scenario({ reminder: "HOUR_1", startsAt: new Date(now.getTime() + 60 * MIN) })
+    const notDue = await scenario({ reminder: "MIN_15", startsAt: new Date(now.getTime() + 20 * MIN) })
+    assert.equal(await planReminders({ prisma, now, planLimit: 2 }), 2)
+    const planned = async () => (await prisma.notificationDelivery.findMany({ where: { userId: { in: [a, b, c, notDue].map((x) => x.user.id) } }, select: { userId: true } })).map((r) => r.userId)
+    assert.deepEqual((await planned()).sort(), [a.user.id, b.user.id].sort(), "the two earliest-due reminders first")
+    assert.equal(await planReminders({ prisma, now, planLimit: 2 }), 1, "already-planned rows no longer take the limit")
+    assert.deepEqual((await planned()).sort(), [a.user.id, b.user.id, c.user.id].sort())
+    assert.equal(await planReminders({ prisma, now, planLimit: 2 }), 0)
+    assert.ok(!(await planned()).includes(notDue.user.id), "a reminder that is not due is never planned")
+  })
+
+  it("a Resend payload conflict (409 invalid_idempotent_request) is recorded as already processed, never FAILED, never resent", async () => {
+    const s = await scenario()
+    capture.respondWith({ status: "failed", transport: "capture", category: "idempotency-conflict", retryable: false, httpStatus: 409 })
+    const summary = await runReminderDelivery(deps(s.dueAt))
+    assert.equal(summary.failed, 0)
+    const [row] = await rowsOf(s.user.id)
+    assert.deepEqual([row.status, row.outcomeReason, row.lastErrorCategory], ["SKIPPED", "provider-already-processed", "idempotency-conflict"])
+    capture.respondWith({ status: "sent", transport: "capture" })
+    assert.equal((await runReminderDelivery(deps(new Date(s.dueAt.getTime() + 2 * MIN)))).claimed, 0, "terminal: nothing is resent")
+  })
+
+  it("a request still in progress (409) is retried with the same key and ends SENT, or ends already-processed when attempts run out, never FAILED", async () => {
+    const keys: string[] = []
+    const recording = { transport: capture.transport, send: async (m: MailMessage): Promise<MailResult> => (keys.push(m.idempotencyKey ?? ""), capture.send(m)) }
+    const a = await scenario()
+    capture.respondWith({ status: "failed", transport: "capture", category: "in-progress", retryable: true, httpStatus: 409 })
+    assert.equal((await runReminderDelivery(deps(a.dueAt, { mailer: recording }))).retry, 1)
+    capture.respondWith({ status: "sent", transport: "capture" })
+    await runReminderDelivery(deps(new Date(a.dueAt.getTime() + MIN), { mailer: recording }))
+    assert.equal((await rowsOf(a.user.id))[0].status, "SENT")
+    assert.equal(new Set(keys).size, 1, "the retry reused the key, so the provider returns the original outcome")
+
+    const b = await scenario()
+    capture.respondWith({ status: "failed", transport: "capture", category: "in-progress", retryable: true, httpStatus: 409 })
+    for (const offset of [0, MIN, 3 * MIN]) await runReminderDelivery(deps(new Date(b.dueAt.getTime() + offset)))
+    const [row] = await rowsOf(b.user.id)
+    assert.deepEqual([row.status, row.outcomeReason, row.attempts], ["SKIPPED", "provider-already-processed", MAX_ATTEMPTS])
+  })
+
+  describe("the reminder-email switch (AUTH_EMAIL_VERIFICATION_ENABLED)", () => {
+    const CRON = "notify-test-cron-secret-0123456789"
+    const ON = { CRON_SECRET: CRON, NODE_ENV: "development", MAIL_TRANSPORT: "dev-outbox", MAIL_FROM: "dev@example.com", AUTH_EMAIL_VERIFICATION_ENABLED: "true" }
+    const OFF = { ...ON, AUTH_EMAIL_VERIFICATION_ENABLED: undefined }
+    const cron = (env: Record<string, string | undefined>, now: Date) =>
+      handleCronNotifications(new Request("http://localhost/api/cron/notifications", { headers: { authorization: `Bearer ${CRON}` } }), {
+        env,
+        now: () => now,
+        run: (at) => runReminderDelivery(deps(at)),
+      })
+
+    it("switched off: an already opted-in user gets no email from a cron invocation, and nothing is planned", async () => {
+      const s = await scenario()
+      assert.equal(reminderEmailsAvailable(OFF), false)
+      const response = await cron(OFF, s.dueAt)
+      assert.deepEqual(await response.json(), { ok: true, skipped: "reminder-email-unavailable" })
+      assert.equal(capture.messages.length, 0)
+      assert.equal((await rowsOf(s.user.id)).length, 0)
+    })
+
+    it("switched off: an opted-in user can still opt out, and an opted-out user cannot opt in", async () => {
+      const optedIn = await scenario()
+      assert.deepEqual(await setReminderEmails(prisma, optedIn.user.id, false, reminderEmailsAvailable(OFF)), { ok: true, enabled: false })
+      assert.equal((await readReminderEmailSettings(prisma, optedIn.user.id))?.enabled, false)
+      const optedOut = await scenario({ optedIn: false })
+      assert.deepEqual(await setReminderEmails(prisma, optedOut.user.id, true, reminderEmailsAvailable(OFF)), { ok: false, error: "Email reminders aren't available on this deployment." })
+      assert.equal((await readReminderEmailSettings(prisma, optedOut.user.id))?.enabled, false)
+    })
+
+    it("switched on: the same invocation delivers as before", async () => {
+      const s = await scenario()
+      const body = (await (await cron(ON, s.dueAt)).json()) as { ok: boolean; sent?: number }
+      assert.equal(body.ok, true)
+      assert.equal(body.sent, 1)
+      assert.deepEqual(capture.messages.map((m) => m.to), [s.user.email])
+      assert.deepEqual(await setReminderEmails(prisma, s.user.id, true, reminderEmailsAvailable(ON)), { ok: true, enabled: true })
+    })
+  })
+
+  it("the daily cap holds when several runs start together", async () => {
+    const start = freshWindow()
+    const rows = []
+    for (let i = 0; i < 5; i++) rows.push(await scenario({ startsAt: start }))
+    const dueAt = rows[0].dueAt
+    // Plan first, so every concurrent run competes only for claims.
+    await planReminders({ prisma, now: dueAt })
+    const dayStart = new Date(Date.UTC(dueAt.getUTCFullYear(), dueAt.getUTCMonth(), dueAt.getUTCDate()))
+    const already = await prisma.notificationDelivery.count({ where: { status: "SENT", sentAt: { gte: dayStart } } })
+    // A barrier lines all four runs up at the cap decision, the worst case a doubled cron delivery can produce.
+    const RUNS = 4
+    let arrived = 0
+    let open: () => void = () => {}
+    const gate = new Promise<void>((resolve) => (open = resolve))
+    const barrier = async () => {
+      if (++arrived === RUNS) open()
+      await gate
+    }
+    const runs = await Promise.all(Array.from({ length: RUNS }, () => runReminderDelivery(deps(dueAt, { dailyCap: already + 2, beforeClaim: barrier }))))
+    const sent = runs.reduce((total, run) => total + run.sent, 0)
+    assert.equal(sent, 2, `cap of 2 exceeded by concurrent runs: ${JSON.stringify(runs.map((r) => r.sent))}`)
+    assert.equal(await prisma.notificationDelivery.count({ where: { status: "SENT", sentAt: { gte: dayStart } } }), already + 2)
+    const states = (await Promise.all(rows.map((r) => rowsOf(r.user.id)))).map(([row]) => row.status).sort()
+    assert.deepEqual(states, ["PENDING", "PENDING", "PENDING", "SENT", "SENT"], "the rest wait, unclaimed")
+  })
+
+  describe("ambiguous outcomes after lease recovery", () => {
+    /** A mailer whose send reaches the provider (recorded) and then never reports back: the worker died mid-send. */
+    function dyingMailer(keys: string[]) {
+      let release: () => void = () => {}
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      return {
+        release,
+        mailer: { transport: capture.transport, send: async (m: MailMessage): Promise<MailResult> => (keys.push(m.idempotencyKey ?? ""), await gate, { status: "failed", transport: "capture", category: "timeout", retryable: true }) },
+      }
+    }
+    async function waitForSending(userId: string, attempts: number) {
+      for (let i = 0; i < 100; i++) {
+        const [row] = await rowsOf(userId)
+        if (row?.status === "SENDING" && row.attempts === attempts) return
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      throw new Error("the dying run never claimed the row")
+    }
+
+    it("a last attempt that may have been delivered, then worker death, lease recovery and exhaustion: SKIPPED(delivery-unconfirmed), never FAILED, never resent", async () => {
+      const s = await scenario()
+      const keys: string[] = []
+      const recording = { transport: capture.transport, send: async (m: MailMessage): Promise<MailResult> => (keys.push(m.idempotencyKey ?? ""), capture.send(m)) }
+      capture.respondWith({ status: "failed", transport: "capture", category: "timeout", retryable: true })
+      await runReminderDelivery(deps(s.dueAt, { mailer: recording }))
+      await runReminderDelivery(deps(new Date(s.dueAt.getTime() + MIN), { mailer: recording }))
+      assert.equal((await rowsOf(s.user.id))[0].attempts, 2)
+
+      // Attempt 3 is handed to the provider, then the worker dies before recording anything.
+      const dying = dyingMailer(keys)
+      const abandoned = runReminderDelivery(deps(new Date(s.dueAt.getTime() + 3 * MIN), { mailer: dying.mailer }))
+      await waitForSending(s.user.id, MAX_ATTEMPTS)
+
+      // After the 5-minute lease, a later run recovers the row with no attempts left.
+      capture.respondWith({ status: "sent", transport: "capture" })
+      capture.clear()
+      const recovery = await runReminderDelivery(deps(new Date(s.dueAt.getTime() + 9 * MIN)))
+      assert.equal(recovery.claimed, 1)
+      assert.equal(recovery.failed, 0, "not reported as a confirmed failure")
+      assert.equal(capture.messages.length, 0, "not sent again")
+
+      dying.release()
+      const late = await abandoned
+      assert.equal(late.retry + late.failed + late.sent, 0, "the dead worker's late result is fenced out")
+      const [row] = await rowsOf(s.user.id)
+      assert.deepEqual([row.status, row.outcomeReason, row.lastErrorCategory, row.attempts], ["SKIPPED", "delivery-unconfirmed", "lease-expired", MAX_ATTEMPTS + 1])
+      assert.equal(keys.length, MAX_ATTEMPTS)
+      assert.equal(new Set(keys).size, 1, "every attempt used the same idempotency key")
+    })
+
+    it("a recovered row that has become too late is SKIPPED(delivery-unconfirmed), not reported as never sent", async () => {
+      const s = await scenario()
+      const keys: string[] = []
+      const dying = dyingMailer(keys)
+      const abandoned = runReminderDelivery(deps(s.dueAt, { mailer: dying.mailer }))
+      await waitForSending(s.user.id, 1)
+      const recovery = await runReminderDelivery(deps(new Date(s.dueAt.getTime() + 16 * MIN)))
+      assert.equal(recovery.sent + recovery.failed, 0)
+      dying.release()
+      await abandoned
+      const [row] = await rowsOf(s.user.id)
+      assert.deepEqual([row.status, row.outcomeReason], ["SKIPPED", "delivery-unconfirmed"])
+      assert.equal(keys.length, 1)
+    })
   })
 
   it("stores delivery metadata only", async () => {

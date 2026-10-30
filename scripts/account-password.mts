@@ -17,8 +17,9 @@ import { readOperatorPassword } from "./shared/read-password"
  * invocation or, failing that, prompted for without echo. It is hashed with
  * Better Auth's own scrypt implementation (`better-auth/crypto`), written to
  * the account's credential row, verified by reading it back through the
- * same library, and every session of the account is revoked so a stolen
- * session dies with the old password. Nothing sensitive is printed. The
+ * same library, every session of the account is revoked so a stolen
+ * session dies with the old password, and any outstanding self-service reset
+ * link is invalidated. It sends no email. Nothing sensitive is printed. The
  * operator hands the new password to the person out of band and asks them
  * to change it after signing in. Refused against a production-labelled
  * database without MATCHBASE_OPERATOR_TARGET=production.
@@ -67,11 +68,15 @@ try {
   }
   const hash = await hashPassword(password)
   if (!(await verifyPassword({ hash, password }))) throw new Error("The new hash did not verify; nothing was written.")
-  const [, sessions] = await prisma.$transaction([
+  // Outstanding self-service reset links are Better Auth Verification rows whose value is the user id (the only rows
+  // stored with that value, lib/auth/recovery.ts). Deleting them here means a link requested before this reset,
+  // possibly by someone else, stops working with the old password; no other token store exists.
+  const [, sessions, links] = await prisma.$transaction([
     prisma.account.update({ where: { id: user.accounts[0].id }, data: { password: hash } }),
     prisma.session.deleteMany({ where: { userId: user.id } }),
+    prisma.verification.deleteMany({ where: { value: user.id } }),
   ])
-  console.log(`Password updated for ${email} (${operator.target} database); ${sessions.count} session(s) revoked. Ask the person to sign in and change it.`)
+  console.log(`Password updated for ${email} (${operator.target} database); ${sessions.count} session(s) revoked, ${links.count} outstanding reset link(s) invalidated. Ask the person to sign in and change it.`)
 } catch (error) {
   console.error("Could not reset the password:", error instanceof Error ? error.message.split("\n")[0] : String(error))
   process.exit(2)

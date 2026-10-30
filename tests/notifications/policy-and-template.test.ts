@@ -2,9 +2,11 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
 import { formatKickoffWithZone } from "../../lib/format"
+import { reminderSettingsState } from "../../lib/notifications/reminder-settings-view"
 import { invalidMessageReason } from "../../lib/mail/mailer"
 import { matchReminderEmail, reminderPhrase, safeMatchUrl } from "../../lib/mail/templates/match-reminder"
-import { capDayStart, MAX_LATENESS_MS, nextAttemptAt, reminderEligibility } from "../../lib/notifications/policy"
+import { affordableClaims, capDayStart, MAX_LATENESS_MS, nextAttemptAt, reminderEligibility, RUN_BUDGET_MS, WORST_CASE_SEND_MS } from "../../lib/notifications/policy"
+import { DEFAULT_RESEND_TIMEOUT_MS } from "../../lib/mail/transports/resend"
 
 const START = new Date("2026-11-01T11:30:00.000Z") // 19:30 in Asia/Taipei
 const MIN = 60_000
@@ -53,6 +55,16 @@ describe("time zones", () => {
   })
 })
 
+describe("run budget", () => {
+  it("claims only what can finish if every send hits the transport timeout, inside the route's 60 s limit", () => {
+    assert.ok(WORST_CASE_SEND_MS > DEFAULT_RESEND_TIMEOUT_MS, "the worst case covers the transport timeout")
+    assert.ok(RUN_BUDGET_MS + WORST_CASE_SEND_MS <= 60_000, "a chunk claimed at the last moment still ends before maxDuration")
+    assert.equal(affordableClaims(RUN_BUDGET_MS), Math.floor(RUN_BUDGET_MS / WORST_CASE_SEND_MS))
+    assert.equal(affordableClaims(WORST_CASE_SEND_MS - 1), 0)
+    assert.equal(affordableClaims(-5), 0)
+  })
+})
+
 describe("retry backoff", () => {
   it("doubles from one minute and is capped", () => {
     const now = new Date("2026-11-01T00:00:00.000Z")
@@ -89,5 +101,24 @@ describe("match reminder email", () => {
     assert.equal(invalidMessageReason(message), null)
     for (const url of ["http://matchbase.example/matches/x", "https://matchbase.example/matches/x?y=1", "https://u:p@matchbase.example/matches/x", "https://matchbase.example/other/x", null]) assert.equal(safeMatchUrl(url), null, String(url))
     assert.equal(safeMatchUrl("http://localhost:3000/matches/m-1"), "http://localhost:3000/matches/m-1")
+  })
+})
+
+describe("Watchlist reminder card state", () => {
+  it("keeps opt-out available whenever a user is opted in, and never offers opt-in without delivery", () => {
+    const cases: [boolean, boolean, boolean, string][] = [
+      // available, confirmed, enabled → state
+      [false, true, true, "on-not-delivering"],
+      [false, false, true, "on-not-delivering"],
+      [true, false, true, "on-not-delivering"],
+      [false, true, false, "off-unavailable"],
+      [false, false, false, "off-unavailable"],
+      [true, false, false, "unconfirmed"],
+      [true, true, false, "off"],
+      [true, true, true, "on"],
+    ]
+    for (const [available, confirmed, enabled, expected] of cases) {
+      assert.equal(reminderSettingsState({ available, confirmed, enabled }), expected, JSON.stringify({ available, confirmed, enabled }))
+    }
   })
 })

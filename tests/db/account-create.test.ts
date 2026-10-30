@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { after, before, describe, it } from "node:test"
 
 import { PrismaPg } from "@prisma/adapter-pg"
@@ -69,6 +71,39 @@ describeDb("account:create (database)", () => {
     assert.equal(row.accounts.length, 1)
     assert.equal(row.accounts[0].providerId, "credential")
     assert.ok((row.accounts[0].password ?? "").length > 40, "scrypt hash stored")
+  })
+
+  it("never sends mail, even when the operator shell carries a complete Resend configuration", async () => {
+    const mailEmail = `created-mail-${stamp}@example.test`
+    const log = path.join(mkdtempSync(path.join(tmpdir(), "account-create-fetch-")), "fetch.log")
+    // Everything a mail-sending auth instance needs, including an allowlist that admits this very address:
+    // without isolation, Better Auth's sign-up would send a verification email through Resend here.
+    const result = spawnSync("npx", ["tsx", "--import", "./tests/fixtures/record-fetch.mjs", "scripts/account-create.mts", mailEmail], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        MATCHBASE_NEW_PASSWORD: PASSWORD,
+        RECORD_FETCH_TO: log,
+        MAIL_TRANSPORT: "resend",
+        MAIL_FROM: "MatchBase <noreply@mail.matchbase.example>",
+        RESEND_API_KEY: "re_OperatorShellKey_0123456789abcdef",
+        MAIL_ALLOWED_RECIPIENTS: mailEmail,
+        AUTH_PASSWORD_RESET_ENABLED: "true",
+        AUTH_EMAIL_VERIFICATION_ENABLED: "true",
+      },
+    })
+    try {
+      assert.equal(result.status, 0, `${result.stdout}${result.stderr}`)
+      assert.equal(existsSync(log) ? readFileSync(log, "utf8") : "", "", "no outbound request was attempted")
+      // Stronger than "no request": the operator instance must have no mail hook at all. A hook that merely
+      // fails to build a link today (no base URL in the operator shell) would send once one is available.
+      assert.doesNotMatch(`${result.stdout}${result.stderr}`, /\[mail\]|verification link|reset link|no mail sent/)
+      const row = await prisma.user.findUniqueOrThrow({ where: { email: mailEmail }, select: { emailVerified: true, sessions: { select: { id: true } } } })
+      assert.equal(row.emailVerified, false, "creating an account does not confirm it")
+      assert.equal(row.sessions.length, 0)
+    } finally {
+      await prisma.user.deleteMany({ where: { email: mailEmail } })
+    }
   })
 
   it("the account signs in through the normal path even where public sign-up is closed", async () => {

@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from "node:fs"
 
+import { evaluateRuntimeTablePrivileges, readRuntimeTablePrivileges } from "../lib/env/db-readiness"
 import { evaluateProductionReadiness, type ReadinessCheck } from "../lib/env/production-config"
 import { resolveRuntimeEnvironment } from "../lib/env/runtime-environment"
 
@@ -89,10 +90,19 @@ if (withDb) {
       } else {
         console.log(`  PASS db-migrations: all ${local.length} migrations applied.`)
       }
-      const [tables] = await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('User','Session','Account','Verification','RateLimit','DataSource','SyncLog')`
-      console.log(`  ${tables.n === 7 ? "PASS" : "FAIL"} db-schema: ${tables.n} of 7 expected auth and sync tables present.`)
-      if (tables.n !== 7) dbFailures++
-      if (tables.n === 0) {
+      // Expected tables (NotificationDelivery included) and the runtime role's table privileges, read-only.
+      let privilegeRows: Awaited<ReturnType<typeof readRuntimeTablePrivileges>> = []
+      try {
+        privilegeRows = await readRuntimeTablePrivileges(prisma)
+        for (const check of evaluateRuntimeTablePrivileges(privilegeRows)) {
+          console.log(`  ${check.status === "pass" ? "PASS" : "FAIL"} ${check.id}: ${check.detail}`)
+          if (check.status === "fail") dbFailures++
+        }
+      } catch {
+        console.log("  FAIL db-table-privileges: the runtime role's table privileges could not be verified (the privilege query failed); treat the database as not ready.")
+        dbFailures++
+      }
+      if (privilegeRows.length === 0) {
         console.log("  info db-empty: no application tables; the remaining table checks are skipped until migrations run.")
       } else {
         const [running] = await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM "SyncLog" WHERE status = 'RUNNING' AND "startedAt" < now() - interval '15 minutes'`

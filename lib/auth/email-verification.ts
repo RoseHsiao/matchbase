@@ -28,7 +28,7 @@ export type AccountPolicy = {
   signUpOpen: boolean
   /** Unconfirmed accounts cannot sign in (Better Auth `requireEmailVerification`). */
   requireEmailVerification: boolean
-  /** Verification mail can be sent (a transport can deliver). */
+  /** Verification mail is switched on (AUTH_EMAIL_VERIFICATION_ENABLED) and a transport can deliver it. */
   verificationMail: boolean
   /** Why sign-up is refused although requested; never a secret. */
   refusal: string | null
@@ -37,25 +37,26 @@ export type AccountPolicy = {
 /**
  * - Sign-up stays exactly as requested by the existing policy (closed outside
  *   development unless AUTH_ALLOW_SIGN_UP=true); nothing here opens it.
- * - Open sign-up **requires** verification whenever mail can be delivered.
- * - Outside development, open sign-up without a deliverable transport is
- *   refused: an account nobody can verify or recover is not created.
+ * - Open sign-up **requires** verification whenever verification mail is on
+ *   (AUTH_EMAIL_VERIFICATION_ENABLED plus a deliverable transport).
+ * - Outside development, open sign-up without verification mail is refused:
+ *   an account nobody can verify is not created.
  *   Development keeps the old behaviour (open, unverified) so the form stays
  *   usable without mail.
  * - With sign-up closed, verification is not required: the accounts are
  *   operator-created, and requiring it would lock out the existing operator
- *   ADMIN (emailVerified=false). Verification mail is still available to a
- *   signed-in person who wants to confirm their address (Phase 11 email
- *   reminders go only to confirmed addresses).
+ *   ADMIN (emailVerified=false). With verification mail on, a signed-in
+ *   person can still confirm their address (Phase 11 email reminders go only
+ *   to confirmed addresses).
  */
 export function accountPolicy(env: EnvLike): AccountPolicy {
   const environment = resolveRuntimeEnvironment(env)
   const signUpRequested = isSignUpAllowed(env)
-  const verificationMail = readMailEnv(env).transport.kind !== "disabled"
+  const verificationMail = readMailEnv(env).emailVerification.enabled
   if (!signUpRequested) return { environment, signUpRequested, signUpOpen: false, requireEmailVerification: false, verificationMail, refusal: null }
   if (verificationMail) return { environment, signUpRequested, signUpOpen: true, requireEmailVerification: true, verificationMail, refusal: null }
   if (environment === "development") return { environment, signUpRequested, signUpOpen: true, requireEmailVerification: false, verificationMail, refusal: null }
-  return { environment, signUpRequested, signUpOpen: false, requireEmailVerification: false, verificationMail, refusal: "Public sign-up was requested, but no mail transport can deliver verification email; sign-up stays closed." }
+  return { environment, signUpRequested, signUpOpen: false, requireEmailVerification: false, verificationMail, refusal: "Public sign-up was requested, but verification mail is not available (AUTH_EMAIL_VERIFICATION_ENABLED with a deliverable transport); sign-up stays closed." }
 }
 
 // ---------------------------------------------------------------------------

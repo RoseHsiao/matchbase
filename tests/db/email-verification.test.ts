@@ -34,7 +34,9 @@ const SECRET = "test-only-secret-0123456789abcdef0123456789"
 const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const email = (label: string) => `verify-${label}-${stamp}@example.test`
 const PASSWORD = "correct horse battery staple"
-const MAIL = { MAIL_TRANSPORT: "dev-outbox", MAIL_FROM: "MatchBase <dev@example.test>" }
+const OUTBOX = { MAIL_TRANSPORT: "dev-outbox", MAIL_FROM: "MatchBase <dev@example.test>" }
+/** Verification mail on: a transport plus its explicit switch. */
+const MAIL = { ...OUTBOX, AUTH_EMAIL_VERIFICATION_ENABLED: "true" }
 const baseEnv = { DATABASE_URL: url, BETTER_AUTH_SECRET: SECRET, BETTER_AUTH_URL: BASE, NODE_ENV: "development" }
 
 function post(path: string, body: unknown, extra: Record<string, string> = {}): Request {
@@ -191,6 +193,18 @@ describeDb("email verification (database)", () => {
     assert.equal(refused.status, 400, "AUTH_ALLOW_SIGN_UP=true alone does not open sign-up without mail")
     assert.equal(await prisma.user.count({ where: { email: email("prod-refused") } }), 0)
     await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "192.0.2.77|" } } })
+  })
+
+  it("a transport without the verification switch sends no verification mail and does not require it", async () => {
+    const quietCapture = createCaptureMailer({})
+    const quiet = createAuth({ prisma, env: { ...baseEnv, ...OUTBOX }, mailer: quietCapture })
+    const address = email("quiet")
+    const signUp = await quiet.handler(post("/sign-up/email", { name: "Quiet", email: address, password: PASSWORD }))
+    assert.equal(signUp.status, 200)
+    assert.notEqual(((await signUp.json()) as { token: string | null }).token, null, "development without verification mail keeps auto sign-in")
+    const resend = await quiet.handler(post("/send-verification-email", { email: address }))
+    assert.equal(((await resend.json()) as { code?: string }).code, "VERIFICATION_EMAIL_NOT_ENABLED")
+    assert.equal(quietCapture.messages.length, 0)
   })
 
   it("Better Auth's GET verification endpoint is refused at the route boundary", () => {

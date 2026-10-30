@@ -76,6 +76,7 @@ describe("Resend transport: request shape", () => {
     assert.equal(headers.authorization, `Bearer ${KEY}`)
     assert.equal(headers["content-type"], "application/json")
     assert.equal(headers["idempotency-key"], "reminder:match-1:user-1")
+    assert.match(headers["user-agent"], /^MatchBase\//, "an explicit User-Agent (Resend answers 403/1010 without one)")
     assert.ok(init.signal instanceof AbortSignal, "every request carries a timeout signal")
     const body = JSON.parse(String(init.body))
     assert.deepEqual(body, {
@@ -148,6 +149,22 @@ describe("Resend transport: failures are categorised, never thrown, and leak not
       assertNothingSensitive(serialized(result))
     })
   }
+
+  it("HTTP 409 is read only for Resend's error name: in progress retries, a payload conflict is not a failure", async () => {
+    const cases: [unknown, string, boolean][] = [
+      [{ statusCode: 409, name: "concurrent_idempotent_requests", message: `leaked-provider-detail ${message.to}` }, "in-progress", true],
+      [{ statusCode: 409, name: "resource_locked", message: "leaked-provider-detail" }, "in-progress", true],
+      [{ statusCode: 409, name: "invalid_idempotent_request", message: `leaked-provider-detail ${message.to}` }, "idempotency-conflict", false],
+      [{ statusCode: 409, name: "something_new", message: "leaked-provider-detail" }, "in-progress", true],
+      ["not json at all leaked-provider-detail", "in-progress", true],
+    ]
+    for (const [body, category, retryable] of cases) {
+      const stub = stubFetch(() => new Response(typeof body === "string" ? body : JSON.stringify(body), { status: 409 }))
+      const result = await createResendMailer({ apiKey: KEY, from: "a@example.com", fetch: stub.fetch }).send({ ...message, idempotencyKey: "notification:abc" })
+      assert.deepEqual(result, { status: "failed", transport: "resend", category, retryable, httpStatus: 409 }, JSON.stringify(body))
+      assertNothingSensitive(serialized(result))
+    }
+  })
 
   it("a request that exceeds the timeout → timeout", async () => {
     const stub = stubFetch(

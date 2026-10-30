@@ -6,9 +6,8 @@ import { WatchlistView } from "@/components/watchlist/watchlist-view";
 import { getWatchlistMatches } from "@/lib/data/queries";
 import { getViewer } from "@/lib/auth/session";
 import { db } from "@/lib/data/db";
-import { readMailEnv } from "@/lib/mail/mail-env";
 import { getNavItem } from "@/lib/navigation";
-import { readReminderEmailSettings } from "@/lib/notifications/preferences-ops";
+import { readReminderEmailSettings, reminderEmailsAvailable } from "@/lib/notifications/preferences-ops";
 
 const nav = getNavItem("/watchlist");
 
@@ -21,7 +20,7 @@ export default async function WatchlistPage() {
   const now = new Date();
   const [matches, viewer] = await Promise.all([getWatchlistMatches(), getViewer()]);
   const settings = viewer ? await readReminderEmailSettings(db, viewer.id) : null;
-  const mailAvailable = readMailEnv(process.env).transport.kind !== "disabled";
+  const mailAvailable = reminderEmailsAvailable(process.env);
 
   return (
     <>

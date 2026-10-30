@@ -4,7 +4,7 @@ import { DEV_LOGIN_FLAG } from "@/lib/auth/dev-login"
 import { readScheduleConfig } from "@/lib/data/sync/schedule-config"
 import { describeDataSourceProvider } from "@/lib/data/sync/providers/registry"
 import { CSP_MODE_VARIABLE, resolveCspMode } from "@/lib/http/csp"
-import { domainOf, PASSWORD_RESET_FLAG, parseSender, readMailEnv } from "@/lib/mail/mail-env"
+import { domainOf, EMAIL_VERIFICATION_FLAG, PASSWORD_RESET_FLAG, parseSender, readMailEnv } from "@/lib/mail/mail-env"
 import { databaseLabelPolicy, isFlagEnabled, resolveRuntimeEnvironment, resolveRuntimePlatform, type EnvLike, type RuntimeEnvironment } from "@/lib/env/runtime-environment"
 
 /**
@@ -149,8 +149,8 @@ export function evaluateProductionReadiness(env: EnvLike): ReadinessReport {
   // nothing is sent and recovery is disabled, so it passes. A configuration the parser refused fails
   // Production (and only warns elsewhere, where the parser has already fallen back to "disabled").
   const mail = readMailEnv(env)
-  // The recovery flag's own issue is reported once, by the password-recovery check below.
-  for (const issue of mail.issues.filter((candidate) => candidate.variable !== PASSWORD_RESET_FLAG)) {
+  // Each feature flag's own issue is reported once, by its check below.
+  for (const issue of mail.issues.filter((candidate) => candidate.variable !== PASSWORD_RESET_FLAG && candidate.variable !== EMAIL_VERIFICATION_FLAG)) {
     add({ id: `mail:${issue.variable}`, status: issue.severity === "error" ? (production ? "fail" : "warn") : "warn", detail: issue.message })
   }
   const transport = mail.transport
@@ -178,6 +178,16 @@ export function evaluateProductionReadiness(env: EnvLike): ReadinessReport {
       : mail.passwordReset.requested
         ? `Self-service password recovery was requested but stays disabled: ${mail.passwordReset.reason}`
         : "Self-service password recovery is disabled (AUTH_PASSWORD_RESET_ENABLED unset); operators reset passwords with `npm run account:password`.",
+  })
+
+  add({
+    id: "email-verification",
+    status: mail.emailVerification.enabled ? "pass" : mail.emailVerification.requested ? (production ? "fail" : "warn") : production ? "pass" : "info",
+    detail: mail.emailVerification.enabled
+      ? "Verification mail is enabled: confirmation links and the Watchlist's email-reminder offer are live."
+      : mail.emailVerification.requested
+        ? `Verification mail was requested but stays disabled: ${mail.emailVerification.reason}`
+        : `Verification mail is disabled (${EMAIL_VERIFICATION_FLAG} unset); no confirmation email is sent and public sign-up cannot open.`,
   })
 
   // Headers and CSP

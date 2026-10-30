@@ -21,6 +21,8 @@ import { readRecipientPolicy, type RecipientPolicy } from "@/lib/mail/recipient-
  *   leaked) rather than silently narrowing who receives mail.
  * - The in-memory capture transport is not a value of `MAIL_TRANSPORT`:
  *   tests construct it directly, configuration can never select it.
+ * - `AUTH_EMAIL_VERIFICATION_ENABLED` is the same kind of request for verification mail;
+ *   a configured transport alone sends nothing to users.
  * - `AUTH_PASSWORD_RESET_ENABLED` is only a request. Recovery counts as
  *   enabled when a transport can deliver, and in Production only through
  *   Resend from a sending domain of our own. A Production Resend transport on
@@ -31,6 +33,7 @@ export const MAIL_TRANSPORTS = ["resend", "dev-outbox", "disabled"] as const
 export type MailTransportName = (typeof MAIL_TRANSPORTS)[number]
 
 export const PASSWORD_RESET_FLAG = "AUTH_PASSWORD_RESET_ENABLED"
+export const EMAIL_VERIFICATION_FLAG = "AUTH_EMAIL_VERIFICATION_ENABLED"
 export const DEFAULT_MAIL_DAILY_CAP = 100
 export const MAX_MAIL_DAILY_CAP = 10_000
 
@@ -46,10 +49,19 @@ export type MailTransportConfig =
 
 export type PasswordResetAvailability = { requested: boolean; enabled: true } | { requested: boolean; enabled: false; reason: string }
 
+/** Same shape as recovery: an explicit request that counts only with a transport that can deliver. */
+export type FeatureAvailability = PasswordResetAvailability
+
 export type MailEnvConfig = {
   environment: RuntimeEnvironment
   transport: MailTransportConfig
   passwordReset: PasswordResetAvailability
+  /**
+   * Verification mail (Phase 10.7): confirmation links, the Watchlist "Send confirmation link"
+   * action and, through accountPolicy, required verification for open sign-up. Configuring a
+   * transport alone does not turn it on.
+   */
+  emailVerification: FeatureAvailability
   dailyCap: number
   /** Never contains a secret value or a recipient address. */
   issues: MailIssue[]
@@ -148,11 +160,38 @@ function passwordResetAvailability(env: EnvLike, environment: RuntimeEnvironment
   return { requested, enabled: true }
 }
 
+/**
+ * Environment overrides that switch every mail feature off, for auth instances
+ * built by operator commands (scripts/account-create.mts). An operator shell
+ * may carry a deployment's mail variables; an operator action must never send
+ * mail because of them. Secret values such as RESEND_API_KEY are left in place
+ * so log redaction still knows them.
+ */
+export const MAIL_OFF_ENV: Readonly<Record<string, string | undefined>> = {
+  MAIL_TRANSPORT: "disabled",
+  MAIL_ALLOWED_RECIPIENTS: undefined,
+  AUTH_PASSWORD_RESET_ENABLED: undefined,
+  AUTH_EMAIL_VERIFICATION_ENABLED: undefined,
+}
+
+function emailVerificationAvailability(env: EnvLike, transport: MailTransportConfig, issues: MailIssue[]): FeatureAvailability {
+  const requested = isFlagEnabled(env[EMAIL_VERIFICATION_FLAG])
+  if (!requested) return { requested, enabled: false, reason: `${EMAIL_VERIFICATION_FLAG} is not enabled.` }
+  if (transport.kind === "disabled") {
+    const reason = `${EMAIL_VERIFICATION_FLAG} is set but no mail transport can deliver; verification mail stays disabled.`
+    issues.push({ severity: "error", variable: EMAIL_VERIFICATION_FLAG, message: reason })
+    return { requested, enabled: false, reason }
+  }
+  // Production's transport is Resend from an own domain by construction (readTransport refuses anything else).
+  return { requested, enabled: true }
+}
+
 export function readMailEnv(env: EnvLike): MailEnvConfig {
   const environment = resolveRuntimeEnvironment(env)
   const issues: MailIssue[] = []
   const transport = readTransport(env, environment, issues)
   const dailyCap = readDailyCap(env, issues)
   const passwordReset = passwordResetAvailability(env, environment, transport, issues)
-  return { environment, transport, passwordReset, dailyCap, issues }
+  const emailVerification = emailVerificationAvailability(env, transport, issues)
+  return { environment, transport, passwordReset, emailVerification, dailyCap, issues }
 }

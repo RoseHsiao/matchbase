@@ -18,14 +18,30 @@ export const MAX_LATENESS_MS = 15 * 60_000
 export const MAX_ATTEMPTS = 3
 /** How long a claimed row stays reserved for one run before another run may reclaim it. */
 export const CLAIM_LEASE_MS = 5 * 60_000
-/** Rows claimed per run; one run must finish well inside a function's time limit. */
-export const CLAIM_BATCH = 50
-/** Watchlist rows considered per planning pass. */
+/** Rows claimed at a time; a run claims chunk after chunk while its time budget allows. */
+export const CLAIM_CHUNK = 10
+/** Upper bound of rows one run handles, whatever the budget. */
+export const MAX_PER_RUN = 200
+/**
+ * Wall-clock budget for the claim-and-send loop. The route's maxDuration is 60 s; planning,
+ * sweeping and the response need the rest.
+ */
+export const RUN_BUDGET_MS = 40_000
+/**
+ * The longest one claimed row can take: the Resend transport's timeout (10 s) plus the database
+ * reads and the settle write. A chunk is claimed only if every row in it could take this long and
+ * still finish inside the budget, so a run never holds claims it cannot complete.
+ */
+export const WORST_CASE_SEND_MS = 12_000
+/** Due watchlist rows planned per pass, earliest due first; the rest are planned by the next run. */
 export const PLAN_LIMIT = 500
-/** The longest offset (1 day) plus the lateness window bounds which matches planning looks at. */
-export const PLAN_HORIZON_MS = 24 * 60 * 60_000 + MAX_LATENESS_MS
 
-export type SkipReason = "not-due" | "late" | "match-not-upcoming" | "match-started" | "rescheduled" | "reminder-changed" | "not-watchlisted" | "opted-out" | "email-unconfirmed" | "attempts-exhausted"
+/** How many rows the next chunk may claim, given the time left in the run. */
+export function affordableClaims(remainingMs: number, worstCaseSendMs: number = WORST_CASE_SEND_MS): number {
+  return Math.max(0, Math.floor(remainingMs / worstCaseSendMs))
+}
+
+export type SkipReason = "not-due" | "delivery-unconfirmed" | "late" | "match-not-upcoming" | "match-started" | "rescheduled" | "reminder-changed" | "not-watchlisted" | "opted-out" | "email-unconfirmed" | "attempts-exhausted"
 
 export type Eligibility = { deliverable: true; dueAt: Date } | { deliverable: false; reason: SkipReason }
 
