@@ -4,7 +4,8 @@ import { cache } from "react"
 import { headers } from "next/headers"
 
 import { getAuth } from "@/lib/auth/auth"
-import { assertAdmin, assertUser, toViewer, type Viewer } from "@/lib/auth/authorization"
+import { assertAdmin, assertUser, resolveViewer, type Viewer } from "@/lib/auth/authorization"
+import { logServerError } from "@/lib/logging/server-log"
 
 /**
  * The server-side identity boundary. Everything that needs to know who is
@@ -15,13 +16,14 @@ import { assertAdmin, assertUser, toViewer, type Viewer } from "@/lib/auth/autho
  * request (no cookie cache), memoised per request with React's `cache`, so a
  * page, its layout and the actions it triggers all see the same answer and
  * a revoked session or changed role is honoured on the very next request.
+ * When the session cannot be checked it throws SessionResolutionError rather
+ * than answering null: a failure is never an anonymous visitor.
  */
 export const getViewer = cache(async (): Promise<Viewer | null> => {
   // Request headers first: outside a request (a build-time prerender attempt)
   // this bails out before the auth configuration is even read.
   const requestHeaders = await headers()
-  const session = await getAuth().api.getSession({ headers: requestHeaders })
-  return session ? toViewer(session.user) : null
+  return resolveViewer(() => getAuth().api.getSession({ headers: requestHeaders }), (error) => logServerError("session", error))
 })
 
 /** The signed-in viewer, or an AuthorizationError("unauthenticated"). */

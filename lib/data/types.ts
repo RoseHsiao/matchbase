@@ -32,6 +32,8 @@ export type Team = {
   leagueId: string
   /** Brand colour for the logo placeholder. */
   color: string
+  /** Optional accent for the logo placeholder. Only the public demo sets it today; it is not stored. */
+  secondaryColor?: string
   logoUrl?: string
   status?: EntityStatus
 }

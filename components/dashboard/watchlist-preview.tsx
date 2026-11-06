@@ -1,5 +1,6 @@
 import { SectionCard } from "@/components/layout/section-card"
 import { WatchlistMatches } from "@/components/watchlist/watchlist-matches"
+import { getViewer } from "@/lib/auth/session"
 import { getWatchlistMatches } from "@/lib/data/queries"
 
 export async function WatchlistPreview({
@@ -9,13 +10,13 @@ export async function WatchlistPreview({
   now: Date
   limit?: number
 }) {
-  const matches = await getWatchlistMatches()
+  const [viewer, matches] = await Promise.all([getViewer(), getWatchlistMatches()])
 
   return (
     <SectionCard
       title="Watchlist"
       description="Saved matches and their reminders"
-      href="/watchlist"
+      href={viewer ? "/watchlist" : undefined}
       actionLabel="Manage"
     >
       <WatchlistMatches

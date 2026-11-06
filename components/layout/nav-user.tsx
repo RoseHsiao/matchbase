@@ -11,6 +11,7 @@ import {
   UserRoundIcon,
 } from "lucide-react"
 
+import { announceAuthChange } from "@/components/auth/session-sync"
 import { useViewer } from "@/components/auth/viewer-provider"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -43,7 +44,8 @@ function initials(name: string) {
  * Sidebar footer account control. Anonymous: a "Sign in" entry. Signed in:
  * the account menu with the role and a sign-out action. Who is signed in
  * comes from the server render (ViewerProvider); signing out calls the auth
- * endpoint and then re-renders the tree so every store is reseeded as anonymous.
+ * endpoint, returns to the public landing page and re-renders the tree so
+ * every store is reseeded as anonymous.
  */
 export function NavUser() {
   const viewer = useViewer()
@@ -57,7 +59,8 @@ export function NavUser() {
       await authClient.signOut()
     } finally {
       setSigningOut(false)
-      router.push("/dashboard")
+      announceAuthChange()
+      router.push("/")
       router.refresh()
     }
   }
@@ -72,7 +75,7 @@ export function NavUser() {
             </div>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">Sign in</span>
-              <span className="truncate text-xs text-muted-foreground">Follow teams, save matches</span>
+              <span className="truncate text-xs text-muted-foreground">For authorized accounts</span>
             </div>
           </SidebarMenuButton>
         </SidebarMenuItem>

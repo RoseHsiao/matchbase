@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { ShieldCheckIcon, UserRoundIcon } from "lucide-react"
 
+import { announceAuthChange } from "@/components/auth/session-sync"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { devQuickSignIn } from "@/lib/auth/dev-login-actions"
@@ -33,6 +34,7 @@ export function DevQuickLogin({ accounts, next }: DevQuickLoginProps) {
       setPending(null)
       return
     }
+    announceAuthChange()
     router.push(next)
     router.refresh()
   }

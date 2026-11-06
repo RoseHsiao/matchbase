@@ -66,3 +66,32 @@ export function assertAdmin(viewer: Viewer | null): Viewer & { role: "ADMIN" } {
   if (!isAdmin(user)) throw new AuthorizationError("forbidden")
   return user
 }
+
+/**
+ * The session could not be checked: the database or the auth service failed.
+ * Deliberately not an AuthorizationError, so no caller can mistake it for
+ * "not signed in" and treat the request as anonymous. It reaches the error
+ * boundary instead. The message is safe to show and names no internals.
+ */
+export class SessionResolutionError extends Error {
+  constructor() {
+    super("The session could not be verified.")
+    this.name = "SessionResolutionError"
+  }
+}
+
+/**
+ * The three outcomes of asking who is viewing: a Viewer (authenticated), null
+ * (genuinely anonymous: no session, an invalid signature, or an expired or
+ * revoked one) and a SessionResolutionError (unknown). Only the session reader
+ * returning null means anonymous; any failure means we do not know.
+ */
+export async function resolveViewer(readSession: () => Promise<{ user: Parameters<typeof toViewer>[0] } | null>, onFailure: (error: unknown) => void = () => {}): Promise<Viewer | null> {
+  try {
+    const session = await readSession()
+    return session ? toViewer(session.user) : null
+  } catch (error) {
+    onFailure(error)
+    throw new SessionResolutionError()
+  }
+}

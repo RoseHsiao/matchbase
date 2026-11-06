@@ -37,7 +37,7 @@ export default async function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        description={`${formatLongDate(now)} · ${viewer ? "Your sports and esports command center: follow, save, set a reminder, watch." : "Today across every league. Sign in to follow, save and set reminders."}`}
+        description={`${formatLongDate(now)} · ${viewer ? "Your sports and esports command center: follow, save, set a reminder, watch." : "Today across every fictional demo league. Sign in to follow, save and set reminders."}`}
         actions={
           <Link
             href="/schedule"

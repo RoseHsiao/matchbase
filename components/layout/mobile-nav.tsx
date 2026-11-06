@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation"
 import { MenuIcon } from "lucide-react"
 import { cn } from "cn"
 
-import { isNavItemActive, mobileNavItems } from "@/lib/navigation"
+import { useViewer } from "@/components/auth/viewer-provider"
+import { isNavItemActive, mobileNavItemsFor } from "@/lib/navigation"
 import { useSidebar } from "@/components/ui/sidebar"
 
 const itemClassName =
@@ -15,7 +16,8 @@ const itemClassName =
 export function MobileNav() {
   const pathname = usePathname()
   const { toggleSidebar } = useSidebar()
-  const columns = mobileNavItems.length + 1
+  const items = mobileNavItemsFor(useViewer())
+  const columns = items.length + 1
 
   return (
     <nav
@@ -26,7 +28,7 @@ export function MobileNav() {
         className="grid h-16"
         style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
       >
-        {mobileNavItems.map((item) => {
+        {items.map((item) => {
           const active = isNavItemActive(pathname, item.href)
           return (
             <li key={item.href}>

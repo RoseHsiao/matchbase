@@ -91,6 +91,8 @@ Object-level ownership is unchanged: every personal row is keyed `(userId, targe
 
 ## Anonymous visitors
 
+**Update (2026-11-06):** anonymous visitors now read an in-memory public demo instead of the database catalogue, `/` is a landing page, and `/watchlist` redirects to sign in ([public-demo.md](../public-demo.md)). The guards below are unchanged. A session that cannot be checked now throws `SessionResolutionError` rather than reading as anonymous. Where this section differs, that document is current.
+
 Public catalogue pages (schedule, matches, teams, players, leagues, history, match detail) are unchanged. The dashboard shows the whole day's matches instead of a follow-filtered list, and its watchlist, following and reminder panels say "Sign in to …". The watchlist page and the header bell show a sign-in state. Follow, star and reminder controls stay visible; a click sends the visitor to `/sign-in?next=<current path>` instead of mutating anything (the client stores are `readOnly` for a null viewer, and the server would reject the write anyway). The sidebar footer shows "Sign in"; the Admin entry is hidden unless the viewer is an administrator. No anonymous database user is created, and nobody can sign in as the demo user because it has no credential row.
 
 The `next` parameter is only honoured as a same-origin path (`safeNextPath`): no scheme, no `//host`, no control characters, never the auth or API routes.

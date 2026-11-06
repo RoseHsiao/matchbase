@@ -60,3 +60,7 @@ Every "yes" above is resolved; the "Current" column now equals "Required":
 - Cron, the CLI and migrations are unchanged; the cron route additionally refuses Preview deployments unless opted in.
 
 Verified by `tests/auth/*`, `tests/db/auth-accounts.test.ts`, `tests/db/user-isolation.test.ts`, the cron handler tests and a browser run that calls every action directly as anonymous, USER and ADMIN. Details: [authentication-and-authorization.md](authentication-and-authorization.md).
+
+## Status after the public demo (2026-11-06)
+
+Catalogue reads are no longer PUBLIC on the database: an anonymous visitor reads a fictional in-memory demo, and the database catalogue requires a session. `/watchlist` redirects an anonymous visitor to sign in. Mutations and the admin rows are unchanged. See [public-demo.md](../public-demo.md), which also holds the current inventory of every server-side entry point.

@@ -5,7 +5,7 @@ import type { Team } from "@/lib/data/types"
 import { sanitizeImageUrl } from "@/lib/safe-url"
 
 type TeamLogoProps = {
-  team: Pick<Team, "name" | "code" | "color" | "logoUrl">
+  team: Pick<Team, "name" | "code" | "color" | "secondaryColor" | "logoUrl">
   size?: "xs" | "sm" | "default" | "lg" | "xl"
   className?: string
 }
@@ -25,7 +25,7 @@ const sizeClassName: Record<Size, { box: string; short: string; long: string }> 
 const MAX_CODE_CHARS = 3
 
 /** Pick black or white text for a hex background. */
-function readableTextColor(hex: string): string {
+export function readableTextColor(hex: string): string {
   const value = hex.replace("#", "")
   const r = parseInt(value.slice(0, 2), 16)
   const g = parseInt(value.slice(2, 4), 16)
@@ -37,7 +37,8 @@ function readableTextColor(hex: string): string {
 /**
  * Team crest. Falls back to a coloured code badge until real logos exist;
  * the extra-small size shows only the first letter so it fits, and three
- * letter codes use a slightly smaller scale than one or two letter codes.
+ * letter codes use a slightly smaller scale than one or two letter codes. A
+ * secondary colour, when a team has one, is drawn as a thin inner ring.
  * Always rendered next to the team name, so it is hidden from screen readers.
  */
 export function TeamLogo({ team, size = "default", className }: TeamLogoProps) {
@@ -54,7 +55,7 @@ export function TeamLogo({ team, size = "default", className }: TeamLogoProps) {
       {logoSrc ? <AvatarImage src={logoSrc} alt="" /> : null}
       <AvatarFallback
         className={cn("overflow-hidden rounded-md px-0.5 font-semibold leading-none", code.length >= 3 ? scale.long : scale.short)}
-        style={{ backgroundColor: team.color, color: readableTextColor(team.color) }}
+        style={{ backgroundColor: team.color, color: readableTextColor(team.color), boxShadow: team.secondaryColor ? `inset 0 0 0 1.5px ${team.secondaryColor}` : undefined }}
       >
         {code}
       </AvatarFallback>

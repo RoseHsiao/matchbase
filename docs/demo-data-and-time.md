@@ -2,6 +2,8 @@
 
 Status: implemented 2026-09-17. The seeded demo lays a fixed *timeline of offsets* over the current date, so the portfolio stays populated as the calendar moves, while every test and every provider fixture keeps a fixed instant. No live data is involved; relative demo data is still demo data.
 
+**Update (2026-11-06):** the same timeline now also backs the public demo in memory, with no seed and under fictional names ([public-demo.md](public-demo.md)).
+
 ## Why the fixed seed aged out
 
 Until this phase the seed pinned every demo timestamp to one instant, 2026-09-14 12:00 Asia/Taipei. That made re-seeding deterministic, but the fixtures only spanned about a week around that date. After it, "Today" on the Dashboard emptied, every match slid into the past while its stored status still said UPCOMING or LIVE, reminders pointed at instants that had already passed, and screenshots stopped showing the product journey. Moving the constant by hand every few days is not a strategy.

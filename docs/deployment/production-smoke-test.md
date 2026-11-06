@@ -6,11 +6,13 @@ Record for each item: pass / fail, the URL, and a note.
 
 ## Anonymous
 
-- [ ] Dashboard loads; description says "Sign in to follow, save and set reminders"; today's matches shown publicly.
-- [ ] Schedule, Matches, Teams, Players, History, a match detail page load.
-- [ ] Team badges render (network tab: images from `r2.thesportsdb.com`, no CSP violation in the console).
+These checks read the in-memory public demo, not the database ([public-demo.md](../public-demo.md)), so they say nothing about database health. The USER section does.
+
+- [ ] `/` shows the landing page with Explore Demo and Sign in, and no sign-up action.
+- [ ] Explore Demo opens the dashboard with the demo banner, the `Demo` badge and fictional matches.
+- [ ] Schedule, Matches, Teams, Players, History, a match detail page load; the navigation has no Watchlist and no Admin.
 - [ ] Follow, star and reminder controls redirect to `/sign-in?next=…`.
-- [ ] `/watchlist` shows the sign-in state; the header bell says "Sign in to save matches".
+- [ ] `/watchlist` redirects to `/sign-in?next=%2Fwatchlist`.
 - [ ] `/sign-up` says "Account creation is not open"; `POST /api/auth/sign-up/email` answers 400 `EMAIL_PASSWORD_SIGN_UP_DISABLED` (launch policy).
 - [ ] `/sign-in` has no "Development quick sign-in" section.
 - [ ] Wrong credentials show "Email or password is incorrect."
@@ -18,11 +20,12 @@ Record for each item: pass / fail, the URL, and a note.
 
 ## USER
 
-- [ ] Sign in; the sidebar shows the account; Admin is absent from the navigation.
+- [ ] Sign in; the sidebar shows the account; no demo banner; Admin is absent from the navigation.
+- [ ] The catalogue shows real data and no fictional demo names; team badges render (network tab: images from `r2.thesportsdb.com`, no CSP violation in the console).
 - [ ] Dashboard shows personal panels; follow a team; reload; still followed.
 - [ ] Star a match; `/watchlist` lists it; set a reminder; the bell counts it.
 - [ ] `/admin` shows "Administrators only".
-- [ ] Sign out returns to the anonymous shell; `/watchlist` shows the sign-in state.
+- [ ] Sign out returns to the landing page; `/watchlist` redirects to sign in.
 
 ## ADMIN
 

@@ -47,6 +47,7 @@ MatchBase treats *following* as the primary act. Everything a user follows, acro
 
 | Step | What the user does | Where |
 |---|---|---|
+| **Explore** | Try the product without an account on read-only, fictional data ([how it is isolated](docs/public-demo.md)); only authorized accounts can sign in | `/` → Explore Demo |
 | **Discover** | Browse leagues, teams and players across Sports and Esports, filtered by the category → sport → league hierarchy | `/teams`, `/players`, `/leagues/[id]`, `/matches` |
 | **Follow** | Follow teams, players and leagues; follows persist per user | Follow buttons on team and player cards and detail pages |
 | **Schedule** | See followed fixtures by day on a date strip, with live matches first | `/dashboard`, `/schedule` |

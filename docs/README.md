@@ -8,6 +8,7 @@ Start with the [project README](../README.md) for the overview, then the [case s
 |---|---|---|---|
 | [case-study.md](case-study.md) | narrative | current (2026-09-17) | product requirement → domain problem → decision → implementation → user result, end to end |
 | [screenshots.md](screenshots.md) | guide | current | which views to capture for a portfolio and what each one demonstrates |
+| [public-demo.md](public-demo.md) | architecture + verification record | implemented 2026-11-06, verified locally, not deployed | the public read-only demo, how it is isolated from the database, routes per audience, read-only enforcement |
 | [demo-data-and-time.md](demo-data-and-time.md) | decision record | implemented (Phase 8.2) | why the fixed seed aged out, the demo clock, anchor resolution, time zone, consistency rules, what is and is not shifted |
 | [providers/thesportsdb.md](providers/thesportsdb.md) | provider spec + verification record | implemented (Phase 8.1), **live-verified** | free-tier probe results, endpoints used and rejected, mapping, statuses, UTC timestamps, request budget, data ownership, what is live-verified versus fixture-only |
 | [scheduled-sync.md](scheduled-sync.md) | architecture + verification record | implemented (Phase 8.3), smoke-tested locally | verified Vercel constraints, cron route and secret, provider-neutral scheduler, eligibility, cadence, the database run lock and stale recovery, freshness model, Admin, deployment variables |

@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { ReminderEmailSettings } from "@/components/notifications/reminder-email-settings";
 import { WatchlistView } from "@/components/watchlist/watchlist-view";
 import { getWatchlistMatches } from "@/lib/data/queries";
+import { signInHref } from "@/lib/auth/redirect";
 import { getViewer } from "@/lib/auth/session";
 import { db } from "@/lib/data/db";
 import { getNavItem } from "@/lib/navigation";
@@ -17,9 +19,11 @@ export const metadata: Metadata = {
 };
 
 export default async function WatchlistPage() {
+  const viewer = await getViewer();
+  if (!viewer) redirect(signInHref("/watchlist"));
+
   const now = new Date();
-  const [matches, viewer] = await Promise.all([getWatchlistMatches(), getViewer()]);
-  const settings = viewer ? await readReminderEmailSettings(db, viewer.id) : null;
+  const [matches, settings] = await Promise.all([getWatchlistMatches(), readReminderEmailSettings(db, viewer.id)]);
   const mailAvailable = reminderEmailsAvailable(process.env);
 
   return (

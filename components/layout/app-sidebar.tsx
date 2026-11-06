@@ -13,7 +13,7 @@ import {
   isAdminPath,
   isRoutable,
 } from "@/lib/admin/navigation"
-import { isNavItemActive, navSections } from "@/lib/navigation"
+import { isNavItemActive, navSectionsFor } from "@/lib/navigation"
 import { useViewer } from "@/components/auth/viewer-provider"
 import { NavUser } from "@/components/layout/nav-user"
 import {
@@ -36,10 +36,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { isMobile, setOpenMobile } = useSidebar()
   const viewer = useViewer()
   const inAdmin = isAdminPath(pathname)
-  // The Admin entry is a convenience for administrators; the route itself is guarded on the server.
-  const sections = navSections
-    .map((section) => ({ ...section, items: section.items.filter((item) => item.href !== ADMIN_ROOT || viewer?.role === "ADMIN") }))
-    .filter((section) => section.items.length > 0)
+  const sections = navSectionsFor(viewer)
 
   // Close the mobile sheet after navigating so the new page is visible.
   function handleNavigate() {
@@ -61,7 +58,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">MatchBase</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  Match tracker
+                  {viewer ? "Match tracker" : "Public demo"}
                 </span>
               </div>
             </SidebarMenuButton>

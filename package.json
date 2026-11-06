@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"tests/**/*.test.ts\"",
+    "test:e2e": "tsx --test \"tests/e2e/*.test.ts\"",
     "db:migrate": "tsx scripts/migrate-deploy.mts",
     "db:seed": "prisma db seed",
     "production:check": "tsx scripts/production-check.mts",

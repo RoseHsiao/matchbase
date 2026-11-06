@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 
+import { announceAuthChange } from "@/components/auth/session-sync"
 import { AuthCard } from "@/components/auth/auth-card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -43,6 +44,7 @@ export function SignInForm({ next, signUpAllowed, recoveryAvailable }: SignInFor
       setPending(false)
       return
     }
+    announceAuthChange()
     router.push(next)
     router.refresh()
   }

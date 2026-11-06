@@ -4,7 +4,7 @@ import * as React from "react"
 import { usePathname, useRouter } from "next/navigation"
 
 import type { Viewer } from "@/lib/auth/authorization"
-import { signInHref } from "@/lib/auth/redirect"
+import { signInHrefFromDemo } from "@/lib/auth/redirect"
 
 /**
  * Who the server says is viewing the app, for client components that adapt
@@ -27,9 +27,9 @@ export function useViewer(): Viewer | null {
   return viewer
 }
 
-/** Sends an anonymous visitor to sign in and back to the current page afterwards. */
+/** Sends a demo visitor to sign in, and afterwards back to the current page or, from a demo record, its list. */
 export function useSignInPrompt(): () => void {
   const router = useRouter()
   const pathname = usePathname()
-  return React.useCallback(() => router.push(signInHref(pathname)), [router, pathname])
+  return React.useCallback(() => router.push(signInHrefFromDemo(pathname)), [router, pathname])
 }

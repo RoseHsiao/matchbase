@@ -23,3 +23,14 @@ export function signInHref(next?: string): string {
   const target = safeNextPath(next)
   return target === DEFAULT_AFTER_SIGN_IN ? "/sign-in" : `/sign-in?next=${encodeURIComponent(target)}`
 }
+
+/**
+ * The sign-in URL for a demo visitor on `pathname`. Demo records do not exist
+ * in the signed-in catalogue, so a detail page returns to its list instead of
+ * a 404 after signing in.
+ */
+export function signInHrefFromDemo(pathname: string): string {
+  const detail = /^\/(matches|teams|players|leagues)\/[^/]+/.exec(pathname)
+  if (!detail) return signInHref(pathname)
+  return signInHref(detail[1] === "leagues" ? DEFAULT_AFTER_SIGN_IN : `/${detail[1]}`)
+}

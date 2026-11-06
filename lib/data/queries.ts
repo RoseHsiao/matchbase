@@ -1,6 +1,8 @@
 import { cache } from "react"
 
 import { getViewer, requireAdmin } from "@/lib/auth/session"
+import { resolveCatalogue, type CatalogueSource } from "@/lib/data/catalogue-source"
+import { createDemoCatalogue } from "@/lib/data/demo-catalogue"
 import { adminRepository } from "@/lib/data/repositories/admin-repository"
 import { leagueRepository } from "@/lib/data/repositories/league-repository"
 import { matchRepository } from "@/lib/data/repositories/match-repository"
@@ -24,6 +26,7 @@ import type {
   UserFollows,
   WatchlistEntryView,
 } from "@/lib/data/types"
+import { createDemoClock, resolveDemoAnchor } from "@/lib/demo-clock"
 import { addDays, startOfDay } from "@/lib/format"
 import { matchTitle } from "@/lib/matches"
 
@@ -36,6 +39,11 @@ import { matchTitle } from "@/lib/matches"
  * Prisma. Pages and server components call these functions; nothing outside
  * lib/data touches Prisma. Writes live in lib/data/user-state-actions.ts and
  * lib/data/admin-actions.ts.
+ *
+ * Who is asking decides the catalogue: a signed-in viewer reads the database,
+ * an anonymous visitor reads the in-memory public demo (docs/public-demo.md).
+ * Every catalogue read below goes through `catalogue()`; do not import a
+ * catalogue repository into a page or call one here directly.
  *
  * Day boundaries ("today", the schedule window) are computed with the shared
  * helpers in lib/format.ts, exactly as before, so the database filters use
@@ -52,6 +60,21 @@ const getCurrentUserFollows = cache(async (): Promise<UserFollows> => {
   const viewer = await getViewer()
   return viewer ? userStateRepository.getFollows(viewer.id) : EMPTY_FOLLOWS
 })
+
+const liveCatalogue: CatalogueSource = {
+  matches: matchRepository,
+  leagues: leagueRepository,
+  seasons: seasonRepository,
+  teams: teamRepository,
+  players: playerRepository,
+}
+
+/** The catalogue for this request's viewer, resolved once per request so a page sees one consistent demo timeline. */
+const catalogue = cache(async (): Promise<CatalogueSource> =>
+  resolveCatalogue(getViewer, liveCatalogue, () =>
+    createDemoCatalogue(createDemoClock({ anchor: resolveDemoAnchor(process.env, new Date()) }))
+  )
+)
 
 const STATUS_ORDER: Record<MatchStatus, number> = {
   live: 0,
@@ -84,7 +107,7 @@ function dayWindow(now: Date): { gte: Date; lt: Date } {
 export async function getTodaysMatches(now = new Date()): Promise<MatchView[]> {
   const viewer = await getViewer()
   const { teamIds, playerIds, leagueIds } = await getCurrentUserFollows()
-  const matches = await matchRepository.findViews({
+  const matches = await (await catalogue()).matches.findViews({
     startsAt: dayWindow(now),
     followed: viewer ? { teamIds, playerIds, leagueIds } : undefined,
   })
@@ -92,18 +115,20 @@ export async function getTodaysMatches(now = new Date()): Promise<MatchView[]> {
 }
 
 /**
- * Next upcoming matches involving followed teams, starting tomorrow.
+ * Next upcoming matches involving followed teams, starting tomorrow; for an
+ * anonymous visitor, the next upcoming matches overall, as with today's list.
  * Today's matches are excluded because the dashboard shows them separately.
  */
 export async function getUpcomingFollowedMatches(
   limit = 5,
   now = new Date()
 ): Promise<MatchView[]> {
+  const viewer = await getViewer()
   const { teamIds, playerIds } = await getCurrentUserFollows()
-  return matchRepository.findViews({
+  return (await catalogue()).matches.findViews({
     status: "upcoming",
     startsAt: { gte: dayWindow(now).lt },
-    followed: { teamIds, playerIds, leagueIds: [] },
+    followed: viewer ? { teamIds, playerIds, leagueIds: [] } : undefined,
     limit,
   })
 }
@@ -125,16 +150,16 @@ export async function getFollowedLeagueIds(): Promise<string[]> {
 
 /** Every player with their team and league, sorted by display name. */
 export async function getPlayerViews(): Promise<PlayerView[]> {
-  return playerRepository.findViews()
+  return (await catalogue()).players.findViews()
 }
 
 export async function getPlayerById(id: string): Promise<PlayerView | undefined> {
-  return playerRepository.findViewById(id)
+  return (await catalogue()).players.findViewById(id)
 }
 
 /** Every team with its league and next match, sorted by name. */
 export async function getTeamViews(now = new Date()): Promise<TeamView[]> {
-  return teamRepository.findViews({}, now)
+  return (await catalogue()).teams.findViews({}, now)
 }
 
 /** Ids the user has saved. Seeds the client watchlist store. */
@@ -150,7 +175,7 @@ export async function getWatchlistIds(): Promise<string[]> {
 export async function getWatchlistEntries(): Promise<WatchlistEntryView[]> {
   const { watchlistMatchIds, watchlistReminders } = await getCurrentUserFollows()
   if (watchlistMatchIds.length === 0) return []
-  const matches = await matchRepository.findViews({ ids: watchlistMatchIds })
+  const matches = await (await catalogue()).matches.findViews({ ids: watchlistMatchIds })
   const byId = new Map(matches.map((match) => [match.id, match]))
   return watchlistMatchIds.flatMap((matchId) => {
     const match = byId.get(matchId)
@@ -169,14 +194,14 @@ export async function getWatchlistEntries(): Promise<WatchlistEntryView[]> {
 
 /** Every known match in start order (bounded by the repository's list limit). */
 export async function getMatches(): Promise<MatchView[]> {
-  return matchRepository.findViews()
+  return (await catalogue()).matches.findViews()
 }
 
 /** Only the viewer's saved matches, so the watchlist never loads the whole catalogue. */
 export async function getWatchlistMatches(): Promise<MatchView[]> {
   const { watchlistMatchIds } = await getCurrentUserFollows()
   if (watchlistMatchIds.length === 0) return []
-  return matchRepository.findViews({ ids: watchlistMatchIds })
+  return (await catalogue()).matches.findViews({ ids: watchlistMatchIds })
 }
 
 /** Every match from the start of today through the next `days` days, in start order. */
@@ -185,30 +210,30 @@ export async function getScheduleMatches(
   now = new Date()
 ): Promise<MatchView[]> {
   const from = startOfDay(now)
-  return matchRepository.findViews({ startsAt: { gte: from, lt: addDays(from, days) } })
+  return (await catalogue()).matches.findViews({ startsAt: { gte: from, lt: addDays(from, days) } })
 }
 
 export async function getLeagues(): Promise<League[]> {
-  return leagueRepository.findMany()
+  return (await catalogue()).leagues.findMany()
 }
 
 export async function getLeagueById(id: string): Promise<League | undefined> {
-  return leagueRepository.findById(id)
+  return (await catalogue()).leagues.findById(id)
 }
 
 /** Seasons for a league, current first, then upcoming, then completed. */
 export async function getLeagueSeasons(leagueId: string): Promise<Season[]> {
-  return seasonRepository.findByLeague(leagueId)
+  return (await catalogue()).seasons.findByLeague(leagueId)
 }
 
 /** Teams in a league with their next match, sorted by name. */
 export async function getLeagueTeamViews(leagueId: string, now = new Date()): Promise<TeamView[]> {
-  return teamRepository.findViews({ leagueId }, now)
+  return (await catalogue()).teams.findViews({ leagueId }, now)
 }
 
 /** Live and upcoming matches in a league, soonest first. */
 export async function getLeagueFixtures(leagueId: string, now = new Date()): Promise<MatchView[]> {
-  return matchRepository.findViews({
+  return (await catalogue()).matches.findViews({
     leagueId,
     status: { not: "finished" },
     startsAt: { gt: new Date(now.getTime() - FIXTURE_GRACE_MS) },
@@ -217,21 +242,21 @@ export async function getLeagueFixtures(leagueId: string, now = new Date()): Pro
 
 /** Finished matches in a league, most recent first. */
 export async function getLeagueResults(leagueId: string, limit?: number): Promise<MatchView[]> {
-  return matchRepository.findViews({ leagueId, status: "finished", order: "desc", limit })
+  return (await catalogue()).matches.findViews({ leagueId, status: "finished", order: "desc", limit })
 }
 
 /** Every finished match, most recent first. Backs the History page. */
 export async function getFinishedMatches(): Promise<MatchView[]> {
-  return matchRepository.findViews({ status: "finished", order: "desc" })
+  return (await catalogue()).matches.findViews({ status: "finished", order: "desc" })
 }
 
 export async function getTeams(): Promise<Team[]> {
-  return teamRepository.findMany()
+  return (await catalogue()).teams.findMany()
 }
 
 export async function getQuickStats(): Promise<QuickStats> {
   const follows = await getCurrentUserFollows()
-  const followedLeagues = await leagueRepository.findByIds(follows.leagueIds)
+  const followedLeagues = await (await catalogue()).leagues.findByIds(follows.leagueIds)
 
   return {
     followedLeagues: follows.leagueIds.length,
@@ -240,7 +265,7 @@ export async function getQuickStats(): Promise<QuickStats> {
 }
 
 export async function getMatchById(id: string): Promise<MatchView | undefined> {
-  return matchRepository.findViewById(id)
+  return (await catalogue()).matches.findViewById(id)
 }
 
 /** Other upcoming matches in the same league, soonest first. */
@@ -249,7 +274,7 @@ export async function getRelatedMatches(
   limit = 4,
   now = new Date()
 ): Promise<MatchView[]> {
-  return matchRepository.findViews({
+  return (await catalogue()).matches.findViews({
     leagueId: match.leagueId,
     excludeId: match.id,
     status: "upcoming",
@@ -259,7 +284,7 @@ export async function getRelatedMatches(
 }
 
 export async function getTeamById(id: string): Promise<TeamView | undefined> {
-  return teamRepository.findViewById(id)
+  return (await catalogue()).teams.findViewById(id)
 }
 
 /** Live and upcoming matches for a team, soonest first. */
@@ -267,7 +292,7 @@ export async function getTeamFixtures(
   teamId: string,
   now = new Date()
 ): Promise<MatchView[]> {
-  return matchRepository.findViews({
+  return (await catalogue()).matches.findViews({
     teamIds: [teamId],
     status: { not: "finished" },
     startsAt: { gt: new Date(now.getTime() - FIXTURE_GRACE_MS) },
@@ -279,16 +304,16 @@ export async function getTeamResults(
   teamId: string,
   limit?: number
 ): Promise<MatchView[]> {
-  return matchRepository.findViews({ teamIds: [teamId], status: "finished", order: "desc", limit })
+  return (await catalogue()).matches.findViews({ teamIds: [teamId], status: "finished", order: "desc", limit })
 }
 
 export async function getTeamPlayers(teamId: string): Promise<Player[]> {
-  return playerRepository.findByTeam(teamId)
+  return (await catalogue()).players.findByTeam(teamId)
 }
 
 /** Live and upcoming matches a player takes part in directly (individual sports), soonest first. */
 export async function getPlayerFixtures(playerId: string, now = new Date()): Promise<MatchView[]> {
-  return matchRepository.findViews({
+  return (await catalogue()).matches.findViews({
     playerIds: [playerId],
     status: { not: "finished" },
     startsAt: { gt: new Date(now.getTime() - FIXTURE_GRACE_MS) },
@@ -297,7 +322,7 @@ export async function getPlayerFixtures(playerId: string, now = new Date()): Pro
 
 /** Finished matches a player took part in directly, most recent first. */
 export async function getPlayerResults(playerId: string, limit?: number): Promise<MatchView[]> {
-  return matchRepository.findViews({ playerIds: [playerId], status: "finished", order: "desc", limit })
+  return (await catalogue()).matches.findViews({ playerIds: [playerId], status: "finished", order: "desc", limit })
 }
 
 /**

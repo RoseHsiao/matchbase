@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
+import { useViewer } from "@/components/auth/viewer-provider"
 import { useBreadcrumbData } from "@/components/layout/breadcrumb-data-provider"
 import { ADMIN_ROOT, findAdminNavItem, isAdminPath } from "@/lib/admin/navigation"
 import { findNavItem } from "@/lib/navigation"
@@ -17,11 +18,13 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
+import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 
 export function AppHeader({ children }: { children?: React.ReactNode }) {
   const pathname = usePathname()
+  const viewer = useViewer()
   const current = findNavItem(pathname)
   const adminItem = isAdminPath(pathname) ? findAdminNavItem(pathname) : undefined
   const adminSub = adminItem && adminItem.href !== ADMIN_ROOT ? adminItem : undefined
@@ -84,7 +87,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
       </Breadcrumb>
       <div className="ml-auto flex items-center gap-1">
         {children}
-        <ReminderIndicator />
+        {viewer ? <ReminderIndicator /> : <Badge variant="secondary">Demo</Badge>}
         <ThemeToggle />
       </div>
     </header>
