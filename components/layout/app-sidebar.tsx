@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import { cn } from "cn"
 import { usePathname } from "next/navigation"
-import { TrophyIcon } from "lucide-react"
 
 import {
   ADMIN_ROOT,
@@ -15,6 +14,7 @@ import {
 } from "@/lib/admin/navigation"
 import { isNavItemActive, navSectionsFor } from "@/lib/navigation"
 import { useViewer } from "@/components/auth/viewer-provider"
+import { BrandMark } from "@/components/layout/brand-mark"
 import { NavUser } from "@/components/layout/nav-user"
 import {
   Sidebar,
@@ -52,8 +52,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               size="lg"
               render={<Link href="/dashboard" onClick={handleNavigate} />}
             >
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <TrophyIcon className="size-4" />
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground dark:bg-secondary">
+                <BrandMark />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">MatchBase</span>

@@ -48,6 +48,36 @@ function render(viewer: Viewer | null, element: ReactNode, pathname = "/dashboar
   )
 }
 
+describe("brand mark", () => {
+  const BADGE = "flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground dark:bg-secondary"
+
+  it("the 24px logo sits directly inside the 32px badge, dark in light mode and dark:bg-secondary in dark mode", () => {
+    const sidebar = render(null, createElement(AppSidebar))
+    const badge = new RegExp(`<div class="${BADGE}">(.*?)</div>`).exec(sidebar)
+    assert.ok(badge, "the sidebar badge has the expected classes")
+    assert.match(badge[1], /^<img[^>]*alt=""/, "the image sits directly inside it, with no other container")
+    assert.match(badge[1], /brand%2Fmatchbase\.png|brand\/matchbase\.png/)
+    assert.match(badge[1], /width="24" height="24"/)
+    assert.match(badge[1], /class="size-6 object-contain"/)
+    assert.match(sidebar, />MatchBase</, "the wordmark stays")
+  })
+
+  it("every branded header uses the same badge, and none still draws the trophy icon", () => {
+    for (const file of ["components/layout/app-sidebar.tsx", "app/(auth)/layout.tsx", "app/page.tsx"]) {
+      const source = readFileSync(file, "utf8")
+      assert.match(source, /className="flex size-8 (shrink-0 )?items-center justify-center rounded-lg bg-primary text-primary-foreground dark:bg-secondary">\s*<BrandMark \/>/, file)
+      assert.doesNotMatch(source, /TrophyIcon/, file)
+    }
+  })
+
+  it("the component and its image agree: 24px requested, 24px rendered", () => {
+    const source = readFileSync("components/layout/brand-mark.tsx", "utf8")
+    assert.match(source, /width=\{24\}/)
+    assert.match(source, /height=\{24\}/)
+    assert.match(source, /className="size-6 object-contain"/)
+  })
+})
+
 describe("navigation per audience", () => {
   it("a demo visitor sees only public destinations", () => {
     assert.deepEqual(hrefs(null), ["/dashboard", "/schedule", "/matches", "/teams", "/players", "/history"])

@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { TrophyIcon } from "lucide-react";
 
+import { BrandMark } from "@/components/layout/brand-mark";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -10,8 +10,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
     <div className="flex min-h-svh flex-col">
       <header className="flex h-14 items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2 rounded-md text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <TrophyIcon className="size-4" />
+          <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground dark:bg-secondary">
+            <BrandMark />
           </span>
           MatchBase
         </Link>
