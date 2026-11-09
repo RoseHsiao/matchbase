@@ -66,16 +66,61 @@ function distinctCharacters(value: string): number {
   return new Set(value).size
 }
 
-/** Parses a connection string for its shape only; the result never includes credentials. */
-function describeDatabaseUrl(value: string | undefined): { present: boolean; parses: boolean; sslVerifyFull: boolean; pooled: boolean; host: string } {
-  if (!value) return { present: false, parses: false, sslVerifyFull: false, pooled: false, host: "" }
+type DatabaseUrlShape = { present: boolean; parses: boolean; pooled: boolean; params: Map<string, string[]> }
+
+/**
+ * Parses a connection string for its shape only; the result never includes
+ * credentials. A string with no hostname does not parse: it cannot name the
+ * database it means. `pooled` is a Neon pooler host (`ep-…-pooler.…`).
+ * `params` keeps every value of every query parameter, so a duplicate is visible.
+ */
+function describeDatabaseUrl(value: string | undefined): DatabaseUrlShape {
+  const params = new Map<string, string[]>()
+  if (!value) return { present: false, parses: false, pooled: false, params }
   try {
     const url = new URL(value)
-    const ssl = url.searchParams.get("sslmode")
-    return { present: true, parses: url.protocol.startsWith("postgres"), sslVerifyFull: ssl === "verify-full", pooled: /-pooler\./.test(url.hostname), host: url.hostname }
+    for (const [key, entry] of url.searchParams) params.set(key, [...(params.get(key) ?? []), entry])
+    return { present: true, parses: /^postgres(ql)?:$/.test(url.protocol) && url.hostname.length > 0, pooled: /-pooler(\.|$)/.test(url.hostname), params }
   } catch {
-    return { present: true, parses: false, sslVerifyFull: false, pooled: false, host: "" }
+    return { present: true, parses: false, pooled: false, params }
   }
+}
+
+/**
+ * The connection parameters each URL must carry. The two URLs are read by different drivers, so they need
+ * different spellings of the same intent (TLS required, certificate verified):
+ *
+ * - DATABASE_URL is read by node-postgres (`pg`) through @prisma/adapter-pg. `pg` honours
+ *   `sslmode=verify-full` (certificate chain and hostname). It does not parse `channel_binding`, so that
+ *   parameter is accepted but enforces nothing at runtime.
+ * - DATABASE_URL_UNPOOLED is read only by Prisma Migrate's Rust schema engine (Prisma 7.10). That engine
+ *   accepts `sslmode` disable/prefer/require only and silently treats `verify-full` as `prefer`; certificate
+ *   verification is off unless `sslaccept=strict`; and it enforces `channel_binding=require`.
+ *   `sslaccept` is engine-specific and not in the Prisma 7 documentation.
+ */
+export const RUNTIME_URL_PARAMETERS = { required: { sslmode: "verify-full" }, optional: { channel_binding: "require" } } as const
+export const MIGRATION_URL_PARAMETERS = { required: { sslmode: "require", sslaccept: "strict", channel_binding: "require" }, optional: {} } as const
+
+type ParameterPolicy = { required: Readonly<Record<string, string>>; optional: Readonly<Record<string, string>> }
+
+/** Problems with a URL's query parameters, naming parameters and expected values only, never what was found. */
+function parameterIssues(params: Map<string, string[]>, policy: ParameterPolicy): { tls: string[]; other: string[] } {
+  const tls: string[] = []
+  const other: string[] = []
+  for (const [key, expected] of Object.entries(policy.required)) {
+    const values = params.get(key) ?? []
+    if (values.length === 0) tls.push(`${key}=${expected} is missing`)
+    else if (values.length > 1) tls.push(`${key} appears ${values.length} times; it must appear once, as ${key}=${expected}`)
+    else if (values[0] !== expected) tls.push(`${key} must be ${expected}`)
+  }
+  for (const [key, expected] of Object.entries(policy.optional)) {
+    const values = params.get(key) ?? []
+    if (values.length > 1) other.push(`${key} appears ${values.length} times`)
+    else if (values.length === 1 && values[0] !== expected) other.push(`${key}, when present, must be ${expected}`)
+  }
+  const unexpected = [...params.keys()].filter((key) => !(key in policy.required) && !(key in policy.optional))
+  if (unexpected.length > 0) other.push(`unexpected parameter(s): ${unexpected.join(", ")}`)
+  return { tls, other }
 }
 
 export function evaluateProductionReadiness(env: EnvLike): ReadinessReport {
@@ -95,13 +140,28 @@ export function evaluateProductionReadiness(env: EnvLike): ReadinessReport {
 
   const runtimeDb = describeDatabaseUrl(env.DATABASE_URL)
   const cliDb = describeDatabaseUrl(env.DATABASE_URL_UNPOOLED)
+  // A running deployment (Vercel sets VERCEL=1; an operator's `--env production` does not) never reads
+  // DATABASE_URL_UNPOOLED: migrations run from the operator shell. Its problems are reported there, but a
+  // deployment does not refuse to start over a variable it does not use.
+  const deployed = env.VERCEL === "1"
+  const strict = production ? "fail" : "warn"
+
+  const runtimeIssues = parameterIssues(runtimeDb.params, RUNTIME_URL_PARAMETERS)
   if (!runtimeDb.present) add({ id: "database-url", status: "fail", detail: "DATABASE_URL is not set." })
   else if (!runtimeDb.parses) add({ id: "database-url", status: "fail", detail: "DATABASE_URL is not a PostgreSQL connection string." })
-  else if (!runtimeDb.sslVerifyFull) add({ id: "database-url", status: production ? "fail" : "warn", detail: "DATABASE_URL must use sslmode=verify-full." })
-  else add({ id: "database-url", status: "pass", detail: `DATABASE_URL is set with sslmode=verify-full${runtimeDb.pooled ? " (pooled host)" : " (not a Neon pooler host; fine outside Neon)"}.` })
+  else if (runtimeIssues.tls.length > 0) add({ id: "database-url", status: strict, detail: `DATABASE_URL must use sslmode=verify-full exactly once: ${runtimeIssues.tls.join("; ")}.` })
+  else if (runtimeIssues.other.length > 0) add({ id: "database-url", status: deployed ? "warn" : strict, detail: `DATABASE_URL has sslmode=verify-full but unexpected parameters: ${runtimeIssues.other.join("; ")}.` })
+  else add({ id: "database-url", status: "pass", detail: `DATABASE_URL is set with sslmode=verify-full${runtimeDb.pooled ? " (pooled host)" : " (not a Neon pooler host; fine outside Neon)"}${runtimeDb.params.has("channel_binding") ? "; channel_binding is accepted but not enforced by the runtime pg driver" : ""}.` })
+
+  const migrationIssues = parameterIssues(cliDb.params, MIGRATION_URL_PARAMETERS)
+  const migrationStatus = deployed ? "warn" : strict
+  const unusedHere = deployed ? " The deployed application does not use this variable; consider removing it from the deployment." : ""
   if (!cliDb.present) add({ id: "database-url-unpooled", status: production && platform === "vercel" ? "info" : "warn", detail: "DATABASE_URL_UNPOOLED is not set; migrations and operator commands need the direct connection (on Vercel it is only needed where those commands run)." })
-  else if (!cliDb.sslVerifyFull) add({ id: "database-url-unpooled", status: production ? "fail" : "warn", detail: "DATABASE_URL_UNPOOLED must use sslmode=verify-full." })
-  else add({ id: "database-url-unpooled", status: "pass", detail: "DATABASE_URL_UNPOOLED is set with sslmode=verify-full." })
+  else if (!cliDb.parses) add({ id: "database-url-unpooled", status: migrationStatus, detail: `DATABASE_URL_UNPOOLED is not a PostgreSQL connection string with a hostname.${unusedHere}` })
+  // Migrations need a session-level connection; Neon's pooler runs in transaction mode.
+  else if (cliDb.pooled) add({ id: "database-url-unpooled", status: migrationStatus, detail: `DATABASE_URL_UNPOOLED points at a Neon pooler host (-pooler); migrations need the direct endpoint. Copy it from the Neon console with connection pooling turned off.${unusedHere}` })
+  else if (migrationIssues.tls.length > 0 || migrationIssues.other.length > 0) add({ id: "database-url-unpooled", status: migrationStatus, detail: `DATABASE_URL_UNPOOLED must carry exactly sslmode=require, sslaccept=strict and channel_binding=require (Prisma 7.10 migration engine; it ignores sslmode=verify-full): ${[...migrationIssues.tls, ...migrationIssues.other].join("; ")}.${unusedHere}` })
+  else add({ id: "database-url-unpooled", status: "pass", detail: "DATABASE_URL_UNPOOLED is set to a direct (non-pooler) host with sslmode=require, sslaccept=strict and channel_binding=require for the Prisma migration engine." })
   if (runtimeDb.present && cliDb.present && env.DATABASE_URL === env.DATABASE_URL_UNPOOLED) {
     add({ id: "database-roles", status: "warn", detail: "DATABASE_URL and DATABASE_URL_UNPOOLED are identical: the runtime uses the migration credential. See docs/security/production-hardening.md for the least-privilege runtime role." })
   } else if (runtimeDb.present && cliDb.present) {

@@ -11,7 +11,8 @@ import { blockingChecks, evaluateProductionReadiness } from "../../lib/env/produ
 const SECRET = "Qm9a7x3fKp2LwZ8vN4cR1tY6uH0sJ5eD9gB3nM7kV1a="
 const CRON = "cron-9f8e7d6c5b4a3f2e1d0c"
 const DB = "postgresql://matchbase_app:runtime-pass-word@ep-abc-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=verify-full"
-const DB_DIRECT = "postgresql://neondb_owner:owner-pass-word@ep-abc.eu-central-1.aws.neon.tech/neondb?sslmode=verify-full"
+/** The Prisma 7.10 migration-engine form (synthetic, nonfunctional credentials and host). */
+const DB_DIRECT = "postgresql://neondb_owner:owner-pass-word@ep-abc.eu-central-1.aws.neon.tech/neondb?sslmode=require&sslaccept=strict&channel_binding=require"
 
 const production = {
   VERCEL: "1",
@@ -24,9 +25,123 @@ const production = {
   CRON_SECRET: CRON,
 }
 
+/** The operator shell: `production:check --env production` sets VERCEL_ENV but not VERCEL. */
+const operator = { ...production, VERCEL: undefined }
+
 function ids(checks: { id: string }[]): string[] {
   return checks.map((check) => check.id).sort()
 }
+
+describe("runtime DATABASE_URL TLS policy (node-postgres)", () => {
+  const runtime = (value: string | undefined, env: Record<string, string | undefined> = operator) =>
+    evaluateProductionReadiness({ ...env, DATABASE_URL: value }).checks.find((check) => check.id === "database-url")
+
+  it("accepts sslmode=verify-full, alone or with channel_binding=require, and says pg does not enforce channel binding", () => {
+    assert.equal(runtime(DB)?.status, "pass")
+    const withBinding = runtime(`${DB}&channel_binding=require`)
+    assert.equal(withBinding?.status, "pass")
+    assert.match(withBinding?.detail ?? "", /not enforced by the runtime pg driver/)
+  })
+
+  it("rejects sslmode=require, which pg would not verify like verify-full is meant to, and the failure blocks Production even when deployed", () => {
+    for (const env of [operator, production]) {
+      const value = DB.replace("verify-full", "require")
+      assert.equal(runtime(value, env)?.status, "fail")
+      assert.ok(blockingChecks(evaluateProductionReadiness({ ...env, DATABASE_URL: value })).some((check) => check.id === "database-url"))
+    }
+  })
+
+  it("rejects a missing, duplicated or conflicting sslmode", () => {
+    const bare = DB.replace("?sslmode=verify-full", "")
+    for (const value of [bare, `${DB}&sslmode=verify-full`, `${DB}&sslmode=require`, `${bare}?channel_binding=require`]) {
+      assert.equal(runtime(value)?.status, "fail", value)
+    }
+  })
+
+  it("a duplicated or conflicting sslmode blocks startup in a running deployment too, not only in the operator shell", () => {
+    for (const value of [`${DB}&sslmode=verify-full`, `${DB}&sslmode=require`, `${DB}&sslmode=disable`]) {
+      for (const env of [production, operator]) {
+        const report = evaluateProductionReadiness({ ...env, DATABASE_URL: value })
+        assert.equal(report.checks.find((c) => c.id === "database-url")?.status, "fail", value)
+        assert.ok(blockingChecks(report).some((c) => c.id === "database-url"), `${value} blocks (${env.VERCEL ? "deployed" : "operator"})`)
+      }
+    }
+  })
+
+  it("does not accept the migration policy in its place", () => {
+    assert.equal(runtime(DB.replace("sslmode=verify-full", "sslmode=require&sslaccept=strict&channel_binding=require"))?.status, "fail")
+  })
+
+  it("rejects unexpected parameters in the operator shell, and only warns about them in a running deployment", () => {
+    for (const extra of ["&options=-c%20role%3Dother", "&sslrootcert=/tmp/ca.pem", "&channel_binding=prefer", "&channel_binding=require&channel_binding=require"]) {
+      assert.equal(runtime(`${DB}${extra}`)?.status, "fail", extra)
+      assert.equal(runtime(`${DB}${extra}`, production)?.status, "warn", extra)
+    }
+  })
+})
+
+describe("migration DATABASE_URL_UNPOOLED TLS policy (Prisma 7.10 migration engine)", () => {
+  const migration = (value: string | undefined, env: Record<string, string | undefined> = operator) =>
+    evaluateProductionReadiness({ ...env, DATABASE_URL_UNPOOLED: value }).checks.find((check) => check.id === "database-url-unpooled")
+  const base = DB_DIRECT.slice(0, DB_DIRECT.indexOf("?"))
+
+  it("accepts exactly sslmode=require, sslaccept=strict and channel_binding=require on a direct host, in any order", () => {
+    assert.equal(migration(DB_DIRECT)?.status, "pass")
+    assert.equal(migration(`${base}?channel_binding=require&sslaccept=strict&sslmode=require`)?.status, "pass")
+  })
+
+  it("rejects every deviation, and the failure blocks the operator's Production check", () => {
+    const cases: [string, string][] = [
+      ["missing sslaccept", `${base}?sslmode=require&channel_binding=require`],
+      ["sslaccept=accept_invalid_certs", `${base}?sslmode=require&sslaccept=accept_invalid_certs&channel_binding=require`],
+      ["missing channel_binding", `${base}?sslmode=require&sslaccept=strict`],
+      ["channel_binding=prefer", `${base}?sslmode=require&sslaccept=strict&channel_binding=prefer`],
+      ["missing sslmode", `${base}?sslaccept=strict&channel_binding=require`],
+      ["sslmode=verify-full, which the engine ignores", `${base}?sslmode=verify-full&sslaccept=strict&channel_binding=require`],
+      ["the old runtime-style URL", `${base}?sslmode=verify-full&channel_binding=require`],
+      ["duplicate sslaccept", `${DB_DIRECT}&sslaccept=strict`],
+      ["conflicting sslmode", `${DB_DIRECT}&sslmode=verify-full`],
+      ["sslrootcert, which the engine silently discards", `${DB_DIRECT}&sslrootcert=/tmp/ca.pem`],
+      ["options", `${DB_DIRECT}&options=-c%20role%3Dother`],
+      ["an unexpected parameter", `${DB_DIRECT}&connect_timeout=10`],
+      ["no parameters", base],
+    ]
+    for (const [name, value] of cases) {
+      assert.equal(migration(value)?.status, "fail", name)
+      assert.ok(blockingChecks(evaluateProductionReadiness({ ...operator, DATABASE_URL_UNPOOLED: value })).some((check) => check.id === "database-url-unpooled"), `${name} blocks`)
+    }
+  })
+
+  it("still rejects a pooler host and a missing or invalid hostname", () => {
+    assert.equal(migration(DB_DIRECT.replace("ep-abc.", "ep-abc-pooler."))?.status, "fail")
+    assert.match(migration(DB_DIRECT.replace("ep-abc.", "ep-abc-pooler."))?.detail ?? "", /pooler/)
+    for (const value of ["postgresql://neondb_owner:p@/neondb?sslmode=require&sslaccept=strict&channel_binding=require", "postgresql:///neondb?sslmode=require&sslaccept=strict&channel_binding=require", "not a url", DB_DIRECT.replace("postgresql:", "https:")]) {
+      assert.equal(migration(value)?.status, "fail", value)
+    }
+  })
+
+  it("a running deployment only warns: it never reads this variable, so it must not refuse to start (Vercel's value is still verify-full)", () => {
+    for (const value of [`${base}?sslmode=verify-full`, DB_DIRECT.replace("ep-abc.", "ep-abc-pooler."), "not a url"]) {
+      const report = evaluateProductionReadiness({ ...production, DATABASE_URL_UNPOOLED: value })
+      const check = report.checks.find((c) => c.id === "database-url-unpooled")
+      assert.equal(check?.status, "warn", value)
+      assert.match(check?.detail ?? "", /does not use this variable/)
+      assert.ok(!blockingChecks(report).some((c) => c.id === "database-url-unpooled"), "not blocking")
+    }
+  })
+
+  it("never names a credential, host, endpoint or the value it found", () => {
+    const report = evaluateProductionReadiness({ ...operator, DATABASE_URL: `${DB}&sslmode=prefer&weird=x`, DATABASE_URL_UNPOOLED: `${base}?sslmode=verify-full&sslaccept=bogus-value&channel_binding=sideways` })
+    const text = JSON.stringify(report)
+    for (const leak of ["owner-pass-word", "runtime-pass-word", "postgresql://", "ep-abc", "neon.tech", "bogus-value", "sideways"]) assert.equal(text.includes(leak), false, leak)
+  })
+
+  it("the policies are separate: the runtime policy is never applied to the migration URL, nor the reverse", () => {
+    const report = evaluateProductionReadiness(operator)
+    assert.equal(report.checks.find((c) => c.id === "database-url")?.status, "pass")
+    assert.equal(report.checks.find((c) => c.id === "database-url-unpooled")?.status, "pass")
+  })
+})
 
 describe("evaluateProductionReadiness", () => {
   it("a complete Production configuration is ready", () => {
@@ -75,9 +190,11 @@ describe("evaluateProductionReadiness", () => {
 
   it("warns, rather than fails, on open sign-up with verification mail, identical database roles and report-only CSP", () => {
     const mail = { MAIL_TRANSPORT: "resend", MAIL_FROM: "noreply@mail.matchbase.example", RESEND_API_KEY: "re_TestKey_0123456789abcdef", AUTH_EMAIL_VERIFICATION_ENABLED: "true" }
-    const report = evaluateProductionReadiness({ ...production, ...mail, AUTH_ALLOW_SIGN_UP: "true", DATABASE_URL_UNPOOLED: DB, CSP_MODE: "report-only" })
+    // Identical strings. The two URLs now need different TLS parameters, so identical strings can only satisfy one
+    // policy: here the runtime one. In a running deployment the migration URL then warns (it is unused there).
+    const report = evaluateProductionReadiness({ ...production, ...mail, AUTH_ALLOW_SIGN_UP: "true", DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB, CSP_MODE: "report-only" })
     assert.deepEqual(ids(report.failures), [])
-    assert.deepEqual(ids(report.warnings), ["csp", "database-roles", "sign-up"])
+    assert.deepEqual(ids(report.warnings), ["csp", "database-roles", "database-url-unpooled", "sign-up"])
     assert.match(report.warnings.find((c) => c.id === "sign-up")?.detail ?? "", /OPEN.*required email verification.*release procedure/)
   })
 
