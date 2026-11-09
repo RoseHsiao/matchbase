@@ -7,7 +7,7 @@ Legend: **R** required, **O** optional, **F** forbidden (the readiness check fai
 | Variable | Secret | Purpose | Development (`.env.local`) | Preview | Production |
 |---|---|---|---|---|---|
 | `DATABASE_URL` | yes | runtime connection, pooled host, `sslmode=verify-full`; the least-privilege runtime role in Production | R (dev branch, owner role acceptable) | R (Preview branch) | R (Production project, runtime role) |
-| `DATABASE_URL_UNPOOLED` | yes | direct connection for `prisma migrate deploy` and operator scripts | R | O (only if migrations run from a Preview shell) | shell only (owner role); optional on Vercel |
+| `DATABASE_URL_UNPOOLED` | yes | direct connection for `prisma migrate deploy` and operator scripts; in Production exactly `sslmode=require&sslaccept=strict&channel_binding=require`, the parameters Prisma's migration engine honours (it ignores `verify-full`) | R | O (only if migrations run from a Preview shell) | shell only (owner role); optional on Vercel |
 | `MATCHBASE_DATABASE_LABEL` | no | which database the URLs point at; must equal the environment intent | R `development` | R `preview` | R `production` |
 | `MATCHBASE_OPERATOR_TARGET` | no | per-command confirmation for a production-labelled database | — | — | shell only, `production`, never on Vercel |
 | `BETTER_AUTH_SECRET` | yes | signs session cookies; 32+ random characters, 12+ distinct | R (local value) | R (its own value) | R (its own value, different from Preview and from `CRON_SECRET`) |
@@ -47,7 +47,7 @@ Vercel system variables (`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_PROJECT_P
 
 ## Launch invariants the readiness check enforces
 
-- Production: label `production`; `verify-full` on both URLs; auth secret strong and different from the cron secret; https base URL; `CRON_SECRET` present; sign-up closed; no `MATCHBASE_DEV_*`, no `ALLOW_PRODUCTION_SEED`; CSP not off; TheSportsDB configured.
+- Production: label `production`; `DATABASE_URL` with `sslmode=verify-full`; `DATABASE_URL_UNPOOLED`, where it is checked (the operator shell; a running deployment only warns because it never reads it), with exactly `sslmode=require&sslaccept=strict&channel_binding=require`; auth secret strong and different from the cron secret; https base URL; `CRON_SECRET` present; sign-up closed; no `MATCHBASE_DEV_*`, no `ALLOW_PRODUCTION_SEED`; CSP not off; TheSportsDB configured.
 - Mail (Phase 10.5): unconfigured mail passes, because it is a safe state. In Production, any configuration the mail parser refuses fails and blocks startup: dev outbox, capture or unknown transport, `resend.dev` sender, allowlist, malformed key or sender, the recovery flag without a deliverable transport, and a Resend key equal to another secret. DNS and domain verification are reported as **not checked** (info).
 - Preview: label not `production`; no dev-login flag or credentials; no seed flag; no secret reuse (checked as "auth ≠ cron" within the environment; cross-environment reuse is an operator rule that cannot be verified from one environment).
 - Development: warnings only.

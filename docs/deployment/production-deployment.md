@@ -12,7 +12,7 @@ Conventions: "operator shell" is a terminal on a trusted machine with the Produc
 
 ## 2. Create the runtime and migration credentials
 
-- Migration/operator credential: the branch's owner role (created by Neon). Its direct connection string becomes `DATABASE_URL_UNPOOLED` in operator shells only.
+- Migration/operator credential: the branch's owner role (created by Neon). Its direct connection string becomes `DATABASE_URL_UNPOOLED` in operator shells only, with the Prisma migration-engine TLS parameters `sslmode=require&sslaccept=strict&channel_binding=require` (see "Connection TLS policy" under step 11; `verify-full` is silently ignored by Prisma's migration engine).
 - Runtime credential: after step 11 (migrations applied), run [prisma/sql/runtime-role.sql](../../prisma/sql/runtime-role.sql) as the owner role. The role name is fixed (`matchbase_app`); the only placeholder is the password. Because the Neon SQL Editor keeps a query history, use a throwaway password in the SQL, then reset the role's password from the Neon console (branch → Roles → `matchbase_app` → reset), which never passes through SQL history; use the console-issued password in `DATABASE_URL`. With psql instead, run the filled-in file with `psql -f` from a `umask 077` temp file and delete it. Never commit or paste the password.
 - Build `DATABASE_URL` from the runtime role and the pooled host, ending in `?sslmode=verify-full`.
 - Check (as the runtime role): `SELECT has_schema_privilege(current_user, 'public', 'CREATE')` is `false`. Later `npm run production:check -- --db` confirms it.
@@ -25,7 +25,7 @@ Project → Settings → Environment Variables, scope **Production only**:
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | runtime role, pooled host, `sslmode=verify-full` |
-| `DATABASE_URL_UNPOOLED` | may be omitted on Vercel (migrations run from the operator shell); if set, the owner role, direct host |
+| `DATABASE_URL_UNPOOLED` | may be omitted on Vercel (migrations run from the operator shell), and should be: the deployed app never reads it. If set, the owner role, direct host. A running deployment only warns about its parameters; it does not refuse to start over them |
 | `MATCHBASE_DATABASE_LABEL` | `production` |
 | `BETTER_AUTH_SECRET` | see step 5 |
 | `BETTER_AUTH_URL` | see step 6 |
@@ -79,7 +79,7 @@ Scope **Preview only**, with different values:
 
 ## 10. Run the production readiness check
 
-**Sensitive variables cannot be pulled.** Vercel stores Production and Preview variables as *sensitive* by default; `vercel env pull` writes the placeholder `[SENSITIVE]` for them and `vercel env run` refuses them and silently falls back to local files (verified 2026-09-23). The operator shell therefore takes its values from their sources, never from Vercel: write a git-ignored `.env.production.local` by hand with `DATABASE_URL` and `DATABASE_URL_UNPOOLED` copied from the Neon console (project `matchbase-production`, owner role, pooled and direct hosts, `sslmode=verify-full`), `MATCHBASE_DATABASE_LABEL=production` and `BETTER_AUTH_URL=https://matchbase-drab.vercel.app`. The auth and cron secrets stay on Vercel only; the startup guard verifies their strength and separation at the first deployment, so the local readiness run reports `auth-secret` and `cron-secret` as failures that are expected in the operator shell. Keep any generated secret you may need again (the cron secret for the manual smoke test) in your password manager, not in a file. Then, with development-only keys blanked so `.env.local` cannot bleed in:
+**Sensitive variables cannot be pulled.** Vercel stores Production and Preview variables as *sensitive* by default; `vercel env pull` writes the placeholder `[SENSITIVE]` for them and `vercel env run` refuses them and silently falls back to local files (verified 2026-09-23). The operator shell therefore takes its values from their sources, never from Vercel: write a git-ignored `.env.production.local` by hand with `DATABASE_URL` and `DATABASE_URL_UNPOOLED` copied from the Neon console (project `matchbase-production`): `DATABASE_URL` as the runtime role on the pooled host with `sslmode=verify-full`, and `DATABASE_URL_UNPOOLED` as the owner role on the direct host with exactly `sslmode=require&sslaccept=strict&channel_binding=require` (step 11, "Connection TLS policy"), `MATCHBASE_DATABASE_LABEL=production` and `BETTER_AUTH_URL=https://matchbase-drab.vercel.app`. The auth and cron secrets stay on Vercel only; the startup guard verifies their strength and separation at the first deployment, so the local readiness run reports `auth-secret` and `cron-secret` as failures that are expected in the operator shell. Keep any generated secret you may need again (the cron secret for the manual smoke test) in your password manager, not in a file. Then, with development-only keys blanked so `.env.local` cannot bleed in:
 
 ```
 set -a; . ./.env.production.local; set +a
@@ -114,6 +114,52 @@ MATCHBASE_OPERATOR_TARGET=production npm run db:migrate
 4. only then merge.
 
 Migrations are written to be additive, so the build already running keeps working on the migrated database. The reverse is not true: the new Prisma client reads columns the old database lacks. For `20261028080000_notification_delivery`, that breaks every session lookup.
+
+### Connection TLS policy (added 2026-11-09)
+
+The two URLs are read by different drivers, so each has its own policy. `lib/env/production-config.ts` (the readiness check and the startup guard) and the operator scripts below enforce both separately.
+
+| URL | Read by | Required parameters | What the driver enforces |
+|---|---|---|---|
+| `DATABASE_URL` | node-postgres (`pg`), through `@prisma/adapter-pg`: the deployed app and the operator's read-only checks | `sslmode=verify-full`, exactly once; `channel_binding=require` optional; nothing else | TLS with certificate-chain and hostname verification. `pg` does **not** parse `channel_binding`: it is accepted and enforces nothing. |
+| `DATABASE_URL_UNPOOLED` | Prisma Migrate's Rust schema engine only (Prisma 7.10.0, engine `0edf323e…`) | exactly `sslmode=require`, `sslaccept=strict`, `channel_binding=require`, each once; nothing else | `require`: TLS or fail. `strict`: certificate verification on (it is **off** by default in this engine). `channel_binding=require`: enforced. The engine accepts only `disable`, `prefer` and `require` for `sslmode` and **silently treats `verify-full` as `prefer`**; `sslrootcert` is silently discarded. |
+
+Evidence and limits, stated plainly:
+
+- From the engine's source at its exact commit and the installed binary: the parameter handling above. `sslaccept` is engine-specific and **not documented** for Prisma 7; the v7 documentation lists only `sslmode` `prefer`, `require`, `disable`.
+- 2026-11-09: `prisma migrate status` connected to the recovery branch (below) as the runtime role with exactly these three parameters, from the operator's Mac, and read the migration history (only Phase 11 pending, nothing failed).
+- **Not proven:** rejection of an invalid certificate chain, and hostname verification. No negative test has been run. `strict` turns certificate verification on in the engine; hostname checking rests on the TLS library's default, not on direct evidence.
+- A running deployment does not refuse to start over `DATABASE_URL_UNPOOLED` (it never reads it), so Vercel's copy, if any, only warns. The operator's Production check fails on any deviation.
+
+### Phase 11 Production migration and its recovery reference (2026-11)
+
+**Recovery branch.** `pre-phase11-migration-20261109`, branched from Production (`production`) at 2026-11-09 08:53:20 UTC in project `matchbase-production`, before the Phase 11 migration. It is a point-in-time **recovery reference**:
+
+- it is **not** an automatic rollback mechanism, and no script reads or restores it;
+- it exists for inspection or a separately approved, manual recovery procedure;
+- restoring it would discard every Production write made after the branch point;
+- the migration is additive, so a forward fix is generally preferable to restoring the whole database;
+- it does not replace the read-only PREMIGRATION check before the migration or the verification after it;
+- do not delete or suspend it as part of the migration.
+
+**Operator scripts.** Two operator-local scripts, kept outside the repository with the Production configuration (`~/.config/matchbase/`, not versioned), wrap the steps above. Both empty their environment, parse the Production file without executing it, print only whitelisted lines, and have offline self-tests (`SELFTEST=1`):
+
+- `check-production.sh`: preflight (both TLS policies, endpoint pin, roles, hosts, local migrations) and the configuration check, then at most one read-only database mode. Every mode connects only as the runtime role, inside a `READ ONLY` transaction whose role, session role, database and read-only state are verified before any query, and which always ends in `ROLLBACK`. Output is check names, booleans and counts only.
+
+  | Mode | When | What it answers |
+  |---|---|---|
+  | `PREMIGRATION=1` | **before** a migration | Is it safe to apply Phase 11? State A (clean: six earlier migrations completed once each, no Phase 11 record or object, prerequisites present), B (one failed Phase 11 record, needs an approved `migrate resolve --rolled-back`), C (inconsistent: stop). `migrate-production.sh` runs it itself and continues only on A. |
+  | `POSTMIGRATION=1` | **after** the Phase 11 migration | Did it land exactly as written? Each of the 7 migrations has exactly one completed record and nothing is unfinished, rolled back, duplicated or unknown; the `NotificationStatus` enum (its 7 values in order), the `NotificationDelivery` table (its 16 columns), its 4 indexes (columns, uniqueness), its primary key and 2 foreign keys (columns, referenced table, `ON DELETE`/`ON UPDATE CASCADE`) and `User.reminderEmails` (`boolean`, `NOT NULL`, default `false`) each exist exactly once, in `public`, with no extra index or constraint. The expectations are read from the migration's own SQL. Any mismatch is a FAIL; nothing is repaired. It cannot be combined with the other modes. |
+  | `RUN_DB=1` | any time | General readiness and privileges: `db-connect`, `db-privileges` (the runtime role cannot alter the schema), `db-migrations`, `db-schema` (required tables), `db-table-privileges` (the runtime role's data privileges on every application table), sync locks, administrators, demo data. It checks tables, not individual indexes or constraints, and does not count migration records. |
+
+  The commands, with the Production endpoint ID from the Neon console (not secret, never printed by the scripts):
+
+  ```
+  EXPECTED_PRODUCTION_ENDPOINT=<Production endpoint ID> PREMIGRATION=1  bash ~/.config/matchbase/check-production.sh
+  EXPECTED_PRODUCTION_ENDPOINT=<Production endpoint ID> POSTMIGRATION=1 bash ~/.config/matchbase/check-production.sh
+  EXPECTED_PRODUCTION_ENDPOINT=<Production endpoint ID> RUN_DB=1        bash ~/.config/matchbase/check-production.sh
+  ```
+- `migrate-production.sh`: requires the exact migration name and the endpoint pin, runs PREMIGRATION, continues only on state A, then runs `scripts/migrate-deploy.mts` with every `.env`/`.env.local` name pinned to empty. It runs the migration in its own process group; on timeout or an operator interrupt it terminates the whole group, confirms nothing of it remains, exits nonzero and says not to retry before the database state has been inspected. It never runs `migrate resolve`, a reset, a push or any SQL of its own.
 - Then perform step 2's SQL (runtime role) if not done, and re-run the `--db` check as the runtime role.
 
 ## 11b. System bootstrap (no demo data)
