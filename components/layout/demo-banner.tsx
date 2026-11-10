@@ -3,13 +3,18 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
-import { useViewer } from "@/components/auth/viewer-provider"
+import { useSignUpOpen, useViewer } from "@/components/auth/viewer-provider"
 import { buttonVariants } from "@/components/ui/button"
-import { signInHrefFromDemo } from "@/lib/auth/redirect"
+import { signInHrefFromDemo, signUpHrefFromDemo } from "@/lib/auth/redirect"
 
-/** Says plainly that an anonymous visitor is in the demo, not signed in, on every page of the app shell. */
+/**
+ * Says plainly that an anonymous visitor is in the demo, not signed in, on
+ * every page of the app shell. Offers "Create account" only when the
+ * deployment accepts public sign-up.
+ */
 export function DemoBanner() {
   const viewer = useViewer()
+  const signUpOpen = useSignUpOpen()
   const pathname = usePathname()
   if (viewer) return null
 
@@ -18,9 +23,16 @@ export function DemoBanner() {
       <p className="min-w-0">
         <span className="font-medium text-foreground">You&apos;re exploring the demo.</span> The teams, players and results are fictional, it&apos;s read-only, and you&apos;re not signed in.
       </p>
-      <Link href={signInHrefFromDemo(pathname)} className={buttonVariants({ variant: "outline", size: "sm", className: "shrink-0" })}>
-        Sign in
-      </Link>
+      <div className="flex shrink-0 items-center gap-2">
+        {signUpOpen ? (
+          <Link href={signUpHrefFromDemo(pathname)} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+            Create account
+          </Link>
+        ) : null}
+        <Link href={signInHrefFromDemo(pathname)} className={buttonVariants({ variant: "outline", size: "sm" })}>
+          Sign in
+        </Link>
+      </div>
     </aside>
   )
 }

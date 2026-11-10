@@ -3,7 +3,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BrandMark } from "@/components/layout/brand-mark";
 import {
-  ArrowRightIcon,
   CalendarDaysIcon,
   LayersIcon,
   SwordsIcon,
@@ -18,6 +17,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { LandingAccountActions } from "@/components/auth/landing-account-actions";
+import { accountPolicy } from "@/lib/auth/email-verification";
 import { getViewer } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
@@ -80,22 +81,9 @@ export default async function HomePage() {
             into one place. Explore the demo without an account; it is
             read-only, and its teams, players and results are fictional.
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/dashboard" className={buttonVariants({ size: "lg" })}>
-              Explore Demo
-              <ArrowRightIcon data-icon="inline-end" />
-            </Link>
-            <Link
-              href="/sign-in"
-              className={buttonVariants({ variant: "outline", size: "lg" })}
-            >
-              Sign in
-            </Link>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Accounts are limited to authorized users. Any resemblance between
-            demo data and real teams or people is coincidental.
-          </p>
+          <LandingAccountActions
+            signUpOpen={accountPolicy(process.env).signUpOpen}
+          />
         </section>
         <section
           aria-label="What the demo shows"

@@ -15,6 +15,39 @@ for (const file of [".env.local", ".env"]) {
 export const BASE = process.env.MATCHBASE_E2E_BASE_URL
 /** Set when the server was started with an unreachable DATABASE_URL. */
 export const DATABASE_DOWN = process.env.MATCHBASE_E2E_DATABASE === "unreachable"
+/**
+ * Set to `open` when the server was started with public sign-up open (in
+ * development: AUTH_ALLOW_SIGN_UP unset or true). Anything else means the
+ * server was started with AUTH_ALLOW_SIGN_UP=false, the launch default.
+ */
+export const SIGN_UP_OPEN = process.env.MATCHBASE_E2E_SIGN_UP === "open"
+
+/** A per-run marker for accounts a suite creates, so cleanup touches nothing else. */
+export function e2eStamp(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+/**
+ * Deletes exactly the accounts this run created: addresses that start with
+ * `prefix` and end with `-<stamp>@example.test` (sessions, credentials and
+ * personal rows cascade). Refuses unless the local configuration labels the
+ * database `development`, and never touches any other row.
+ */
+export async function deleteStampedAccounts(prefix: string, stamp: string): Promise<number> {
+  assert.equal(process.env.MATCHBASE_DATABASE_LABEL?.trim().toLowerCase(), "development", "cleanup runs only against the development database")
+  assert.match(prefix, /^e2e-[a-z-]+$/)
+  assert.match(stamp, /^\d{13}-[a-z0-9]{1,6}$/)
+  const connectionString = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL
+  assert.ok(connectionString, "no development database URL")
+  const [{ PrismaPg }, { PrismaClient }] = await Promise.all([import("@prisma/adapter-pg"), import("../../lib/generated/prisma/client")])
+  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
+  try {
+    const { count } = await prisma.user.deleteMany({ where: { AND: [{ email: { startsWith: prefix } }, { email: { endsWith: `-${stamp}@example.test` } }] } })
+    return count
+  } finally {
+    await prisma.$disconnect()
+  }
+}
 
 export function assertLocalTarget(): void {
   assert.match(new URL(BASE ?? "").hostname, /^(localhost|127\.0\.0\.1)$/, "the end-to-end suites only run against a local server")

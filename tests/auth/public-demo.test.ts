@@ -8,6 +8,7 @@ import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.share
 import { createElement, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
+import { LandingAccountActions } from "../../components/auth/landing-account-actions"
 import { ViewerProvider } from "../../components/auth/viewer-provider"
 import { AppHeader } from "../../components/layout/app-header"
 import { AppSidebar } from "../../components/layout/app-sidebar"
@@ -21,7 +22,7 @@ import { TooltipProvider } from "../../components/ui/tooltip"
 import type { Viewer } from "../../lib/auth/authorization"
 import { accountPolicy } from "../../lib/auth/email-verification"
 import { demoTeams } from "../../lib/data/demo-fixtures"
-import { signInHrefFromDemo } from "../../lib/auth/redirect"
+import { signInHrefFromDemo, signUpHref, signUpHrefFromDemo } from "../../lib/auth/redirect"
 import { mobileNavItemsFor, navSectionsFor } from "../../lib/navigation"
 
 function sourceFiles(dir: string): string[] {
@@ -37,11 +38,11 @@ function hrefs(viewer: Viewer | null): string[] {
   return navSectionsFor(viewer).flatMap((section) => section.items.map((item) => item.href))
 }
 
-function render(viewer: Viewer | null, element: ReactNode, pathname = "/dashboard"): string {
+function render(viewer: Viewer | null, element: ReactNode, pathname = "/dashboard", signUpOpen = false): string {
   return renderToStaticMarkup(
     createElement(AppRouterContext.Provider, { value: {} as AppRouterInstance },
       createElement(PathnameContext.Provider, { value: pathname },
-        createElement(ViewerProvider, { viewer } as Parameters<typeof ViewerProvider>[0],
+        createElement(ViewerProvider, { viewer, signUpOpen } as Parameters<typeof ViewerProvider>[0],
           createElement(WatchlistProvider, stores as unknown as Parameters<typeof WatchlistProvider>[0],
             createElement(WatchlistRemindersProvider, stores as unknown as Parameters<typeof WatchlistRemindersProvider>[0],
               createElement(TooltipProvider, null, createElement(SidebarProvider, null, element)))))))
@@ -217,18 +218,71 @@ describe("session refresh cannot poll", () => {
   })
 })
 
-describe("public sign-up stays closed", () => {
-  it("on Production and Preview unless an operator opens it deliberately", () => {
-    assert.equal(accountPolicy({ VERCEL_ENV: "production" }).signUpOpen, false)
-    assert.equal(accountPolicy({ VERCEL_ENV: "preview" }).signUpOpen, false)
-    assert.equal(accountPolicy({ VERCEL_ENV: "production", AUTH_ALLOW_SIGN_UP: "true" }).signUpOpen, false, "opening it also needs verified mail")
+describe("public sign-up follows the account policy", () => {
+  it("stays closed on Production and Preview unless an operator sets both flags", () => {
+    for (const VERCEL_ENV of ["production", "preview"]) {
+      assert.equal(accountPolicy({ VERCEL_ENV }).signUpOpen, false)
+      assert.equal(accountPolicy({ VERCEL_ENV, AUTH_ALLOW_SIGN_UP: "true" }).signUpOpen, false, "one flag is not enough")
+      assert.equal(accountPolicy({ VERCEL_ENV, AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }).signUpOpen, false, "one flag is not enough")
+      assert.equal(accountPolicy({ VERCEL_ENV, AUTH_ALLOW_SIGN_UP: "true", AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }).signUpOpen, true)
+    }
   })
 
-  it("the landing page offers no sign-up action", () => {
+  it("the landing page reads the policy on the server and hands it to its actions", () => {
     const landing = readFileSync("app/page.tsx", "utf8")
-    assert.match(landing, /Explore Demo/)
-    assert.match(landing, /href="\/sign-in"/)
-    assert.doesNotMatch(landing, /sign-up/)
+    assert.match(landing, /<LandingAccountActions\s+signUpOpen=\{accountPolicy\(process\.env\)\.signUpOpen\}/)
+    assert.doesNotMatch(landing, /href="\/sign-up"/, "no hard-coded sign-up link outside the policy-driven component")
+  })
+
+  it("landing, closed: Explore Demo and Sign in, the authorized-users note, no Create account", () => {
+    const html = renderToStaticMarkup(createElement(LandingAccountActions, { signUpOpen: false }))
+    assert.match(html, /Explore Demo/)
+    assert.match(html, /href="\/sign-in"/)
+    assert.match(html, /limited to authorized users/)
+    assert.doesNotMatch(html, /sign-up|Create account/)
+  })
+
+  it("landing, open: Create account next to Explore Demo and Sign in, and the copy drops 'authorized users'", () => {
+    const html = renderToStaticMarkup(createElement(LandingAccountActions, { signUpOpen: true }))
+    assert.match(html, /Explore Demo/)
+    assert.match(html, /href="\/sign-up"[^>]*>Create account</)
+    assert.match(html, /href="\/sign-in"/)
+    assert.doesNotMatch(html, /authorized users/)
+    assert.match(html, /coincidental/, "the fictional-data note stays")
+  })
+
+  it("demo banner and sidebar offer Create account only when sign-up is open", () => {
+    const closedBanner = render(null, createElement(DemoBanner), "/matches/demo-match-1")
+    assert.doesNotMatch(closedBanner, /sign-up|Create account/)
+    assert.match(closedBanner, /href="\/sign-in\?next=%2Fmatches"/)
+    const openBanner = render(null, createElement(DemoBanner), "/matches/demo-match-1", true)
+    assert.match(openBanner, /href="\/sign-up\?next=%2Fmatches"[^>]*>Create account</, "a demo record returns to its list, as signing in does")
+    assert.match(openBanner, /href="\/sign-in\?next=%2Fmatches"/)
+    assert.match(openBanner, /exploring the demo/)
+
+    const closedSidebar = render(null, createElement(AppSidebar))
+    assert.match(closedSidebar, /For authorized accounts/)
+    assert.doesNotMatch(closedSidebar, /href="\/sign-up"|Create account/)
+    const openSidebar = render(null, createElement(AppSidebar), "/dashboard", true)
+    assert.match(openSidebar, /href="\/sign-up"/)
+    assert.match(openSidebar, /Create account/)
+    assert.doesNotMatch(openSidebar, /For authorized accounts/)
+    assert.match(openSidebar, /Public demo/)
+  })
+
+  it("a signed-in viewer sees no sign-up offer even when it is open", () => {
+    const banner = render(member, createElement(DemoBanner), "/dashboard", true)
+    assert.doesNotMatch(banner, /Demo notice|sign-up|Create account/)
+    assert.doesNotMatch(render(member, createElement(AppSidebar), "/dashboard", true), /href="\/sign-up"|Create account/)
+  })
+
+  it("sign-up links keep the same safe-next rule as sign-in", () => {
+    assert.equal(signUpHref(), "/sign-up")
+    assert.equal(signUpHref("/schedule"), "/sign-up?next=%2Fschedule")
+    assert.equal(signUpHref("//evil.example"), "/sign-up")
+    assert.equal(signUpHrefFromDemo("/dashboard"), "/sign-up")
+    assert.equal(signUpHrefFromDemo("/teams/redbrook-rovers"), "/sign-up?next=%2Fteams")
+    assert.equal(signUpHrefFromDemo("/leagues/meridian-league"), "/sign-up")
   })
 })
 

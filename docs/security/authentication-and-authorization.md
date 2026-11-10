@@ -27,9 +27,9 @@ Current Better Auth documentation (installation, database concepts, session mana
 
 **Better Auth 1.7.5** with the Prisma adapter, as the audit recommended: identity lives in MatchBase's own PostgreSQL, the session is readable from Server Components and Server Actions, no middleware is required, and the role is a column MatchBase owns. No second provider was introduced.
 
-**Email and password** is the first method. Reasons: it needs no third-party credentials or mail transport, which this deployment does not have; Better Auth hashes with scrypt and applies stricter built-in limits to the sign-in endpoint; and OAuth or magic links can be added later as configuration without touching the authorization boundary, because nothing outside `lib/auth` knows how a session was created. Email verification is off (`requireEmailVerification: false`) because there is no mail transport; turning it on is one option plus a `sendVerificationEmail` function. **Update (Phase 10.7):** verification is implemented. `requireEmailVerification` follows `accountPolicy`: it is required exactly when public sign-up is open, which in turn needs `AUTH_EMAIL_VERIFICATION_ENABLED` and a deliverable transport ([account-recovery.md](account-recovery.md)).
+**Email and password** is the first method. Reasons: it needs no third-party credentials or mail transport, which this deployment does not have; Better Auth hashes with scrypt and applies stricter built-in limits to the sign-in endpoint; and OAuth or magic links can be added later as configuration without touching the authorization boundary, because nothing outside `lib/auth` knows how a session was created. Email verification is off (`requireEmailVerification: false`) because there is no mail transport; turning it on is one option plus a `sendVerificationEmail` function. **Update (Phase 10.7):** verification is implemented. `requireEmailVerification` follows `accountPolicy`: it is required when public sign-up is open **and** verification mail is on (`AUTH_EMAIL_VERIFICATION_ENABLED` plus a deliverable transport; [account-recovery.md](account-recovery.md)). **Update (2026-11-10):** on Production and Preview, sign-up can also open **without** verification, but only with both `AUTH_ALLOW_SIGN_UP=true` and `AUTH_ALLOW_UNVERIFIED_SIGN_UP=true`. In that mode the sign-up endpoint reveals whether an address already has an account (status, body, cookie and timing; not fixable without verification), there is no self-service recovery, and turning verification on later needs a migration, not a switch. See [production-hardening.md](production-hardening.md#public-sign-up-without-email-verification-2026-11-10).
 
-Password policy: 10 to 128 characters (`lib/auth/password-policy.ts`, shared by the server configuration and the sign-up form). **Since Phase 9.2 sign-up is closed by default outside local development** (launch policy in [production-hardening.md](production-hardening.md)); `AUTH_ALLOW_SIGN_UP=true` opens it, `false` closes it anywhere. Better Auth's `disableSignUp` enforces the choice server-side. Password recovery is an operator command (`npm run account:password`) until a mail transport exists.
+Password policy: 10 to 128 characters (`lib/auth/password-policy.ts`, shared by the server configuration and the sign-up form). **Since Phase 9.2 sign-up is closed by default outside local development** (launch policy in [production-hardening.md](production-hardening.md)). `AUTH_ALLOW_SIGN_UP=false` closes it anywhere. On Production and Preview, `AUTH_ALLOW_SIGN_UP=true` opens it only with verification mail, or together with `AUTH_ALLOW_UNVERIFIED_SIGN_UP=true`. Either flag alone is refused, and the startup guard stops the deployment. The decision is made in one place, `accountPolicy`, and Better Auth's `disableSignUp` enforces it server-side. Password recovery is an operator command (`npm run account:password`) until a mail transport exists.
 
 ## Modules
 
@@ -107,7 +107,9 @@ npm run admin:role -- list
 npm run admin:role -- revoke someone@example.com
 ```
 
-The account must already exist (the person signs up first); the script never creates users, never prints or accepts passwords, refuses placeholder users without a credential (the demo user), and the change applies on the person's next request because the role is read from the database on every session lookup. No email address is hardcoded anywhere.
+The account must already exist (preferably created with `npm run account:create`). The script never creates users, never prints passwords, refuses placeholder users without a credential (the demo user), and the change applies on the person's next request because the role is read from the database on every session lookup. No email address is hardcoded anywhere.
+
+**Grant sets a new password (2026-11-10).** Nothing proves who registered an address, and while unverified sign-up is open anyone can register one. So `grant` asks for a new password (`MATCHBASE_NEW_PASSWORD` or a hidden prompt) and, in one transaction, re-keys the credential, revokes every session and outstanding reset link, and sets ADMIN. The operator hands the password to the intended person out of band. An account that is already ADMIN is left untouched; `revoke` only changes the role. Details: [production-hardening.md, "ADMIN grant safety"](production-hardening.md#admin-grant-safety-2026-11-10).
 
 ## Demo data
 
@@ -126,7 +128,8 @@ Recommended Vercel variable scopes:
 | `BETTER_AUTH_URL` | optional (derived) or the custom domain | leave unset (derived from `VERCEL_URL`) | unset |
 | `CRON_SECRET` | required | unset (the route then answers 503) | `.env.local` |
 | `ALLOW_PREVIEW_PROVIDER_SYNC` | unset | unset unless the preview owns its branch | unset |
-| `AUTH_ALLOW_SIGN_UP` | as desired | as desired | unset (open) |
+| `AUTH_ALLOW_SIGN_UP` | unset (closed); `true` only with verification mail or with the next row | unset (closed); same rule | unset (open) |
+| `AUTH_ALLOW_UNVERIFIED_SIGN_UP` | unset; `true` only together with `AUTH_ALLOW_SIGN_UP=true`, after the checklist in production-deployment.md | unset; same rule | ignored |
 
 ## Local-development quick sign-in (optional)
 

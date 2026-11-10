@@ -8,7 +8,7 @@ The Phase 9.0 findings and the Phase 9.1 carry-overs, classified against MatchBa
 
 | Finding | Class | Outcome in 9.2 |
 |---|---|---|
-| Public sign-up without email lifecycle | A | closed by default outside development; server-side |
+| Public sign-up without email lifecycle | A | closed by default outside development; server-side. Since 2026-11-10 it can be opened without verification only by two explicit flags (below) |
 | No password recovery | A (policy) | operator reset command; no fake flow |
 | Rate limiting memory-local | A for auth endpoints | database-backed limiter on the auth endpoints |
 | No security headers | A | baseline headers on every response |
@@ -41,9 +41,148 @@ Mode A. There is no mail transport, so Mode B (verification, reset, non-enumerat
 
 Enabling public sign-up later: add a mail transport, set `requireEmailVerification: true` with `sendVerificationEmail`, add `sendResetPassword` with `revokeSessionsOnPasswordReset: true`, wire the two forms, then set `AUTH_ALLOW_SIGN_UP=true`. No authorization code changes.
 
+## Public sign-up without email verification (2026-11-10)
+
+Status: implemented and tested locally against the Development database only. **Not enabled anywhere**: no Production or Preview variable was changed, and both stay closed until the operator sets the flags below.
+
+Product decision: keep the public demo and let visitors create an account before mail exists. Because that removes the verification step, it is an explicit, two-flag operator decision instead of a single switch.
+
+### Policy matrix (`accountPolicy`, lib/auth/email-verification.ts)
+
+| Environment | `AUTH_ALLOW_SIGN_UP` | `AUTH_ALLOW_UNVERIFIED_SIGN_UP` | Verification mail on | Sign-up | Verification | `production:check` / startup guard |
+|---|---|---|---|---|---|---|
+| Production, Preview | unset / false | unset / false | any | closed | not required | pass (Production) / info (Preview) |
+| Production, Preview | `true` | unset / false | no | **closed (refused)** | — | **FAIL**; the server refuses to start (Production and Preview) |
+| Production, Preview | unset / false | `true` | any | **closed (refused)** | — | **FAIL**; the server refuses to start |
+| Production, Preview | `true` | `true` | no | **open, unverified** | not required | **WARN**: unverified, no self-service recovery, enumeration, 5/IP/hour |
+| Production, Preview | `true` | any | yes | open | **required** (the unverified flag has no effect, and the warning says so) | WARN (Production: release procedure) / info |
+| Development | unset / `true` | ignored | no | open, unverified (unchanged) | not required | info |
+| Development | `false` | ignored | any | closed (unchanged) | not required | info |
+
+Only `true`, `1`, `yes` or `on` count as set. A half-configured policy fails on Preview too (`previewCritical`), so a Preview never serves a sign-up state that nobody chose.
+
+What the open, unverified mode means:
+
+- New accounts are always `USER`. `role` is a server-owned field (`input: false`). On sign-up Better Auth replaces a submitted `role` with the default. It ignores `emailVerified`, `id` and timestamps because they are not input fields, and it always writes `emailVerified=false`. `update-user` refuses `role` (400 `FIELD_NOT_ALLOWED`), drops `emailVerified`, and refuses an email change (`EMAIL_CAN_NOT_BE_UPDATED`).
+- Tested in `tests/db/auth-accounts.test.ts`, `tests/db/public-sign-up.test.ts` and `tests/e2e/public-sign-up.test.ts`.
+- Existing ADMIN accounts and the operator grant (`npm run admin:role -- grant`) are unchanged.
+- Sign-up signs the account in at once (`autoSignIn`), and the form calls `announceAuthChange()` so other tabs follow.
+- The sign-up form states that the address is not verified and that there is no self-service password reset, unless `AUTH_PASSWORD_RESET_ENABLED` is honoured. Recovery remains the operator command `npm run account:password`.
+- The landing page, the demo banner and the sidebar offer "Create account" only while the policy is open. The auth server enforces the same policy through `disableSignUp`.
+
+### Email enumeration: measured, not eliminated
+
+Better Auth 1.7.5 (`api/routes/sign-up.mjs`) returns its "generic duplicate" response (200, no session, synthetic user) only when `requireEmailVerification` is on or `autoSignIn` is off. In the open, unverified mode neither holds, so `POST /api/auth/sign-up/email` leaks whether an address has an account:
+
+| Signal | Existing address | New address |
+|---|---|---|
+| HTTP status | **422** | 200 |
+| Body | `{"code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}` | `{ token, user }` |
+| `Set-Cookie` | none | session cookie |
+| Time (dev DB, Singapore, median of 3) | **~98 ms** (no password hash on this path) | ~521 ms (scrypt hash, user and session writes) |
+
+The UI message is not the problem: the server response itself differs. Sign-in does not leak (unknown address and wrong password both answer 401 `INVALID_EMAIL_OR_PASSWORD`).
+
+This cannot be removed while keeping unverified sign-up with automatic sign-in. Even a uniform response would leak through the next step: a new address yields a working session and an existing one does not, and an attacker can always try to sign in with the password they just chose.
+
+Consequence: **anyone can test whether the ADMIN's address has an account**, at 5 tries per IP per hour (more with many IPs; see "Rate-limit client IP" for how the IP is decided). The address is not the password. Sign-in stays limited to 10 per IP per minute and passwords are scrypt-hashed, but a confirmed admin address makes phishing and credential-stuffing attempts better targeted.
+
+Options, none of them taken unilaterally:
+
+| Option | Removes the leak? | Cost / limit |
+|---|---|---|
+| A. Require verification (`AUTH_EMAIL_VERIFICATION_ENABLED` + a verified sending domain) | **yes** for sign-up (generic duplicate response, timing equalised by hashing) | needs the mail runbook; it is the designed end state |
+| B. `autoSignIn: false` in unverified mode | status and body: yes. Timing: mostly. The sign-in probe: **no** | new users must sign in by hand; a code change that is not implemented here |
+| C. Give the ADMIN account an unguessable address (an alias nobody can guess) | protects the one address that matters | operator action (`account:create` with the new address, `admin:role grant`, then revoke the old one); does not protect USER addresses |
+| D. CAPTCHA / bot protection on sign-up | raises the cost of bulk probing | third-party dependency, privacy and CSP review |
+| E. Tighter sign-up rate limit | slows probing | limits real sign-ups behind shared IPs; does not stop a distributed probe |
+
+Recommendation: do not open Production with both flags until the user accepts the leak explicitly, ideally with C done first. The lasting fix is A.
+
+### Migration risk: turning verification on later
+
+Every account created in the unverified mode has `emailVerified=false`. With verification mail on, `accountPolicy` sets `requireEmailVerification: true` while sign-up is open. From then on every one of those accounts gets `EMAIL_NOT_VERIFIED` at sign-in, with a new link mailed only after a correct password, to an address that was never checked and may not belong to them.
+
+**Setting `AUTH_EMAIL_VERIFICATION_ENABLED` is not a safe switch on its own.** With both sign-up flags still set, adding it (plus a transport) is the whole change, and at the next deployment every unverified account is locked out. `production:check` only **warns**: it reads variables, not the database, so it cannot count the affected accounts. The sign-up warning then says the unverified flag "has no effect".
+
+Before switching verification on, decide one of the following:
+
+- **Re-verification.** Each unverified user must confirm on next sign-in. Accounts with mistyped or fake addresses are locked out, and the operator reset or `account:verify` is the only way back.
+- **Exemption (grandfathering).** Confirm the existing accounts once with `account:verify`, or with a bounded migration that marks accounts created before a cut-off date. This keeps access but certifies addresses nobody checked; Phase 11 reminder mail would then go to them.
+- **Hybrid.** Grandfather sign-in, but send reminder mail only after an explicit confirmation.
+
+None is implemented; the choice is the operator's. Whatever is chosen, the order is:
+
+1. **Count.** Run a read-only count of accounts with `emailVerified=false` on the target database. `production:check --db` does not report this yet, so use a one-off read-only query by the operator. Also count accounts created while sign-up was open: those addresses were never checked, and some may be squatted.
+2. **Protect the administrators.** Confirm every ADMIN with `account:verify -- confirm <email>` and check with `account:verify -- status`, or required verification locks them out.
+3. **Apply the chosen policy** to the existing accounts (re-verify, grandfather, or hybrid). Remember that grandfathering certifies squatted addresses as well.
+4. **Rehearse on Preview.** Run the same configuration change against a Preview branch holding unverified accounts. Confirm that an unverified account behaves as the policy says, and that the ADMIN still signs in.
+5. **Change the variables in one release.** Set `AUTH_EMAIL_VERIFICATION_ENABLED` with a verified sending domain, and remove `AUTH_ALLOW_UNVERIFIED_SIGN_UP`, so the configuration states what is meant.
+6. Smoke-test sign-in for an ADMIN, a grandfathered USER (if any) and a new sign-up.
+
+### ADMIN grant safety (2026-11-10)
+
+Nothing in the database records who registered an address. `account:create` and public sign-up both write a User and a credential Account through the same Better Auth path, and `emailVerified` is `false` for both. While unverified sign-up is open, anyone can therefore register the address an operator means to promote later. Before this change, `admin:role -- grant` would then have made the registrant (who set the password) an administrator.
+
+`emailVerified=true` is not treated as proof either. It can be set by `account:verify`, by a verification link sent to a squatted address only if the attacker controls that mailbox, or by a future grandfathering migration.
+
+**Design (no schema change):** `grant` re-establishes who holds the account instead of trusting its current credential.
+
+- It requires a new password (`MATCHBASE_NEW_PASSWORD` or a hidden prompt; no TTY and no variable means refusal).
+- In **one transaction** it re-keys the single email/password credential, revokes every session, deletes outstanding reset links, and sets `ADMIN`.
+- After a 2-second grace period it revokes sessions again, to catch a sign-in that raced the update with the old password.
+- It refuses an account with any sign-in method other than exactly one credential, because such a method could not be re-keyed.
+- An account that is already ADMIN is left untouched (no password asked, sessions kept), so existing administrators are unaffected. `revoke` is unchanged.
+
+`account:create` refuses an address that already has an account. It says the account was not created by the command and may belong to someone else, and changes nothing.
+
+The trust root is the operator's out-of-band handover of the new password, the same root `account:create` already relies on. The trade-off: promoting a person who signed up themselves now replaces their password, and the operator has to hand them the new one.
+
+The alternative, a provenance column (`createdBy`/origin) that would let `grant` skip the re-key for operator-created accounts, needs a schema migration and a backfill decision for existing rows. It is proposed, not implemented.
+
+Tested in `tests/db/admin-grant.test.ts` (Development DB):
+
+- a pre-registered address: the squatter's session and password stop working, and only the operator's password signs in as ADMIN;
+- no password, or a short one: nothing changes;
+- `account:create` on a pre-registered address: refused, account untouched;
+- the normal create-then-grant path;
+- a repeated grant on an existing ADMIN: no-op, session kept; `revoke` still works;
+- a second sign-in method: refused.
+
+Not covered by a test: the sign-in race itself (timing-dependent). The grace-period purge is the mitigation.
+
+### Rate-limit client IP (2026-11-10)
+
+Better Auth 1.7.5 keys its limiter on the first header in `advanced.ipAddress.ipAddressHeaders` (default `x-forwarded-for`).
+
+- Without `trustedProxies` it trusts only a **single-value** header. A chain resolves to no IP, and every request then shares one bucket per path (`no-trusted-ip`), so five sign-ups anywhere would close sign-up for everyone for an hour.
+- With `trustedProxies` it walks the chain from the right, skipping listed proxy addresses. Vercel publishes no fixed edge range, so this cannot be configured safely.
+- Its limiter runs **before** plugin `onRequest` hooks (`better-auth/dist/api/index.mjs`), so a plugin cannot correct the IP.
+
+MatchBase therefore decides the IP at its own route boundary (`lib/auth/client-ip.ts`, applied in `app/api/auth/[...all]/route.ts` to every request, including the verify-email bridge):
+
+- **On Vercel (`VERCEL=1`).** The rightmost valid entry of `x-forwarded-for`, then of `x-vercel-forwarded-for`, then `x-real-ip`. Vercel documents `x-forwarded-for` as the client's public IP and says it overwrites the header to prevent spoofing. If it ever appended instead, the rightmost entry is still the one it added. A client-forged left part is ignored. An invalid rightmost entry is never replaced by an entry to its left.
+- **Anywhere else.** Nothing is trusted, because no proxy vouches for the header. The limiter falls back to the shared bucket: strict, never permissive. It is off in development anyway; a self-hosted deployment would need its own rule.
+- The result goes into a private header, `x-matchbase-client-ip`, after any client-supplied copy is removed. Better Auth is configured to read **only** that header, so a forwarded header a client sends is never trusted on its own.
+- The per-IP limits are unchanged: sign-up 5 per hour, sign-in 10 per minute. IPv6 is still grouped by /64.
+
+Tests:
+
+- `tests/auth/client-ip.test.ts`: rightmost selection, forged chain, forged private header, invalid entries, nothing trusted off Vercel, the wiring.
+- `tests/db/auth-rate-limit.test.ts`: two clients behind the same forged chain get separate buckets, and no bucket is created for a forged address.
+- `tests/db/public-sign-up.test.ts`: 5 then 429 through the boundary, keyed on the platform-observed address.
+
+**Not confirmed locally (Preview verification item):**
+
+- whether Vercel ever delivers a multi-value `x-forwarded-for`;
+- whether a client can preset `x-vercel-forwarded-for` or `x-real-ip` (only consulted when the `x-forwarded-for` entry is unusable);
+- the behaviour behind a proxy placed in front of Vercel. Vercel's docs say the header is then overwritten and external IPs are not forwarded, so all users would share that proxy's IP.
+
+On Preview, inspect the derived `x-matchbase-client-ip` from two different networks (for example a temporary log of the derived value only, never the raw headers) before opening sign-up.
+
 ## First account and system bootstrap (Phase 9.3A)
 
-With sign-up closed, the first Production account is created by `npm run account:create -- <email>`: Better Auth's own sign-up API on a server-side instance with sign-up allowed for that call only (same validation, same scrypt hash, same User and Account rows), role USER, the bootstrap session discarded, password from `MATCHBASE_NEW_PASSWORD` or a hidden prompt, never printed. `npm run admin:role -- grant` promotes it in a separate step. Tested end to end in `tests/db/account-create.test.ts`, including sign-in on a closed-sign-up instance and the subsequent grant.
+With sign-up closed, the first Production account is created by `npm run account:create -- <email>`: Better Auth's own sign-up API on a server-side instance with sign-up allowed for that call only (same validation, same scrypt hash, same User and Account rows), role USER, the bootstrap session discarded, password from `MATCHBASE_NEW_PASSWORD` or a hidden prompt, never printed. `npm run admin:role -- grant` promotes it in a separate step and sets the password again (see "ADMIN grant safety"). Tested end to end in `tests/db/account-create.test.ts`, including sign-in on a closed-sign-up instance and the subsequent grant.
 
 A migrated but empty database needs only the rows the code registries define: `npm run bootstrap:system` creates the six sports (lib/sports.ts) and one ACTIVE DataSource row per live provider binding in the sync registry (no mock feed unless `--include-mock`). Leagues, seasons, clubs, venues and matches come from the first provider sync. The demo seed is never used as bootstrap. Tested in `tests/domain/system-bootstrap.test.ts` and `tests/db/system-bootstrap.test.ts`.
 
@@ -60,7 +199,7 @@ Threat model after 9.1:
 | Boundary | Abuse | Primary defence | Application limit |
 |---|---|---|---|
 | `/api/auth/sign-in/email` | credential stuffing, brute force | scrypt, generic errors | 10 per IP per minute |
-| `/api/auth/sign-up/email` | account flooding (when open) | closed at launch | 5 per IP per hour |
+| `/api/auth/sign-up/email` | account flooding and address enumeration (when open) | closed at launch; opening without verification needs two flags and is reported as a warning | 5 per IP per hour (kept; it is also the only brake on enumeration) |
 | `/api/auth/request-password-reset` | enumeration, mail flooding | identical answers, hashed single-use 30-min tokens; off unless `AUTH_PASSWORD_RESET_ENABLED` | 5 per IP per hour |
 | `/api/auth/send-verification-email`, `/api/auth/verify-email` (POST bridge) | enumeration, mail flooding, token guessing | identical answers, signed 1-hour tokens; off unless `AUTH_EMAIL_VERIFICATION_ENABLED` | 5 per IP per hour; 10 per IP per 10 min |
 | `/api/auth/change-password` | online guessing with a stolen session | session required | 5 per IP per 10 min |

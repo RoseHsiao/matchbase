@@ -80,7 +80,7 @@ Demo visitors never get a session, a user id or a role: "demo" is the absence of
 | `devQuickSignIn` | **nobody outside local development** | `resolveDevLogin` refuses unless the runtime environment is development and the flag is set |
 | `GET /api/cron/sync`, `GET /api/cron/notifications` | holder of `CRON_SECRET` | constant-time bearer check, 503 when unset; sync also refuses Preview |
 | `/api/auth/sign-in/email`, password recovery, `verify-email` | public by design | Better Auth; rate limited outside development |
-| `/api/auth/sign-up/email` | closed unless an operator opens it | `disableSignUp` from `accountPolicy` |
+| `/api/auth/sign-up/email` | closed unless an operator opens it (outside development: verification mail, or both `AUTH_ALLOW_SIGN_UP` and `AUTH_ALLOW_UNVERIFIED_SIGN_UP`) | `disableSignUp` from `accountPolicy` |
 | `/api/auth/get-session` | public; answers `null` without a session | Better Auth |
 | Other `/api/auth/*` (update-user, change-password, list-sessions, revoke-*, delete-user and so on) | signed in; own account only | Better Auth session middleware; `role` is `input: false` |
 | `GET /api/auth/reset-password/:token`, `GET /api/auth/verify-email` | nobody | answered 404 at the route (tokens must not sit in URLs) |
@@ -116,6 +116,13 @@ The end-to-end suites need a built app and a running local server, and skip with
 npm run build
 VERCEL_ENV=development AUTH_ALLOW_SIGN_UP=false npx next start -p 3100
 MATCHBASE_E2E_BASE_URL=http://localhost:3100 npm run test:e2e
+```
+
+With sign-up open (the public sign-up journeys in `tests/e2e/public-sign-up.test.ts` and the browser suite; they create `e2e-…-<stamp>@example.test` accounts on the development database and delete exactly those):
+
+```
+VERCEL_ENV=development AUTH_ALLOW_SIGN_UP=true npx next start -p 3100
+MATCHBASE_E2E_SIGN_UP=open MATCHBASE_E2E_BASE_URL=http://localhost:3100 npm run test:e2e
 ```
 
 - `tests/e2e/public-demo.test.ts` works over HTTP: routes, cross-session isolation under interleaved requests, cache headers, refused actions and endpoints.

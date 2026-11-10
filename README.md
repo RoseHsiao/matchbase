@@ -349,7 +349,7 @@ npm run dev                       # http://localhost:3000 → /dashboard
 Create an account at `/sign-up`, then grant yourself the Admin area from the shell (the only path to the ADMIN role):
 
 ```bash
-npm run admin:role -- grant you@example.com
+npm run admin:role -- grant you@example.com   # asks for a new password and sets it (see docs/security/production-hardening.md)
 ```
 
 Or, for local development only, set `MATCHBASE_DEV_LOGIN=true` and the four `MATCHBASE_DEV_*` values in `.env.local` (see `.env.example`) to get "Sign in as dev USER / ADMIN" buttons on `/sign-in`; they sign in through the normal Better Auth path and never activate on Vercel.

@@ -7,6 +7,7 @@ import { PlayerFollowsProvider } from "@/components/players/player-follows-provi
 import { FollowsProvider } from "@/components/teams/follows-provider";
 import { WatchlistProvider } from "@/components/watchlist/watchlist-provider";
 import { WatchlistRemindersProvider } from "@/components/watchlist/watchlist-reminders-provider";
+import { accountPolicy } from "@/lib/auth/email-verification";
 import { getViewer } from "@/lib/auth/session";
 import {
   getFollowedPlayerIds,
@@ -50,7 +51,7 @@ export default async function AppLayout({
   const leagueCrumbs = leagues.map(({ id, name, sport }) => ({ id, name, sport }));
 
   return (
-    <ViewerProvider viewer={viewer}>
+    <ViewerProvider viewer={viewer} signUpOpen={accountPolicy(process.env).signUpOpen}>
       <WatchlistProvider initialIds={watchlistIds} persist={setMatchWatchlisted} readOnly={readOnly}>
         <WatchlistRemindersProvider initialEntries={watchlistEntries} persist={setWatchlistReminder} readOnly={readOnly}>
           <FollowsProvider initialIds={followedTeamIds} persist={setTeamFollowed} readOnly={readOnly}>

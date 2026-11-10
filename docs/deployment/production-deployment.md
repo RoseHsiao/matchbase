@@ -33,7 +33,27 @@ Project → Settings → Environment Variables, scope **Production only**:
 | `THESPORTSDB_*` | see step 8 |
 | `CSP_MODE` | leave unset (enforce) |
 
-Must NOT be set in Production: `MATCHBASE_DEV_LOGIN`, `MATCHBASE_DEV_*`, `ALLOW_PRODUCTION_SEED`, `ALLOW_PREVIEW_PROVIDER_SYNC`, `AUTH_ALLOW_SIGN_UP` (launch policy is closed).
+Must NOT be set in Production: `MATCHBASE_DEV_LOGIN`, `MATCHBASE_DEV_*`, `ALLOW_PRODUCTION_SEED`, `ALLOW_PREVIEW_PROVIDER_SYNC`. `AUTH_ALLOW_SIGN_UP` and `AUTH_ALLOW_UNVERIFIED_SIGN_UP` stay unset (sign-up closed) until the operator deliberately opens sign-up as in "Opening public sign-up without verification" below; setting only one of them makes the deployment refuse to start.
+
+### Opening public sign-up without verification (operator decision, not done)
+
+Read [production-hardening.md, "Public sign-up without email verification"](../security/production-hardening.md#public-sign-up-without-email-verification-2026-11-10) first. In that mode the sign-up endpoint reveals whether an address, including the ADMIN's, already has an account. Before setting anything:
+
+1. Accept the enumeration risk explicitly, or first move the ADMIN account to an unguessable address (option C there).
+2. Verify the rate-limit client IP on Preview (production-hardening.md, "Rate-limit client IP"): two networks must get different derived addresses. Otherwise every sign-up shares one bucket.
+3. Decide the later verification migration (re-verify, grandfather, or hybrid) and write it down.
+4. Confirm `npm run account:password` is the recovery path you will run for users, and that any future administrator is promoted with `admin:role -- grant` (which re-keys the account), never handed over with its existing password.
+
+Then set **both** of the following, Production scope only, and redeploy:
+
+| Variable | Value |
+|---|---|
+| `AUTH_ALLOW_SIGN_UP` | `true` |
+| `AUTH_ALLOW_UNVERIFIED_SIGN_UP` | `true` |
+
+- Check: the operator-shell readiness check (`npm run production:check -- --env production`, with both set in the shell) reports `sign-up` as **warn** "OPEN in production WITHOUT email verification". A **fail** means only one flag is set; the deployment would refuse to start.
+- Check: the landing page shows "Create account"; `/sign-up` shows "Your email address is not verified."
+- Rollback: remove both variables and redeploy. Existing accounts keep signing in.
 
 - Check: the variable list shows each value scoped to Production only; "Enable access to System Environment Variables" is on (needed for `VERCEL_ENV` and `VERCEL_PROJECT_PRODUCTION_URL`).
 
@@ -48,6 +68,7 @@ Scope **Preview only**, with different values:
 | `BETTER_AUTH_SECRET` | a different random value |
 | `CRON_SECRET` | unset (the route answers 503 on previews) |
 | `ALLOW_PREVIEW_PROVIDER_SYNC` | unset (provider sync refused) |
+| `AUTH_ALLOW_SIGN_UP`, `AUTH_ALLOW_UNVERIFIED_SIGN_UP` | unset (sign-up closed). The same two-flag rule as Production: both `true` opens unverified sign-up for a test; one alone blocks the Preview from starting |
 
 - Check: no Production value is also scoped to Preview. Deployment Protection "Standard Protection" (Vercel Authentication) keeps preview URLs private; production domains stay public.
 
@@ -83,7 +104,7 @@ Scope **Preview only**, with different values:
 
 ```
 set -a; . ./.env.production.local; set +a
-export MATCHBASE_DEV_LOGIN= MATCHBASE_DEV_USER_EMAIL= MATCHBASE_DEV_USER_PASSWORD= MATCHBASE_DEV_ADMIN_EMAIL= MATCHBASE_DEV_ADMIN_PASSWORD= NEON_BRANCH= ALLOW_PRODUCTION_SEED= ALLOW_PREVIEW_PROVIDER_SYNC= AUTH_ALLOW_SIGN_UP= CSP_MODE=
+export MATCHBASE_DEV_LOGIN= MATCHBASE_DEV_USER_EMAIL= MATCHBASE_DEV_USER_PASSWORD= MATCHBASE_DEV_ADMIN_EMAIL= MATCHBASE_DEV_ADMIN_PASSWORD= NEON_BRANCH= ALLOW_PRODUCTION_SEED= ALLOW_PREVIEW_PROVIDER_SYNC= AUTH_ALLOW_SIGN_UP= AUTH_ALLOW_UNVERIFIED_SIGN_UP= CSP_MODE=
 ```
 
 ```
@@ -184,7 +205,7 @@ MATCHBASE_OPERATOR_TARGET=production npm run bootstrap:system
 Launch policy is closed sign-up, so the first account is created by an operator from the shell with the repository's own command (Phase 9.3A), never through the public page and never by opening sign-up:
 
 1. `MATCHBASE_OPERATOR_TARGET=production npm run account:create -- <email> --name "<name>"` with `MATCHBASE_NEW_PASSWORD` exported for that one command (or answer the hidden prompt). The command creates a normal Better Auth email/password account as USER through Better Auth's sign-up API, discards the bootstrap session, and prints only the email, role and credential type.
-2. `MATCHBASE_OPERATOR_TARGET=production npm run admin:role -- grant <email>`
+2. `MATCHBASE_OPERATOR_TARGET=production npm run admin:role -- grant <email>` with `MATCHBASE_NEW_PASSWORD` exported for that one command (or the hidden prompt). Grant always sets a new password and revokes every session (it cannot tell an operator-created account from a self-registered one). Hand over **this** password. If `account:create` reported that the address already exists, do not hand that account over as is; grant re-keys it.
 3. `MATCHBASE_OPERATOR_TARGET=production npm run admin:role -- list` shows exactly the intended account.
 4. Close the operator shell.
 5. The person signs in at `/sign-in` with the password handed over out of band (and may change it via the operator reset later); Admin appears in the sidebar; `/admin` loads.

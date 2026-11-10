@@ -30,7 +30,22 @@ export function signInHref(next?: string): string {
  * a 404 after signing in.
  */
 export function signInHrefFromDemo(pathname: string): string {
+  return signInHref(afterDemo(pathname))
+}
+
+/** The sign-up URL that continues to `next` once the new account is signed in. */
+export function signUpHref(next?: string): string {
+  const target = safeNextPath(next)
+  return target === DEFAULT_AFTER_SIGN_IN ? "/sign-up" : `/sign-up?next=${encodeURIComponent(target)}`
+}
+
+/** The sign-up URL for a demo visitor on `pathname`, with the same destination rule as signing in. */
+export function signUpHrefFromDemo(pathname: string): string {
+  return signUpHref(afterDemo(pathname))
+}
+
+function afterDemo(pathname: string): string {
   const detail = /^\/(matches|teams|players|leagues)\/[^/]+/.exec(pathname)
-  if (!detail) return signInHref(pathname)
-  return signInHref(detail[1] === "leagues" ? DEFAULT_AFTER_SIGN_IN : `/${detail[1]}`)
+  if (!detail) return pathname
+  return detail[1] === "leagues" ? DEFAULT_AFTER_SIGN_IN : `/${detail[1]}`
 }

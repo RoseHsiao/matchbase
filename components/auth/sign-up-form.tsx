@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 
 import { AuthCard } from "@/components/auth/auth-card"
+import { announceAuthChange } from "@/components/auth/session-sync"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,18 +15,22 @@ import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/auth/password-po
 type SignUpFormProps = {
   /** Same-origin path to return to, already validated on the server. */
   next: string
-  /** False when the deployment has closed sign-up (AUTH_ALLOW_SIGN_UP=false). */
+  /** False when the deployment does not accept sign-up (accountPolicy). */
   allowed: boolean
   /** New accounts must confirm their address before signing in (lib/auth/email-verification.ts). */
   requiresVerification: boolean
+  /** Self-service password recovery by email is available (lib/mail/mail-env.ts). */
+  recoveryAvailable?: boolean
 }
 
 /**
  * Email and password sign-up. Only name, email and password are sent; the
  * role is a server-owned field the auth server refuses from input, so every
- * new account is a regular user.
+ * new account is a regular user. Without verification the form says so
+ * before submitting: the address is not checked, and (unless recovery mail
+ * is on) a forgotten password cannot be reset by the person themselves.
  */
-export function SignUpForm({ next, allowed, requiresVerification }: SignUpFormProps) {
+export function SignUpForm({ next, allowed, requiresVerification, recoveryAvailable = false }: SignUpFormProps) {
   const router = useRouter()
   const [error, setError] = React.useState<string | null>(null)
   const [pending, setPending] = React.useState(false)
@@ -55,6 +60,8 @@ export function SignUpForm({ next, allowed, requiresVerification }: SignUpFormPr
       setAwaitingConfirmation(true)
       return
     }
+    // Signed in automatically: tell this browser's other tabs, as a sign-in does.
+    announceAuthChange()
     router.push(next)
     router.refresh()
   }
@@ -91,6 +98,18 @@ export function SignUpForm({ next, allowed, requiresVerification }: SignUpFormPr
       }
     >
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
+        {requiresVerification ? null : (
+          <div role="note" aria-label="About this account" className="grid gap-1 rounded-lg border bg-muted/60 p-3 text-xs text-muted-foreground">
+            <p>
+              <span className="font-medium text-foreground">Your email address is not verified.</span> MatchBase does not send a confirmation link, so it never checks that the address is yours.
+            </p>
+            <p>
+              {recoveryAvailable
+                ? "If you forget your password, you can reset it from the sign-in page."
+                : "There is no self-service password reset. Keep your password somewhere safe: if you lose it, only the operator of this deployment can set a new one."}
+            </p>
+          </div>
+        )}
         <div className="grid gap-2">
           <Label htmlFor="sign-up-name">Name</Label>
           <Input id="sign-up-name" name="name" type="text" autoComplete="name" required maxLength={80} autoFocus />

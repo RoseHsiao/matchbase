@@ -8,11 +8,12 @@ import {
   LogInIcon,
   LogOutIcon,
   ShieldCheckIcon,
+  UserPlusIcon,
   UserRoundIcon,
 } from "lucide-react"
 
 import { announceAuthChange } from "@/components/auth/session-sync"
-import { useViewer } from "@/components/auth/viewer-provider"
+import { useSignUpOpen, useViewer } from "@/components/auth/viewer-provider"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -41,7 +42,8 @@ function initials(name: string) {
 }
 
 /**
- * Sidebar footer account control. Anonymous: a "Sign in" entry. Signed in:
+ * Sidebar footer account control. Anonymous: a "Sign in" entry, plus
+ * "Create account" when the deployment accepts public sign-up. Signed in:
  * the account menu with the role and a sign-out action. Who is signed in
  * comes from the server render (ViewerProvider); signing out calls the auth
  * endpoint, returns to the public landing page and re-renders the tree so
@@ -49,6 +51,7 @@ function initials(name: string) {
  */
 export function NavUser() {
   const viewer = useViewer()
+  const signUpOpen = useSignUpOpen()
   const { isMobile } = useSidebar()
   const router = useRouter()
   const [signingOut, setSigningOut] = React.useState(false)
@@ -75,10 +78,23 @@ export function NavUser() {
             </div>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">Sign in</span>
-              <span className="truncate text-xs text-muted-foreground">For authorized accounts</span>
+              <span className="truncate text-xs text-muted-foreground">{signUpOpen ? "With an existing account" : "For authorized accounts"}</span>
             </div>
           </SidebarMenuButton>
         </SidebarMenuItem>
+        {signUpOpen ? (
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" tooltip="Create account" render={<Link href="/sign-up" />}>
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <UserPlusIcon className="size-4" />
+              </div>
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-medium">Create account</span>
+                <span className="truncate text-xs text-muted-foreground">Follow teams, save matches</span>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        ) : null}
       </SidebarMenu>
     )
   }

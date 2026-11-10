@@ -13,8 +13,8 @@ Companions: [production hardening](production-hardening.md) (the operator reset 
 | Application URL | the existing Vercel Production URL, unchanged | `BETTER_AUTH_URL` stays derived from `VERCEL_PROJECT_PRODUCTION_URL`. Reset links will be built from that base URL, never from the request Host. |
 | Sending domain | **required before real Production mail; not available yet** | a `*.vercel.app` host cannot carry SPF/DKIM. Resend's shared `resend.dev` sender only delivers to the account owner. The parser refuses to report Production recovery as available while `MAIL_FROM` is on `resend.dev`. |
 | Production recovery | **disabled** | `AUTH_PASSWORD_RESET_ENABLED` is absent, so no reset hook is configured. The operator command `npm run account:password` remains the recovery path. |
-| Public sign-up | **closed** | `AUTH_ALLOW_SIGN_UP` stays absent. Mail configuration never opens sign-up; open sign-up additionally needs verification mail (tested). |
-| Email verification | **implemented in 10.7; own switch `AUTH_EMAIL_VERIFICATION_ENABLED`** | Separate from the transport so that configuring mail changes nothing for users until each feature is switched on. Before opening sign-up, the existing ADMIN must be confirmed, or required verification locks them out. |
+| Public sign-up | **closed** | `AUTH_ALLOW_SIGN_UP` and `AUTH_ALLOW_UNVERIFIED_SIGN_UP` stay absent. Mail configuration never opens sign-up. On Production and Preview, sign-up opens either with verification mail (verification required) or with **both** flags (no verification, which reveals whether an address has an account). Either flag alone fails readiness and blocks startup (tested). See [production-hardening.md](production-hardening.md#public-sign-up-without-email-verification-2026-11-10). |
+| Email verification | **implemented in 10.7; own switch `AUTH_EMAIL_VERIFICATION_ENABLED`** | Separate from the transport so that configuring mail changes nothing for users until each feature is switched on. Before opening sign-up, the existing ADMIN must be confirmed, or required verification locks them out. If unverified sign-up was ever open, every account it created is locked out too; switching this on needs the migration order in [production-hardening.md](production-hardening.md#migration-risk-turning-verification-on-later), not just the variable. |
 | Operator commands and mail | **never send mail** | `account:create` overrides every mail variable of the operator shell (`MAIL_OFF_ENV`); `account:password` and `account:verify` build no auth instance at all (tested with a full Resend configuration in the shell). |
 | Reset ≠ verification | **a successful reset will not set `User.emailVerified`** | verification stays one explicit flow with its own semantics (10B), not a side effect of recovery. |
 | Reset link lifetime | **30 minutes**, single use | `PASSWORD_RESET_TOKEN_TTL_SECONDS` in lib/auth/password-policy.ts is the one value. The email wording reads it now; Better Auth's `resetPasswordTokenExpiresIn` will read it in 10.3, so the email can never promise a different lifetime than the server enforces. |
@@ -340,8 +340,10 @@ No extra test path was added: the recovery flow itself is the Preview test. A se
 |---|---|---|
 | no (**Production today**) | off / on | sign-up closed; verification **not required**, so the operator ADMIN (`emailVerified=false`) is never locked out; with verification mail on, a signed-in person can request a link |
 | yes | on | sign-up open; **verification required**: no session at sign-up, sign-in answers `EMAIL_NOT_VERIFIED` and mails a new link after a correct password only |
-| yes | off (with or without a transport), outside development | sign-up **refused** (the endpoint answers disabled; readiness fails in Production) |
-| yes | off, development | open and unverified, as before (the local form stays usable without mail) |
+| yes | off (with or without a transport), outside development, `AUTH_ALLOW_UNVERIFIED_SIGN_UP` unset | sign-up **refused** (the endpoint answers disabled; readiness fails and the startup guard blocks Production and Preview) |
+| yes | off, outside development, `AUTH_ALLOW_UNVERIFIED_SIGN_UP=true` | sign-up **open without verification** (2026-11-10; readiness warns; see [production-hardening.md](production-hardening.md#public-sign-up-without-email-verification-2026-11-10)) |
+| no | any, outside development, `AUTH_ALLOW_UNVERIFIED_SIGN_UP=true` | sign-up **refused**; readiness fails (half a decision) |
+| yes | off, development | open and unverified, as before (the local form stays usable without mail); `AUTH_ALLOW_UNVERIFIED_SIGN_UP` is ignored in development |
 
 **How unconfirmed users are restricted.**
 
@@ -373,6 +375,8 @@ The recovery browser checks were re-run in Production's shape (sign-up closed) w
 ### Opening public sign-up in Production: release procedure (human, **not performed**)
 
 Sign-up is a separate release from recovery. **Nothing in the code opens it.**
+
+This procedure assumes sign-up was never open without verification. If `AUTH_ALLOW_UNVERIFIED_SIGN_UP` was ever set, run the migration order in [production-hardening.md](production-hardening.md#migration-risk-turning-verification-on-later) (count, confirm the administrators, choose re-verify, grandfather or hybrid, rehearse on Preview) **before** step 6. Step 6 then also removes `AUTH_ALLOW_UNVERIFIED_SIGN_UP`.
 
 1. Recovery is live in Production, with verified mail delivery (the runbook above, steps 1–7).
 2. The Preview procedure (10.6) is repeated with sign-up open on Preview (`AUTH_ALLOW_SIGN_UP=true` scoped to the branch). Sign up, receive the confirmation, confirm, sign in; a duplicate address gets the same screen; an unconfirmed sign-in is refused.

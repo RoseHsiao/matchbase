@@ -5,6 +5,7 @@ import { SignUpForm } from "@/components/auth/sign-up-form";
 import { accountPolicy } from "@/lib/auth/email-verification";
 import { safeNextPath } from "@/lib/auth/redirect";
 import { getViewer } from "@/lib/auth/session";
+import { readMailEnv } from "@/lib/mail/mail-env";
 
 export const metadata: Metadata = {
   title: "Create account",
@@ -16,5 +17,12 @@ export default async function SignUpPage({ searchParams }: { searchParams: Promi
   const next = safeNextPath(params.next);
   if (viewer) redirect(next);
   const policy = accountPolicy(process.env);
-  return <SignUpForm next={next} allowed={policy.signUpOpen} requiresVerification={policy.requireEmailVerification} />;
+  return (
+    <SignUpForm
+      next={next}
+      allowed={policy.signUpOpen}
+      requiresVerification={policy.requireEmailVerification}
+      recoveryAvailable={readMailEnv(process.env).passwordReset.enabled}
+    />
+  );
 }

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { after, before, describe, it } from "node:test"
 
-import { assertLocalTarget, BASE, DATABASE_DOWN, devAccount, url } from "./support"
+import { assertLocalTarget, BASE, DATABASE_DOWN, deleteStampedAccounts, devAccount, e2eStamp, SIGN_UP_OPEN, url } from "./support"
 
 /**
  * The essential journeys in real headless Chrome, driven over the DevTools
@@ -231,14 +231,19 @@ describeBrowser("browser smoke: public demo and authorized sign-in", () => {
     if (profile) rmSync(profile, { recursive: true, force: true })
   })
 
-  it("landing page: Explore Demo and Sign in, no sign-up", async () => {
+  it(`landing page: Explore Demo and Sign in, ${SIGN_UP_OPEN ? "and Create account" : "no sign-up"}`, async () => {
     await tab.go("/")
     const text = await tab.text()
     assert.match(text, /Explore Demo/)
     assert.match(text, /Sign in/)
     assert.match(text, /fictional/)
-    assert.doesNotMatch(text, /Create (an )?account|Sign up/i)
-    assert.ok(!(await tab.hrefs()).some((href) => href?.startsWith("/sign-up")))
+    if (SIGN_UP_OPEN) {
+      assert.match(text, /Create account/)
+      assert.ok((await tab.hrefs()).includes("/sign-up"))
+    } else {
+      assert.doesNotMatch(text, /Create (an )?account|Sign up/i)
+      assert.ok(!(await tab.hrefs()).some((href) => href?.startsWith("/sign-up")))
+    }
   })
 
   it("the demo says what it is, and offers nothing private", async () => {
@@ -275,7 +280,8 @@ describeBrowser("browser smoke: public demo and authorized sign-in", () => {
     await tab.hydrated()
     const text = await tab.text()
     assert.match(text, /Explore demo/)
-    assert.doesNotMatch(text, /Create one/)
+    if (SIGN_UP_OPEN) assert.match(text, /Create one/)
+    else assert.doesNotMatch(text, /Create one/)
     await tab.clickText("Explore demo")
     await tab.until(async () => (await tab.path()) === "/dashboard", "the demo")
   })
@@ -473,6 +479,64 @@ describeBrowser("browser smoke: public demo and authorized sign-in", () => {
     assert.doesNotMatch(await tab.text(), /Administrators only/)
     await tab.go("/dashboard")
     await tab.signOut()
+  })
+
+  describe("public sign-up in the browser (server started with sign-up open)", { skip: !SIGN_UP_OPEN }, () => {
+    const stamp = e2eStamp()
+    const account = { email: `e2e-browser-signup-${stamp}@example.test`, password: "e2e browser sign-up 1" }
+
+    after(async () => {
+      const removed = await deleteStampedAccounts("e2e-browser-signup-", stamp)
+      assert.ok(removed <= 1, `removed ${removed} stamped accounts`)
+    })
+
+    it("from the demo banner: the form says the address is unverified, signs up and lands signed in; another tab follows", async () => {
+      await tab.go("/teams/redbrook-rovers")
+      const other = await newTab()
+      await other.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false })
+      await other.go("/schedule")
+      assert.match(await other.text(), /exploring the demo/)
+
+      await tab.send("Page.bringToFront")
+      await tab.click('aside[aria-label="Demo notice"] a[href^="/sign-up"]')
+      await tab.until(async () => (await tab.path()) === "/sign-up?next=%2Fteams", "the sign-up page")
+      await tab.hydrated()
+      const form = await tab.text()
+      assert.match(form, /Your email address is not verified\./)
+      assert.match(form, /no self-service password reset/)
+      await tab.evaluate(`(() => {
+        const set = (el, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })) }
+        set(document.querySelector('#sign-up-name'), 'E2E Browser')
+        set(document.querySelector('#sign-up-email'), ${JSON.stringify(account.email)})
+        set(document.querySelector('#sign-up-password'), ${JSON.stringify(account.password)})
+        document.querySelector('form button[type=submit]').click()
+      })()`)
+      await tab.until(async () => (await tab.path()) === "/teams" && !/exploring the demo/.test(await tab.text()), "the signed-in teams page")
+      const text = await tab.text()
+      assert.match(text, /Match tracker/)
+      assert.match(text, new RegExp(account.email.replace(/[.]/g, "\\.")))
+      assert.doesNotMatch(text, /Redbrook Rovers/, "the real catalogue, not the demo")
+      assert.ok(!(await tab.hrefs()).some((href) => href?.startsWith("/admin")), "a new account is not an administrator")
+
+      // announceAuthChange(): the other tab, hidden meanwhile, holds the message and refreshes once it is shown.
+      // Within the minute a return alone refreshes nothing, so only the sign-up's broadcast can cause this.
+      await other.send("Page.bringToFront")
+      await other.returnToTab()
+      await other.until(async () => !/exploring the demo/.test(await other.text()) && /Match tracker/.test(await other.text()), "the other tab to follow the sign-up", 10_000)
+      other.close()
+    })
+
+    it("signs out, then signs in again with the new password", async () => {
+      await tab.send("Page.bringToFront")
+      await tab.go("/dashboard")
+      await tab.signOut()
+      await tab.signIn(account)
+      assert.match(await tab.text(), /Match tracker/)
+      await tab.go("/admin")
+      assert.match(await tab.text(), /Administrators only/)
+      await tab.go("/dashboard")
+      await tab.signOut()
+    })
   })
 
   it("the demo fits a phone, with only public tabs and Sign in reachable", async () => {

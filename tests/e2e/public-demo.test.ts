@@ -2,11 +2,12 @@ import assert from "node:assert/strict"
 import { createHmac } from "node:crypto"
 import { after, before, describe, it } from "node:test"
 
-import { actionId, assertLocalTarget, BASE, DATABASE_DOWN, devAccount, origin, page, rscPage, signInCookie, url } from "./support"
+import { actionId, assertLocalTarget, BASE, DATABASE_DOWN, devAccount, origin, page, rscPage, signInCookie, SIGN_UP_OPEN, url } from "./support"
 
 /**
  * The public demo and its boundaries over HTTP against a running local server,
- * started with public sign-up closed. Set MATCHBASE_E2E_DATABASE=unreachable
+ * started with public sign-up closed (or open, with MATCHBASE_E2E_SIGN_UP=open;
+ * the sign-up journey itself is tests/e2e/public-sign-up.test.ts). Set MATCHBASE_E2E_DATABASE=unreachable
  * when the server has an unreachable DATABASE_URL, which also runs the failed
  * session cases and proves the demo needs no database (docs/public-demo.md).
  */
@@ -34,13 +35,14 @@ function callAction(id: string, args: unknown[], headers: Record<string, string>
 describeE2e("public demo as an anonymous visitor", () => {
   before(assertLocalTarget)
 
-  it("the landing page offers the demo and sign in, and no sign-up", async () => {
+  it(`the landing page offers the demo and sign in, and ${SIGN_UP_OPEN ? "Create account" : "no sign-up"}`, async () => {
     const { status, html } = await page("/")
     assert.equal(status, 200)
     assert.match(html, /Explore Demo/)
     assert.match(html, /href="\/dashboard"/)
     assert.match(html, /href="\/sign-in"/)
-    assert.doesNotMatch(html, /href="\/sign-up/)
+    if (SIGN_UP_OPEN) assert.match(html, /href="\/sign-up"[^>]*>Create account</)
+    else assert.doesNotMatch(html, /href="\/sign-up/)
     assert.match(html, /fictional/)
   })
 
@@ -133,7 +135,8 @@ describeE2e("public demo as an anonymous visitor", () => {
     assert.equal(session.html.trim(), "null")
   })
 
-  it("sign-up is closed: no link on sign-in, and the endpoint refuses", async () => {
+  const closedOnly = SIGN_UP_OPEN ? it.skip : it
+  closedOnly("sign-up is closed: no link on sign-in, and the endpoint refuses", async () => {
     const signIn = await page("/sign-in")
     assert.equal(signIn.status, 200)
     assert.doesNotMatch(signIn.html, /Create one|href="\/sign-up/, "start the server with AUTH_ALLOW_SIGN_UP=false")
