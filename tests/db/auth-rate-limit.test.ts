@@ -4,6 +4,7 @@ import { after, before, describe, it } from "node:test"
 
 import { PrismaPg } from "@prisma/adapter-pg"
 
+import { CLIENT_IP_HEADER, withTrustedClientIp } from "../../lib/auth/client-ip"
 import { createAuth, RATE_LIMIT_SIGN_IN_PER_MINUTE, type Auth } from "../../lib/auth/create-auth"
 import { PrismaClient } from "../../lib/generated/prisma/client"
 
@@ -26,7 +27,7 @@ const BASE = "http://localhost:3000"
 function signInRequest(clientIp: string, email: string): Request {
   return new Request(`${BASE}/api/auth/sign-in/email`, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: BASE, "x-forwarded-for": clientIp },
+    headers: { "content-type": "application/json", origin: BASE, [CLIENT_IP_HEADER]: clientIp },
     body: JSON.stringify({ email, password: "definitely-not-the-password" }),
   })
 }
@@ -73,6 +74,28 @@ describeDb("auth rate limiting (database storage)", () => {
     used.push(clientIp)
     const response = await auth.handler(signInRequest(clientIp, `rate-limit-b-${stamp}@example.test`))
     assert.equal(response.status, 401)
+  })
+
+  it("through the route boundary on Vercel, two clients behind the same forged chain keep separate buckets", async () => {
+    const base = 150 + (Number(stamp) % 50)
+    const [first, second] = [`203.0.113.${base}`, `203.0.113.${base + 50}`]
+    const free = async (ip: string) => (await prisma.rateLimit.count({ where: { key: { startsWith: `${ip}|` } } })) === 0
+    assert.ok((await free(first)) && (await free(second)), "fresh documentation addresses")
+    used.push(first, second)
+    for (const [clientIp, label] of [[first, "c"], [second, "d"]]) {
+      const forged = new Request(`${BASE}/api/auth/sign-in/email`, {
+        method: "POST",
+        // The same forged left part and forged private header for both: neither may decide the bucket.
+        headers: { "content-type": "application/json", origin: BASE, "x-forwarded-for": `198.18.0.1, ${clientIp}`, [CLIENT_IP_HEADER]: "198.18.0.2" },
+        body: JSON.stringify({ email: `rate-limit-${label}-${stamp}@example.test`, password: "definitely-not-the-password" }),
+      })
+      assert.equal((await auth.handler(withTrustedClientIp(forged, { VERCEL: "1" }))).status, 401)
+    }
+    for (const clientIp of [first, second]) {
+      const rows = await prisma.rateLimit.findMany({ where: { key: { startsWith: `${clientIp}|` } }, select: { key: true, count: true } })
+      assert.deepEqual(rows.map((row) => row.key), [`${clientIp}|/sign-in/email`])
+    }
+    assert.equal(await prisma.rateLimit.count({ where: { key: { in: ["198.18.0.1|/sign-in/email", "198.18.0.2|/sign-in/email"] } } }), 0, "no bucket for a forged address")
   })
 
   it("server-side API calls are not rate limited (dev quick sign-in, tests)", async () => {

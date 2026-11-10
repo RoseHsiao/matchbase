@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 
-import { isSignUpAllowed } from "@/lib/auth/auth-env"
+import { CLIENT_IP_HEADER } from "@/lib/auth/client-ip"
 import { buildEmailVerificationUrl } from "@/lib/auth/reset-link"
 import { VERIFICATION_TOKEN_PATTERN } from "@/lib/auth/reset-token-fragment"
-import { resolveRuntimeEnvironment, type EnvLike, type RuntimeEnvironment } from "@/lib/env/runtime-environment"
+import { isFlagEnabled, resolveRuntimeEnvironment, type EnvLike, type RuntimeEnvironment } from "@/lib/env/runtime-environment"
 import { deliverAndLog } from "@/lib/mail/deliver"
 import { readMailEnv } from "@/lib/mail/mail-env"
 import type { Mailer } from "@/lib/mail/mailer"
@@ -30,19 +30,48 @@ export type AccountPolicy = {
   requireEmailVerification: boolean
   /** Verification mail is switched on (AUTH_EMAIL_VERIFICATION_ENABLED) and a transport can deliver it. */
   verificationMail: boolean
+  /** AUTH_ALLOW_UNVERIFIED_SIGN_UP=true: the operator accepts open sign-up without email verification. */
+  unverifiedRequested: boolean
+  /**
+   * A deployment (Production or Preview) accepts sign-up without verification
+   * because both flags are set. Development's own unverified default is not
+   * counted here.
+   */
+  unverifiedSignUp: boolean
   /** Why sign-up is refused although requested; never a secret. */
   refusal: string | null
 }
 
+export const SIGN_UP_FLAG = "AUTH_ALLOW_SIGN_UP"
+export const UNVERIFIED_SIGN_UP_FLAG = "AUTH_ALLOW_UNVERIFIED_SIGN_UP"
+
+/**
+ * Whether public sign-up was ASKED for: AUTH_ALLOW_SIGN_UP when it has a
+ * value (empty counts as unset), otherwise the development default (open).
+ * An input to `accountPolicy`, not a decision; deliberately not exported.
+ */
+function signUpRequested(env: EnvLike): boolean {
+  const explicit = env[SIGN_UP_FLAG]?.trim()
+  if (explicit !== undefined && explicit !== "") return isFlagEnabled(explicit)
+  return resolveRuntimeEnvironment(env) === "development"
+}
+
 /**
  * - Sign-up stays exactly as requested by the existing policy (closed outside
- *   development unless AUTH_ALLOW_SIGN_UP=true); nothing here opens it.
+ *   development unless AUTH_ALLOW_SIGN_UP=true); nothing here opens it alone.
  * - Open sign-up **requires** verification whenever verification mail is on
- *   (AUTH_EMAIL_VERIFICATION_ENABLED plus a deliverable transport).
- * - Outside development, open sign-up without verification mail is refused:
- *   an account nobody can verify is not created.
- *   Development keeps the old behaviour (open, unverified) so the form stays
- *   usable without mail.
+ *   (AUTH_EMAIL_VERIFICATION_ENABLED plus a deliverable transport); the
+ *   unverified flag never weakens that.
+ * - On a deployment (Production, Preview) without verification mail, sign-up
+ *   opens only when the operator sets BOTH AUTH_ALLOW_SIGN_UP=true and
+ *   AUTH_ALLOW_UNVERIFIED_SIGN_UP=true. Either flag alone is refused, and the
+ *   readiness check fails (the startup guard stops Production and Preview).
+ *   Unverified accounts cannot recover their password themselves, and the
+ *   sign-up endpoint then tells an existing address from a new one
+ *   (docs/security/production-hardening.md, "Public sign-up without email
+ *   verification").
+ * - Development keeps the old behaviour (open, unverified) so the form stays
+ *   usable without mail; the unverified flag is ignored there.
  * - With sign-up closed, verification is not required: the accounts are
  *   operator-created, and requiring it would lock out the existing operator
  *   ADMIN (emailVerified=false). With verification mail on, a signed-in
@@ -51,12 +80,19 @@ export type AccountPolicy = {
  */
 export function accountPolicy(env: EnvLike): AccountPolicy {
   const environment = resolveRuntimeEnvironment(env)
-  const signUpRequested = isSignUpAllowed(env)
+  const requested = signUpRequested(env)
   const verificationMail = readMailEnv(env).emailVerification.enabled
-  if (!signUpRequested) return { environment, signUpRequested, signUpOpen: false, requireEmailVerification: false, verificationMail, refusal: null }
-  if (verificationMail) return { environment, signUpRequested, signUpOpen: true, requireEmailVerification: true, verificationMail, refusal: null }
-  if (environment === "development") return { environment, signUpRequested, signUpOpen: true, requireEmailVerification: false, verificationMail, refusal: null }
-  return { environment, signUpRequested, signUpOpen: false, requireEmailVerification: false, verificationMail, refusal: "Public sign-up was requested, but verification mail is not available (AUTH_EMAIL_VERIFICATION_ENABLED with a deliverable transport); sign-up stays closed." }
+  const unverifiedRequested = isFlagEnabled(env[UNVERIFIED_SIGN_UP_FLAG])
+  const base = { environment, signUpRequested: requested, verificationMail, unverifiedRequested, unverifiedSignUp: false }
+  const deployment = environment !== "development"
+  if (!requested) {
+    const refusal = deployment && unverifiedRequested ? `${UNVERIFIED_SIGN_UP_FLAG}=true is set without AUTH_ALLOW_SIGN_UP=true; both flags are required to open sign-up without email verification, so sign-up stays closed.` : null
+    return { ...base, signUpOpen: false, requireEmailVerification: false, refusal }
+  }
+  if (verificationMail) return { ...base, signUpOpen: true, requireEmailVerification: true, refusal: null }
+  if (!deployment) return { ...base, signUpOpen: true, requireEmailVerification: false, refusal: null }
+  if (unverifiedRequested) return { ...base, signUpOpen: true, requireEmailVerification: false, unverifiedSignUp: true, refusal: null }
+  return { ...base, signUpOpen: false, requireEmailVerification: false, refusal: `Public sign-up was requested (AUTH_ALLOW_SIGN_UP=true), but verification mail is not available (AUTH_EMAIL_VERIFICATION_ENABLED with a deliverable transport) and ${UNVERIFIED_SIGN_UP_FLAG}=true is not set; sign-up stays closed.` }
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +168,8 @@ export function markEmailVerifiedInRequest(): void {
 
 export type VerifyEmailResult = { status: 200; body: { status: "verified" } } | { status: 400 | 429; body: { code: "INVALID_TOKEN" | "TOKEN_EXPIRED" | "TOKEN_ALREADY_USED" | "RATE_LIMITED" } }
 
-const FORWARDED_HEADERS = ["x-forwarded-for", "x-real-ip", "x-vercel-forwarded-for", "cf-connecting-ip", "user-agent", "cookie"]
+// CLIENT_IP_HEADER carries the IP the route derived (lib/auth/client-ip.ts); it is the only one Better Auth's limiter reads.
+const FORWARDED_HEADERS = [CLIENT_IP_HEADER, "x-forwarded-for", "x-real-ip", "x-vercel-forwarded-for", "cf-connecting-ip", "user-agent", "cookie"]
 
 export async function verifyEmailToken(request: Request, handle: (request: Request) => Promise<Response>): Promise<VerifyEmailResult> {
   let token: unknown

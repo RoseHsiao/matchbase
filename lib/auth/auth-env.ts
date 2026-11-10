@@ -1,19 +1,25 @@
-import { isFlagEnabled, resolveRuntimeEnvironment, type EnvLike, type RuntimeEnvironment } from "@/lib/env/runtime-environment"
+import { resolveRuntimeEnvironment, type EnvLike, type RuntimeEnvironment } from "@/lib/env/runtime-environment"
 
 /**
  * Better Auth configuration derived from the environment, kept pure so it
- * can be tested without a server: the secret, the public base URL, the
- * trusted origins and the sign-up policy.
+ * can be tested without a server: the secret, the public base URL and the
+ * trusted origins. Whether public sign-up is open is decided in exactly one
+ * place, `accountPolicy` (lib/auth/email-verification.ts); nothing here
+ * answers that question.
  */
 
 export const MIN_AUTH_SECRET_LENGTH = 32
+
+/** Per IP: ten wrong guesses a minute is plenty for a person and hopeless for a brute force. */
+export const RATE_LIMIT_SIGN_IN_PER_MINUTE = 10
+/** Per IP per hour; also bounds how fast one address can probe sign-up for existing accounts. */
+export const RATE_LIMIT_SIGN_UP_PER_HOUR = 5
 
 export type AuthEnvConfig = {
   secret: string
   /** Undefined only in local development, where Better Auth infers it from the request. */
   baseURL: string | undefined
   trustedOrigins: string[]
-  allowSignUp: boolean
   environment: RuntimeEnvironment
 }
 
@@ -45,27 +51,6 @@ export function resolveAuthBaseUrl(env: EnvLike): string | undefined {
   return undefined
 }
 
-/**
- * Launch policy (Phase 9.2): public sign-up is CLOSED outside local
- * development unless AUTH_ALLOW_SIGN_UP=true is set explicitly. There is no
- * mail transport, so an account created in Production could not verify its
- * address or recover its password; the operator creates accounts instead
- * (docs/security/production-hardening.md). Development keeps sign-up open
- * so the normal form stays exercised. Safe to call without the secret.
- */
-export function isSignUpAllowed(env: EnvLike): boolean {
-  const explicit = env.AUTH_ALLOW_SIGN_UP?.trim()
-  if (explicit !== undefined && explicit !== "") return isFlagEnabled(explicit)
-  return resolveRuntimeEnvironment(env) === "development"
-}
-
-export type SignUpPolicy = { open: true; explicit: boolean } | { open: false; reason: string }
-
-export function signUpPolicy(env: EnvLike): SignUpPolicy {
-  if (isSignUpAllowed(env)) return { open: true, explicit: env.AUTH_ALLOW_SIGN_UP !== undefined }
-  return { open: false, reason: "Account creation is not open on this deployment. Existing accounts can sign in; ask the operator for an account." }
-}
-
 export function readAuthEnv(env: EnvLike): AuthEnvConfig {
   const environment = resolveRuntimeEnvironment(env)
   const secret = env.BETTER_AUTH_SECRET?.trim() ?? ""
@@ -85,5 +70,5 @@ export function readAuthEnv(env: EnvLike): AuthEnvConfig {
     environment === "preview" ? withScheme(env.VERCEL_PROJECT_PRODUCTION_URL) : undefined,
   ]
   const trustedOrigins = [...new Set(candidates.filter((value): value is string => Boolean(value)))]
-  return { secret, baseURL, trustedOrigins, allowSignUp: isSignUpAllowed(env), environment }
+  return { secret, baseURL, trustedOrigins, environment }
 }

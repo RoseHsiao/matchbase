@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import { isSignUpAllowed } from "../../lib/auth/auth-env"
+import { accountPolicy } from "../../lib/auth/email-verification"
 import { DEFAULT_MAIL_DAILY_CAP, parseSender, readMailEnv } from "../../lib/mail/mail-env"
 import { isRecipientAllowed, readRecipientPolicy } from "../../lib/mail/recipient-policy"
 
@@ -159,7 +159,8 @@ describe("readMailEnv: password recovery availability", () => {
 
   it("never changes the sign-up policy", () => {
     const env = { ...resendProd, MAIL_FROM: "noreply@mail.example.com", AUTH_PASSWORD_RESET_ENABLED: "true" }
-    assert.equal(isSignUpAllowed(env), false)
+    assert.equal(accountPolicy(env).signUpRequested, false)
+    assert.equal(accountPolicy(env).signUpOpen, false)
   })
 })
 

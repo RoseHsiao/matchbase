@@ -5,6 +5,7 @@ import { after, before, describe, it } from "node:test"
 import { PrismaPg } from "@prisma/adapter-pg"
 
 import { authPathOf, isBlockedAuthRequest } from "../../lib/auth/blocked-auth-paths"
+import { CLIENT_IP_HEADER } from "../../lib/auth/client-ip"
 import { createAuth, RATE_LIMIT_SIGN_UP_PER_HOUR, type Auth } from "../../lib/auth/create-auth"
 import { PASSWORD_RESET_TOKEN_TTL_SECONDS } from "../../lib/auth/password-policy"
 import { PrismaClient } from "../../lib/generated/prisma/client"
@@ -49,7 +50,7 @@ function nextIp(): string {
 function post(path: string, body: unknown, headers: Record<string, string> = {}): Request {
   return new Request(`${BASE}/api/auth${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: BASE, "x-forwarded-for": nextIp(), ...headers },
+    headers: { "content-type": "application/json", origin: BASE, [CLIENT_IP_HEADER]: nextIp(), ...headers },
     body: JSON.stringify(body),
   })
 }
@@ -242,7 +243,7 @@ describeDb("self-service password recovery (database)", () => {
     const changed = await auth.handler(
       new Request(`${BASE}/api/auth/change-password`, {
         method: "POST",
-        headers: { "content-type": "application/json", origin: BASE, cookie, "x-forwarded-for": nextIp() },
+        headers: { "content-type": "application/json", origin: BASE, cookie, [CLIENT_IP_HEADER]: nextIp() },
         body: JSON.stringify({ currentPassword: PASSWORD, newPassword: NEW_PASSWORD }),
       })
     )
@@ -276,7 +277,7 @@ describeDb("self-service password recovery (database)", () => {
     const ip = nextIp()
     const statuses: number[] = []
     for (let i = 0; i < RATE_LIMIT_SIGN_UP_PER_HOUR + 1; i++) {
-      statuses.push((await limited.handler(post("/request-password-reset", { email: user.email }, { "x-forwarded-for": ip }))).status)
+      statuses.push((await limited.handler(post("/request-password-reset", { email: user.email }, { [CLIENT_IP_HEADER]: ip }))).status)
     }
     assert.deepEqual(statuses, [...Array(RATE_LIMIT_SIGN_UP_PER_HOUR).fill(200), 429])
     const rows = await prisma.rateLimit.findMany({ where: { key: { startsWith: `${ip}|` } } })

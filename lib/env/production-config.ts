@@ -1,5 +1,5 @@
-import { MIN_AUTH_SECRET_LENGTH, resolveAuthBaseUrl } from "@/lib/auth/auth-env"
-import { accountPolicy } from "@/lib/auth/email-verification"
+import { MIN_AUTH_SECRET_LENGTH, RATE_LIMIT_SIGN_UP_PER_HOUR, resolveAuthBaseUrl } from "@/lib/auth/auth-env"
+import { accountPolicy, UNVERIFIED_SIGN_UP_FLAG } from "@/lib/auth/email-verification"
 import { DEV_LOGIN_FLAG } from "@/lib/auth/dev-login"
 import { readScheduleConfig } from "@/lib/data/sync/schedule-config"
 import { describeDataSourceProvider } from "@/lib/data/sync/providers/registry"
@@ -193,9 +193,13 @@ export function evaluateProductionReadiness(env: EnvLike): ReadinessReport {
 
   // Launch policy and development-only features
   const accounts = accountPolicy(env)
-  if (accounts.refusal) add({ id: "sign-up", status: production ? "fail" : "warn", detail: accounts.refusal })
-  else if (production) add({ id: "sign-up", status: accounts.signUpOpen ? "warn" : "pass", detail: accounts.signUpOpen ? "Public sign-up is OPEN in Production (AUTH_ALLOW_SIGN_UP=true) with required email verification; confirm the release procedure in docs/security/account-recovery.md was followed." : "Public sign-up is closed (launch policy)." })
-  else add({ id: "sign-up", status: "info", detail: `Public sign-up is ${accounts.signUpOpen ? `open${accounts.requireEmailVerification ? " with required email verification" : " without verification (development, no mail transport)"}` : "closed"} in ${environment}.` })
+  // A half-configured sign-up policy is refused by accountPolicy and fails here on Production and
+  // Preview alike, so the startup guard stops both instead of serving a sign-up state nobody chose.
+  const ignoredUnverifiedFlag = accounts.unverifiedRequested && accounts.requireEmailVerification ? ` ${UNVERIFIED_SIGN_UP_FLAG} is set but has no effect while verification mail is on.` : ""
+  if (accounts.refusal) add({ id: "sign-up", status: environment === "development" ? "warn" : "fail", detail: accounts.refusal, previewCritical: true })
+  else if (accounts.unverifiedSignUp) add({ id: "sign-up", status: "warn", detail: `Public sign-up is OPEN in ${environment} WITHOUT email verification (AUTH_ALLOW_SIGN_UP=true and ${UNVERIFIED_SIGN_UP_FLAG}=true): addresses are not confirmed, there is no self-service password recovery, and the sign-up endpoint reveals whether an address already has an account (rate-limited to ${RATE_LIMIT_SIGN_UP_PER_HOUR} per IP per hour). See docs/security/production-hardening.md.` })
+  else if (production) add({ id: "sign-up", status: accounts.signUpOpen ? "warn" : "pass", detail: accounts.signUpOpen ? `Public sign-up is OPEN in Production (AUTH_ALLOW_SIGN_UP=true) with required email verification; confirm the release procedure in docs/security/account-recovery.md was followed.${ignoredUnverifiedFlag}` : "Public sign-up is closed (launch policy)." })
+  else add({ id: "sign-up", status: "info", detail: `Public sign-up is ${accounts.signUpOpen ? `open${accounts.requireEmailVerification ? " with required email verification" : " without verification (development, no mail transport)"}` : "closed"} in ${environment}.${ignoredUnverifiedFlag}` })
   const devLoginFlag = isFlagEnabled(env[DEV_LOGIN_FLAG])
   if (environment !== "development" && devLoginFlag) add({ id: "dev-login", status: "fail", detail: `${DEV_LOGIN_FLAG} is set outside development; the feature refuses to activate, but the flag must not be present on a deployment.`, previewCritical: true })
   else if (environment !== "development" && (env.MATCHBASE_DEV_USER_PASSWORD || env.MATCHBASE_DEV_ADMIN_PASSWORD)) add({ id: "dev-login", status: "fail", detail: "Development account credentials are present on a deployment; remove the MATCHBASE_DEV_* variables.", previewCritical: true })
@@ -247,7 +251,7 @@ export function evaluateProductionReadiness(env: EnvLike): ReadinessReport {
       ? "Verification mail is enabled: confirmation links and the Watchlist's email-reminder offer are live."
       : mail.emailVerification.requested
         ? `Verification mail was requested but stays disabled: ${mail.emailVerification.reason}`
-        : `Verification mail is disabled (${EMAIL_VERIFICATION_FLAG} unset); no confirmation email is sent and public sign-up cannot open.`,
+        : `Verification mail is disabled (${EMAIL_VERIFICATION_FLAG} unset); no confirmation email is sent, and public sign-up opens only with both AUTH_ALLOW_SIGN_UP=true and ${UNVERIFIED_SIGN_UP_FLAG}=true (unverified).`,
   })
 
   // Headers and CSP

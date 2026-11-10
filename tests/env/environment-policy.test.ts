@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import { isSignUpAllowed, signUpPolicy } from "../../lib/auth/auth-env"
+import { accountPolicy } from "../../lib/auth/email-verification"
 import { resolveDevLogin } from "../../lib/auth/dev-login"
 import { databaseLabelPolicy, operatorPolicy, providerSyncPolicy, readDatabaseLabel, resolveRuntimePlatform, seedPolicy } from "../../lib/env/runtime-environment"
 
@@ -86,18 +86,32 @@ describe("seed policy", () => {
 })
 
 describe("launch sign-up policy", () => {
-  it("is closed outside development unless explicitly opened", () => {
-    assert.equal(isSignUpAllowed({}), true)
-    assert.equal(isSignUpAllowed({ VERCEL_ENV: "production" }), false)
-    assert.equal(isSignUpAllowed({ VERCEL_ENV: "preview" }), false)
-    assert.equal(isSignUpAllowed({ NODE_ENV: "production" }), false)
-    assert.equal(isSignUpAllowed({ VERCEL_ENV: "production", AUTH_ALLOW_SIGN_UP: "true" }), true)
-    assert.equal(isSignUpAllowed({ AUTH_ALLOW_SIGN_UP: "false" }), false)
-    assert.equal(isSignUpAllowed({ AUTH_ALLOW_SIGN_UP: "" }), true, "an empty value is unset")
-    const closed = signUpPolicy({ VERCEL_ENV: "production" })
-    assert.equal(closed.open, false)
-    assert.match(closed.open ? "" : closed.reason, /not open/)
-    assert.deepEqual(signUpPolicy({ VERCEL_ENV: "production", AUTH_ALLOW_SIGN_UP: "true" }), { open: true, explicit: true })
+  it("is closed outside development unless both flags (or verification mail) open it; development is unchanged", () => {
+    const open = (env: Record<string, string | undefined>) => accountPolicy(env).signUpOpen
+    assert.equal(open({}), true)
+    assert.equal(open({ AUTH_ALLOW_SIGN_UP: "" }), true, "an empty value is unset")
+    assert.equal(open({ AUTH_ALLOW_SIGN_UP: "false" }), false)
+    for (const base of [{ VERCEL_ENV: "production" }, { VERCEL_ENV: "preview" }, { NODE_ENV: "production" }]) {
+      assert.equal(open(base), false, JSON.stringify(base))
+      assert.equal(open({ ...base, AUTH_ALLOW_SIGN_UP: "true" }), false, "one flag is refused")
+      assert.equal(open({ ...base, AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }), false, "one flag is refused")
+      assert.equal(open({ ...base, AUTH_ALLOW_SIGN_UP: "", AUTH_ALLOW_UNVERIFIED_SIGN_UP: "" }), false, "empty values are unset")
+      assert.equal(open({ ...base, AUTH_ALLOW_SIGN_UP: "true", AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }), true)
+    }
+  })
+
+  it("only accountPolicy reads the sign-up flags; no other module can answer the question differently", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs")
+    const { join } = await import("node:path")
+    const files = ["app", "components", "lib", "proxy.ts", "instrumentation.ts"].flatMap((root) =>
+      root.endsWith(".ts") ? [root] : readdirSync(root, { recursive: true, encoding: "utf8" }).filter((name) => /\.tsx?$/.test(name)).map((name) => join(root, name))
+    ).filter((file) => !file.startsWith("lib/generated/"))
+    const reads = /env(\?)?\.AUTH_ALLOW_(UNVERIFIED_)?SIGN_UP\b|env\[\s*["'`]AUTH_ALLOW_(UNVERIFIED_)?SIGN_UP["'`]\s*\]|env\[(SIGN_UP_FLAG|UNVERIFIED_SIGN_UP_FLAG)\]/
+    const readers = files.filter((file) => reads.test(readFileSync(file, "utf8")))
+    assert.deepEqual(readers, ["lib/auth/email-verification.ts"])
+    for (const name of ["isSignUpAllowed", "signUpPolicy", "allowSignUp"]) {
+      assert.ok(!files.some((file) => new RegExp(`\\b${name}\\b`).test(readFileSync(file, "utf8"))), `${name} is gone`)
+    }
   })
 })
 

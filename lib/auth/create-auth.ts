@@ -1,7 +1,8 @@
 import { betterAuth, type BetterAuthPlugin } from "better-auth"
 import { prismaAdapter } from "better-auth/adapters/prisma"
 
-import { readAuthEnv } from "@/lib/auth/auth-env"
+import { RATE_LIMIT_SIGN_IN_PER_MINUTE, RATE_LIMIT_SIGN_UP_PER_HOUR, readAuthEnv } from "@/lib/auth/auth-env"
+import { CLIENT_IP_HEADER } from "@/lib/auth/client-ip"
 import { USER_ROLES } from "@/lib/auth/authorization"
 import { accountPolicy, createVerificationHooks, markEmailVerifiedInRequest } from "@/lib/auth/email-verification"
 import { EMAIL_VERIFICATION_TOKEN_TTL_SECONDS, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_RESET_TOKEN_TTL_SECONDS } from "@/lib/auth/password-policy"
@@ -23,7 +24,8 @@ import type { PrismaClient } from "@/lib/generated/prisma/client"
  * - email and password as the first method (no email or OAuth infrastructure exists yet);
  * - database sessions, no cookie cache, so revocation and role changes apply on the next request;
  * - `role` is a server-owned field (`input: false`): the browser cannot set it at sign-up or update;
- * - sign-up can be closed with AUTH_ALLOW_SIGN_UP=false without touching code;
+ * - sign-up can be closed with AUTH_ALLOW_SIGN_UP=false without touching code; on a deployment
+ *   without verification mail it opens only with AUTH_ALLOW_UNVERIFIED_SIGN_UP=true as well;
  * - self-service password recovery exists only when lib/mail/mail-env.ts says it is
  *   available (AUTH_PASSWORD_RESET_ENABLED plus a transport that can deliver); otherwise
  *   no reset hook is configured and Better Auth answers RESET_PASSWORD_DISABLED, the
@@ -37,9 +39,8 @@ import type { PrismaClient } from "@/lib/generated/prisma/client"
 
 const SESSION_DAYS = 7
 const SESSION_REFRESH_DAYS = 1
-/** Per IP: ten wrong guesses a minute is plenty for a person and hopeless for a brute force. */
-export const RATE_LIMIT_SIGN_IN_PER_MINUTE = 10
-export const RATE_LIMIT_SIGN_UP_PER_HOUR = 5
+// Defined in the dependency-free auth-env so the readiness check can quote them.
+export { RATE_LIMIT_SIGN_IN_PER_MINUTE, RATE_LIMIT_SIGN_UP_PER_HOUR }
 
 export type CreateAuthOptions = {
   prisma: PrismaClient
@@ -112,7 +113,11 @@ export function createAuth({ prisma, env, plugins = [], mailer, background }: Cr
      * Shared, database-backed rate limiting for the auth endpoints
      * (docs/security/production-hardening.md, "Rate limiting"): every
      * serverless instance reads and writes the same RateLimit table, so a
-     * limit means the same thing across instances. Keys are IP + path;
+     * limit means the same thing across instances. Keys are IP + path,
+     * where the IP is the one the auth route derived from the platform's own
+     * headers (lib/auth/client-ip.ts; `advanced.ipAddress` below), never a
+     * forwarded header the client sent; without a trusted IP Better Auth
+     * uses one shared bucket per path (strict, not permissive);
      * Better Auth expires rows itself. Off in development so tests and
      * local browser runs never trip it. Only auth HTTP endpoints are
      * limited; server-side `auth.api` calls (dev quick sign-in, tests)
@@ -133,7 +138,12 @@ export function createAuth({ prisma, env, plugins = [], mailer, background }: Cr
         "/verify-email": { window: 600, max: 10 },
       },
     },
-    ...(background ? { advanced: { backgroundTasks: { handler: (task: Promise<unknown>) => background(task) } } } : {}),
+    advanced: {
+      // The rate limiter (and the session's ipAddress) read only the IP the route derived from the platform's
+      // own headers (lib/auth/client-ip.ts); a client-supplied forwarded header is never trusted directly.
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
+      ...(background ? { backgroundTasks: { handler: (task: Promise<unknown>) => background(task) } } : {}),
+    },
     plugins,
     logger: {
       level: "warn",

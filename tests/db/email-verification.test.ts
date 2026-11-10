@@ -6,6 +6,7 @@ import { PrismaPg } from "@prisma/adapter-pg"
 import { signJWT } from "better-auth/crypto"
 
 import { authPathOf, isBlockedAuthRequest } from "../../lib/auth/blocked-auth-paths"
+import { CLIENT_IP_HEADER } from "../../lib/auth/client-ip"
 import { createAuth, type Auth } from "../../lib/auth/create-auth"
 import { verifyEmailToken } from "../../lib/auth/email-verification"
 import { PrismaClient } from "../../lib/generated/prisma/client"
@@ -189,7 +190,7 @@ describeDb("email verification (database)", () => {
     assert.equal(((await answer.json()) as { code?: string }).code, "VERIFICATION_EMAIL_NOT_ENABLED")
 
     const productionNoMail = createAuth({ prisma, env: { DATABASE_URL: url, BETTER_AUTH_SECRET: SECRET, BETTER_AUTH_URL: BASE, NODE_ENV: "production", AUTH_ALLOW_SIGN_UP: "true" } })
-    const refused = await productionNoMail.handler(post("/sign-up/email", { name: "X", email: email("prod-refused"), password: PASSWORD }, { "x-forwarded-for": "192.0.2.77" }))
+    const refused = await productionNoMail.handler(post("/sign-up/email", { name: "X", email: email("prod-refused"), password: PASSWORD }, { [CLIENT_IP_HEADER]: "192.0.2.77" }))
     assert.equal(refused.status, 400, "AUTH_ALLOW_SIGN_UP=true alone does not open sign-up without mail")
     assert.equal(await prisma.user.count({ where: { email: email("prod-refused") } }), 0)
     await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "192.0.2.77|" } } })

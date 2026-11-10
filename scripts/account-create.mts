@@ -19,7 +19,10 @@ import { readOperatorPassword } from "./shared/read-password"
  * server-side instance whose only difference from the application's is that
  * sign-up is allowed for this one call: the same validation, the same scrypt
  * hash, the same User and Account rows. The role stays USER; promotion is a
- * separate step (`npm run admin:role -- grant`). The session Better Auth
+ * separate step (`npm run admin:role -- grant`, which sets the password
+ * again, because it cannot tell this account from a self-registered one).
+ * An address that already has an account is refused and never touched: it
+ * may have been registered by anyone through public sign-up. The session Better Auth
  * opens on sign-up is deleted immediately, so no session exists for the new
  * account until the person signs in.
  *
@@ -66,7 +69,9 @@ if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENG
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }), transactionOptions: { timeout: 30_000, maxWait: 10_000 } })
 try {
   if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
-    console.error(`An account with email ${email} already exists. Use npm run account:password to reset its password.`)
+    // Not necessarily the intended person's: while public sign-up is open without verification, anyone can register any
+    // address. Never treat it as created here, and never hand it over as is.
+    console.error(`An account with email ${email} already exists and was NOT created by this command; it may have been registered by someone else through public sign-up. Nothing changed. To make it an administrator, run npm run admin:role -- grant ${email}, which sets a new password and revokes every session; do not grant it or hand it over with its current password.`)
     process.exit(1)
   }
   const secret = process.env.BETTER_AUTH_SECRET && process.env.BETTER_AUTH_SECRET.length >= 32 ? process.env.BETTER_AUTH_SECRET : randomBytes(32).toString("base64")
@@ -80,7 +85,7 @@ try {
   const revoked = await prisma.session.deleteMany({ where: { userId: result.user.id } })
   const row = await prisma.user.findUniqueOrThrow({ where: { id: result.user.id }, select: { role: true, accounts: { select: { providerId: true } } } })
   console.log(`Created ${email} (${operator.target} database): role ${row.role}, credential ${row.accounts.map((a) => a.providerId).join(",") || "none"}, ${revoked.count} bootstrap session(s) discarded.`)
-  console.log("Next: hand over the password out of band; to make this account an administrator run: npm run admin:role -- grant " + email)
+  console.log("Next: hand over the password out of band; to make this account an administrator run: npm run admin:role -- grant " + email + " (grant sets the password again; hand over the one you give it)")
 } catch (error) {
   const message = error instanceof Error ? error.message.split("\n")[0].slice(0, 200) : String(error)
   console.error("Could not create the account:", message)

@@ -207,6 +207,54 @@ describe("evaluateProductionReadiness", () => {
     }
   })
 
+  describe("dual-flag unverified sign-up (AUTH_ALLOW_SIGN_UP + AUTH_ALLOW_UNVERIFIED_SIGN_UP)", () => {
+    const preview = { VERCEL: "1", VERCEL_ENV: "preview", VERCEL_URL: "matchbase-git-x.vercel.app", MATCHBASE_DATABASE_LABEL: "preview", DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB_DIRECT, BETTER_AUTH_SECRET: SECRET }
+    const signUp = (env: Record<string, string | undefined>) => evaluateProductionReadiness(env).checks.find((c) => c.id === "sign-up")
+
+    for (const [name, base] of [["Production", production], ["Preview", preview]] as const) {
+      it(`${name}: either flag alone fails and the startup guard blocks`, () => {
+        for (const half of [{ AUTH_ALLOW_SIGN_UP: "true" }, { AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }, { AUTH_ALLOW_SIGN_UP: "false", AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }]) {
+          const report = evaluateProductionReadiness({ ...base, ...half })
+          assert.equal(signUp({ ...base, ...half })?.status, "fail", JSON.stringify(half))
+          assert.ok(blockingChecks(report).some((c) => c.id === "sign-up"), `${name} refuses to start: ${JSON.stringify(half)}`)
+        }
+      })
+
+      it(`${name}: both flags pass with a WARN that says unverified, no recovery and enumeration`, () => {
+        const env = { ...base, AUTH_ALLOW_SIGN_UP: "true", AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }
+        const check = signUp(env)
+        assert.equal(check?.status, "warn")
+        assert.match(check?.detail ?? "", /OPEN in (production|preview) WITHOUT email verification/)
+        assert.match(check?.detail ?? "", /no self-service password recovery/)
+        assert.match(check?.detail ?? "", /reveals whether an address already has an account/)
+        assert.match(check?.detail ?? "", /5 per IP per hour/)
+        assert.ok(!blockingChecks(evaluateProductionReadiness(env)).some((c) => c.id === "sign-up"))
+      })
+
+      it(`${name}: neither flag is unchanged`, () => {
+        assert.notEqual(signUp(base)?.status, "fail")
+        assert.notEqual(signUp(base)?.status, "warn")
+      })
+    }
+
+    it("the Production fixture with both flags has no failures at all", () => {
+      assert.deepEqual(ids(evaluateProductionReadiness({ ...production, AUTH_ALLOW_SIGN_UP: "true", AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }).failures), [])
+    })
+
+    it("with verification mail on, the unverified flag is reported as having no effect", () => {
+      const mail = { MAIL_TRANSPORT: "resend", MAIL_FROM: "noreply@mail.matchbase.example", RESEND_API_KEY: "re_TestKey_0123456789abcdef", AUTH_EMAIL_VERIFICATION_ENABLED: "true" }
+      const check = signUp({ ...production, ...mail, AUTH_ALLOW_SIGN_UP: "true", AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" })
+      assert.equal(check?.status, "warn")
+      assert.match(check?.detail ?? "", /required email verification.*AUTH_ALLOW_UNVERIFIED_SIGN_UP is set but has no effect/)
+    })
+
+    it("development never fails on the flags", () => {
+      const dev = { DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB_DIRECT, BETTER_AUTH_SECRET: SECRET, MATCHBASE_DATABASE_LABEL: "development" }
+      assert.equal(signUp({ ...dev, AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" })?.status, "info")
+      assert.equal(signUp({ ...dev, AUTH_ALLOW_SIGN_UP: "false", AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" })?.status, "info")
+    })
+  })
+
   it("Preview blocks only what could reach Production", () => {
     const preview = { VERCEL: "1", VERCEL_ENV: "preview", VERCEL_URL: "matchbase-git-x.vercel.app", MATCHBASE_DATABASE_LABEL: "preview", DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB_DIRECT, BETTER_AUTH_SECRET: SECRET }
     const clean = evaluateProductionReadiness(preview)
@@ -288,7 +336,7 @@ describe("mail and password-recovery readiness", () => {
 
   it("verification mail is its own reported switch: off passes, on with Resend passes, requested without a transport fails", () => {
     assert.equal(status(production, "email-verification"), "pass")
-    assert.match(evaluateProductionReadiness({ ...production, ...resend }).checks.find((c) => c.id === "email-verification")?.detail ?? "", /disabled.*public sign-up cannot open/)
+    assert.match(evaluateProductionReadiness({ ...production, ...resend }).checks.find((c) => c.id === "email-verification")?.detail ?? "", /disabled.*public sign-up opens only with both AUTH_ALLOW_SIGN_UP=true and AUTH_ALLOW_UNVERIFIED_SIGN_UP=true/)
     assert.equal(status({ ...production, ...resend, AUTH_EMAIL_VERIFICATION_ENABLED: "true" }, "email-verification"), "pass")
     const broken = { ...production, AUTH_EMAIL_VERIFICATION_ENABLED: "true" }
     assert.equal(status(broken, "email-verification"), "fail")

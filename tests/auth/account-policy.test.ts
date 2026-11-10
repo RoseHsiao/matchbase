@@ -13,7 +13,7 @@ const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImFAZXhhbXBsZS5jb20ifQ.c2lnbmF0dXJ
 
 describe("accountPolicy", () => {
   it("Production today (no variables): sign-up closed, verification not required (no lockout), no verification mail", () => {
-    assert.deepEqual(accountPolicy({ VERCEL_ENV: "production" }), { environment: "production", signUpRequested: false, signUpOpen: false, requireEmailVerification: false, verificationMail: false, refusal: null })
+    assert.deepEqual(accountPolicy({ VERCEL_ENV: "production" }), { environment: "production", signUpRequested: false, signUpOpen: false, requireEmailVerification: false, verificationMail: false, unverifiedRequested: false, unverifiedSignUp: false, refusal: null })
   })
 
   it("a transport alone turns nothing on: no verification mail, and requested sign-up stays refused", () => {
@@ -48,10 +48,64 @@ describe("accountPolicy", () => {
   })
 
   it("development keeps the open, unverified form without verification mail and requires verification with the outbox and the switch", () => {
-    assert.deepEqual(accountPolicy({}), { environment: "development", signUpRequested: true, signUpOpen: true, requireEmailVerification: false, verificationMail: false, refusal: null })
+    assert.deepEqual(accountPolicy({}), { environment: "development", signUpRequested: true, signUpOpen: true, requireEmailVerification: false, verificationMail: false, unverifiedRequested: false, unverifiedSignUp: false, refusal: null })
     assert.equal(accountPolicy({ MAIL_TRANSPORT: "dev-outbox", MAIL_FROM: "dev@example.com" }).requireEmailVerification, false, "the outbox alone keeps the old form")
     assert.equal(accountPolicy({ MAIL_TRANSPORT: "dev-outbox", MAIL_FROM: "dev@example.com", AUTH_EMAIL_VERIFICATION_ENABLED: "true" }).requireEmailVerification, true)
     assert.equal(accountPolicy({ AUTH_ALLOW_SIGN_UP: "false" }).signUpOpen, false)
+  })
+})
+
+describe("accountPolicy: unverified sign-up needs both flags on a deployment", () => {
+  const BOTH = { AUTH_ALLOW_SIGN_UP: "true", AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }
+
+  for (const environment of ["production", "preview"] as const) {
+    it(`${environment}: neither flag keeps sign-up closed, with no refusal`, () => {
+      const policy = accountPolicy({ VERCEL_ENV: environment })
+      assert.equal(policy.signUpOpen, false)
+      assert.equal(policy.refusal, null)
+      assert.equal(policy.unverifiedSignUp, false)
+    })
+
+    it(`${environment}: AUTH_ALLOW_SIGN_UP=true alone is refused and names the missing flag`, () => {
+      const policy = accountPolicy({ VERCEL_ENV: environment, AUTH_ALLOW_SIGN_UP: "true" })
+      assert.equal(policy.signUpOpen, false)
+      assert.match(policy.refusal ?? "", /AUTH_ALLOW_UNVERIFIED_SIGN_UP=true is not set/)
+    })
+
+    it(`${environment}: AUTH_ALLOW_UNVERIFIED_SIGN_UP=true alone is refused (and with AUTH_ALLOW_SIGN_UP=false too)`, () => {
+      for (const env of [{ AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }, { AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true", AUTH_ALLOW_SIGN_UP: "false" }]) {
+        const policy = accountPolicy({ VERCEL_ENV: environment, ...env })
+        assert.equal(policy.signUpOpen, false)
+        assert.equal(policy.unverifiedRequested, true)
+        assert.match(policy.refusal ?? "", /without AUTH_ALLOW_SIGN_UP=true; both flags are required/)
+      }
+    })
+
+    it(`${environment}: both flags open sign-up without verification and mark it`, () => {
+      assert.deepEqual(accountPolicy({ VERCEL_ENV: environment, ...BOTH }), { environment, signUpRequested: true, signUpOpen: true, requireEmailVerification: false, verificationMail: false, unverifiedRequested: true, unverifiedSignUp: true, refusal: null })
+    })
+
+    it(`${environment}: a false-like value is not a flag`, () => {
+      for (const value of ["false", "0", "", "no", "maybe"]) {
+        assert.equal(accountPolicy({ VERCEL_ENV: environment, AUTH_ALLOW_SIGN_UP: "true", AUTH_ALLOW_UNVERIFIED_SIGN_UP: value }).signUpOpen, false, value)
+      }
+    })
+  }
+
+  it("verification mail wins: both flags plus deliverable mail still require verification", () => {
+    const policy = accountPolicy({ VERCEL_ENV: "production", ...BOTH, ...VERIFY })
+    assert.equal(policy.signUpOpen, true)
+    assert.equal(policy.requireEmailVerification, true)
+    assert.equal(policy.unverifiedSignUp, false)
+  })
+
+  it("development ignores the new flag: the old open, unverified form, and AUTH_ALLOW_SIGN_UP=false still closes it without a refusal", () => {
+    assert.equal(accountPolicy({ AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }).unverifiedSignUp, false)
+    assert.equal(accountPolicy({ AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" }).signUpOpen, true)
+    const closed = accountPolicy({ AUTH_ALLOW_SIGN_UP: "false", AUTH_ALLOW_UNVERIFIED_SIGN_UP: "true" })
+    assert.equal(closed.signUpOpen, false)
+    assert.equal(closed.refusal, null)
+    assert.equal(accountPolicy({ VERCEL_ENV: "development", ...BOTH }).unverifiedSignUp, false)
   })
 })
 

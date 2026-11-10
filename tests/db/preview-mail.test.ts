@@ -4,6 +4,7 @@ import { after, before, describe, it } from "node:test"
 
 import { PrismaPg } from "@prisma/adapter-pg"
 
+import { CLIENT_IP_HEADER } from "../../lib/auth/client-ip"
 import { createAuth, type Auth } from "../../lib/auth/create-auth"
 import { PrismaClient } from "../../lib/generated/prisma/client"
 import { RESEND_ENDPOINT } from "../../lib/mail/transports/resend"
@@ -47,7 +48,7 @@ const usedIps: string[] = []
 function post(path: string, body: unknown): Request {
   const clientIp = `192.0.2.${(ip++ % 250) + 1}`
   usedIps.push(clientIp)
-  return new Request(`${BASE}/api/auth${path}`, { method: "POST", headers: { "content-type": "application/json", origin: BASE, "x-forwarded-for": clientIp }, body: JSON.stringify(body) })
+  return new Request(`${BASE}/api/auth${path}`, { method: "POST", headers: { "content-type": "application/json", origin: BASE, [CLIENT_IP_HEADER]: clientIp }, body: JSON.stringify(body) })
 }
 
 describeDb("Preview mail through Resend with an allowlist (no network)", () => {

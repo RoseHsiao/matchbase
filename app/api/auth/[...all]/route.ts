@@ -2,6 +2,7 @@ import { toNextJsHandler } from "better-auth/next-js"
 
 import { getAuth } from "@/lib/auth/auth"
 import { authPathOf, isBlockedAuthRequest } from "@/lib/auth/blocked-auth-paths"
+import { withTrustedClientIp } from "@/lib/auth/client-ip"
 import { verifyEmailToken } from "@/lib/auth/email-verification"
 
 /**
@@ -17,6 +18,10 @@ import { verifyEmailToken } from "@/lib/auth/email-verification"
  * (lib/auth/blocked-auth-paths.ts) before Better Auth sees them, and
  * `POST /api/auth/verify-email` (token in the body) is bridged to Better
  * Auth's verification in-process.
+ *
+ * Every request is first given the client IP derived from the platform's own
+ * headers (lib/auth/client-ip.ts); Better Auth's rate limiter reads only that,
+ * never a forwarded header a client sent.
  */
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -33,10 +38,11 @@ const NOT_FOUND = () => new Response("Not Found", { status: 404, headers: { "cac
 export async function GET(request: Request): Promise<Response> {
   const path = authPathOf(request.url)
   if (path && isBlockedAuthRequest("GET", path)) return NOT_FOUND()
-  return handlers().GET(request)
+  return handlers().GET(withTrustedClientIp(request, process.env))
 }
 
-export async function POST(request: Request): Promise<Response> {
+export async function POST(incoming: Request): Promise<Response> {
+  const request = withTrustedClientIp(incoming, process.env)
   if (authPathOf(request.url) === "/verify-email") {
     const result = await verifyEmailToken(request, (internal) => handlers().GET(internal))
     return Response.json(result.body, { status: result.status, headers: { "cache-control": "no-store" } })

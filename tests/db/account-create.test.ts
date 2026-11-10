@@ -119,9 +119,13 @@ describeDb("account:create (database)", () => {
     assert.equal(run([`short-${stamp}@example.test`], { MATCHBASE_NEW_PASSWORD: "short" }).code, 1)
   })
 
-  it("can then be promoted with the existing admin-role command", () => {
-    const grant = spawnSync("npx", ["tsx", "scripts/admin-role.mts", "grant", email], { encoding: "utf8", env: process.env })
+  it("can then be promoted with the admin-role command, which sets the password again", async () => {
+    const grant = spawnSync("npx", ["tsx", "scripts/admin-role.mts", "grant", email], { encoding: "utf8", env: { ...process.env, MATCHBASE_NEW_PASSWORD: PASSWORD } })
     assert.equal(grant.status, 0, `${grant.stdout}${grant.stderr}`)
-    assert.match(grant.stdout, /now an administrator/)
+    assert.match(grant.stdout, /now an administrator with a new password/)
+    assert.doesNotMatch(`${grant.stdout}${grant.stderr}`, new RegExp(PASSWORD))
+    const { response } = await auth.api.signInEmail({ body: { email, password: PASSWORD }, returnHeaders: true })
+    assert.equal(response.user.email, email, "the operator-chosen password signs in")
+    await prisma.session.deleteMany({ where: { user: { email } } })
   })
 })
