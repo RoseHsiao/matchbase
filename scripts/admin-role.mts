@@ -35,12 +35,21 @@ import { readOperatorPassword } from "./shared/read-password"
  * - deletes the account's outstanding reset links;
  * - sets the role.
  *
- * After a short grace period it revokes sessions once more, to catch a
- * sign-in that raced the update with the old password. The operator then
- * hands the new password to the intended person out of band, the same trust
- * root `account:create` relies on. Whoever registered the address before
- * loses access before the account is an administrator. An account that is
- * already an administrator is left untouched; `revoke` is unchanged.
+ * The operator then hands the new password to the intended person out of
+ * band, the same trust root `account:create` relies on. Once that holds, the
+ * old password no longer signs in and every session that existed before the
+ * transaction is gone. An account that is already an administrator is left
+ * untouched; `revoke` is unchanged.
+ *
+ * Known limitation, NOT race-free: a sign-in that verified the old password
+ * just before the transaction committed can still create its session after
+ * the transaction's revoke, and that session would act with the new role.
+ * As a risk-reduction measure only, grant waits a short, fixed time and
+ * revokes the account's sessions a second time. A sign-in slower than that
+ * wait, or one that completes after the second revoke, is not caught. No test
+ * exercises concurrent sign-ins, so nothing here proves the race is closed.
+ * Narrow the window further by granting when the address is not in use
+ * (for example, sign-up closed or the account just created by the operator).
  */
 
 for (const file of [".env.local", ".env"]) {
@@ -81,7 +90,11 @@ if (command !== "list") console.log(`Target database: ${operator.target}.`)
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 
-/** A sign-in that read the old password just before the transaction committed has created its session within this window. */
+/**
+ * How long grant waits before revoking sessions a second time. A heuristic
+ * that reduces the risk of a concurrent sign-in with the old password; it is
+ * not a bound on how long such a sign-in can take, and not a guarantee.
+ */
 const SIGN_IN_RACE_GRACE_MS = 2_000
 
 async function grantWithNewCredential(user: { id: string; accounts: { id: string; providerId: string }[] }, email: string): Promise<void> {
@@ -100,14 +113,16 @@ async function grantWithNewCredential(user: { id: string; accounts: { id: string
   }
   const hash = await hashPassword(password)
   if (!(await verifyPassword({ hash, password }))) throw new Error("The new hash did not verify; nothing was written.")
-  // The credential row is matched on its id and owner and must still be the same row; the role changes in the
-  // same transaction, so there is no moment where the old credential holder is an administrator.
+  // The credential row is matched on its id and owner and must still be the same row. The role changes in the
+  // same transaction as the re-key and the revoke, so no session that existed before it becomes an administrator.
+  // A sign-in racing this transaction is the known gap described in the header comment.
   const [, sessions, links] = await prisma.$transaction([
     prisma.account.update({ where: { id: credentials[0].id, userId: user.id, providerId: "credential" }, data: { password: hash } }),
     prisma.session.deleteMany({ where: { userId: user.id } }),
     prisma.verification.deleteMany({ where: { value: user.id } }),
     prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } }),
   ])
+  // Second revoke: reduces, does not eliminate, the window for a racing sign-in (header comment).
   await new Promise((resolve) => setTimeout(resolve, SIGN_IN_RACE_GRACE_MS))
   const late = await prisma.session.deleteMany({ where: { userId: user.id } })
   console.log(`${email} is now an administrator with a new password; ${sessions.count + late.count} earlier session(s) revoked, ${links.count} outstanding reset link(s) invalidated. Give the password to the intended person out of band and ask them to change it after signing in.`)

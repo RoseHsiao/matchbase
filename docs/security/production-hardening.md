@@ -120,6 +120,58 @@ None is implemented; the choice is the operator's. Whatever is chosen, the order
 5. **Change the variables in one release.** Set `AUTH_EMAIL_VERIFICATION_ENABLED` with a verified sending domain, and remove `AUTH_ALLOW_UNVERIFIED_SIGN_UP`, so the configuration states what is meant.
 6. Smoke-test sign-in for an ADMIN, a grandfathered USER (if any) and a new sign-up.
 
+### Database isolation guard (2026-11-10)
+
+The label (`MATCHBASE_DATABASE_LABEL`) states which database a deployment *means* to use; it cannot see which database the connection strings actually reach. Three layers check that (`lib/env/database-identity.ts`):
+
+1. **Endpoint allowlist.** `MATCHBASE_DATABASE_ENDPOINT` names the Neon endpoint id. `DATABASE_URL` must be on `<endpoint>-pooler` and `DATABASE_URL_UNPOOLED` on `<endpoint>`, in the same Neon domain. An `options=endpoint=…` parameter naming anything else fails.
+   - A mismatch **fails** in Production and in Preview, where it is `previewCritical` and blocks startup.
+   - Missing is a **failure** on Preview and only a **warning** in Production, so the next deploy does not take Production down before the variable is set there. It is informational in development.
+2. **Production denylist.** The Production endpoints are written in the code: `ep-crimson-mouse-b3yykfxq` (branch `production`) and `ep-super-poetry-b37z6bie` (the pre-Phase-11 recovery branch, which holds a copy of Production data). They were confirmed against the Neon API on 2026-11-10.
+   - Any environment other than Production that references one of them **fails** (`previewCritical`), whatever the label and the allowlist say. This also catches a Preview whose variables were all copied from Production.
+   - Matching is by endpoint prefix, so the pooler host, Neon's compute-specific hosts (`<endpoint>-<binding>[-pooler]`) and an `options=endpoint=` parameter are all caught.
+3. **Database identity marker.** Each database carries `COMMENT ON DATABASE <db> IS 'matchbase:<label>'`, set once by its owner.
+   - `production:check --db` reads it with the runtime credential (`shobj_description`, readable by any role) and compares it with the label.
+   - Absent or different **fails** on Production and Preview; a read that fails is a failure, never skipped.
+   - It is **not** read at server startup.
+   - Production does not carry the marker yet, so `production:check --db` reports `db-identity` FAIL there until the owner sets `'matchbase:production'` (a separate, approved Production step).
+
+Readiness output names variables only, never a connection string, host or endpoint id. Tests: `tests/env/database-identity.test.ts`; a mutation check (empty denylist, no pooler rule) makes them fail.
+
+Operator side: `~/.config/matchbase/preview.sh` (outside the repository) runs every Preview database command with these rules:
+
+- from an emptied environment: every variable the calling shell exported is unset, and only the clean set is exported with shell builtins, so no value ever appears as a command-line argument;
+- with every key name from `.env.local` and `.env` exported empty, so no loader can fall back to the Development database;
+- with a strict env-file key allowlist;
+- only after this guard passes.
+
+### Preview build-only DATABASE_URL_UNPOOLED (2026-11-10)
+
+Vercel's Preview scope keeps **no owner credential**.
+
+- `DATABASE_URL` is the pooled URL of the least-privilege runtime role `matchbase_app`, the only connection the deployed Preview application makes (`lib/data/db.ts`).
+- `DATABASE_URL_UNPOOLED` holds a **build-only placeholder**: a direct URL with no user name and no password, for the Preview endpoint's direct host and database `matchbase_preview`, with exactly `sslmode=require&sslaccept=strict&channel_binding=require`. The exact form is in [environment-matrix.md](../deployment/environment-matrix.md#preview-database_url_unpooled-a-build-only-placeholder-2026-11-10).
+
+Why it exists:
+
+- The build runs `prisma generate && next build`. `prisma.config.ts` sets `url: env("DATABASE_URL_UNPOOLED")`, and Prisma's `env()` throws `PrismaConfigEnvError` when the variable is missing or empty, so without a value the Preview build fails before `next build` starts (verified in an isolated snapshot on 2026-11-10).
+- `prisma generate` with the current generator (`prisma-client`, no TypedSQL) reads the string and does not connect.
+- No other code in the build or at runtime connects with it. The startup guard only inspects it: the endpoint against `MATCHBASE_DATABASE_ENDPOINT`, and the TLS parameters against the migration policy.
+
+It is **not** a working connection string for migrations, seed, bootstrap or any operator command. It carries no credential, so it cannot authenticate as a role that requires a password. This is a property of the current value and setup, **not** a guarantee that nothing could ever use it, so treat it as configuration that must not be reused. Database work on the Preview database runs only through `~/.config/matchbase/preview.sh`, using `~/.config/matchbase/preview.env`. Never copy the Vercel placeholder locally as a migration URL.
+
+**Changes that would make the placeholder be used for a real connection, and require the build to be re-reviewed first:**
+
+1. Adding `prisma migrate deploy` (or any other Prisma command that connects) to `build`, `prebuild` or `vercel-build`.
+2. Switching Prisma generation to `--sql` / TypedSQL, which connects to the database at generate time.
+
+In either case the placeholder would most likely fail authentication and abort the build. **That is not a reason to put owner credentials into the Vercel Preview scope.** Run such steps from the operator shell instead, or change `prisma.config.ts` so that generation needs no URL. The latter is option B: proposed, **not implemented**. It would make it possible to remove the variable from Vercel.
+
+**Production is not covered by this policy.**
+
+- Vercel Production currently keeps its own `DATABASE_URL_UNPOOLED`, which the Production build needs for the same reason; its actual value was not verified in the 2026-11-10 audit.
+- Even once option B is implemented, that does **not** approve removing the variable from Vercel Production. Removing it there needs its own assessment, verification of a Production build without it, and explicit approval.
+
 ### ADMIN grant safety (2026-11-10)
 
 Nothing in the database records who registered an address. `account:create` and public sign-up both write a User and a credential Account through the same Better Auth path, and `emailVerified` is `false` for both. While unverified sign-up is open, anyone can therefore register the address an operator means to promote later. Before this change, `admin:role -- grant` would then have made the registrant (who set the password) an administrator.
@@ -130,7 +182,7 @@ Nothing in the database records who registered an address. `account:create` and 
 
 - It requires a new password (`MATCHBASE_NEW_PASSWORD` or a hidden prompt; no TTY and no variable means refusal).
 - In **one transaction** it re-keys the single email/password credential, revokes every session, deletes outstanding reset links, and sets `ADMIN`.
-- After a 2-second grace period it revokes sessions again, to catch a sign-in that raced the update with the old password.
+- After a fixed 2-second wait it revokes sessions a second time. This is a **risk-reduction measure, not a guarantee**: see "Known limitation" below.
 - It refuses an account with any sign-in method other than exactly one credential, because such a method could not be re-keyed.
 - An account that is already ADMIN is left untouched (no password asked, sessions kept), so existing administrators are unaffected. `revoke` is unchanged.
 
@@ -149,7 +201,12 @@ Tested in `tests/db/admin-grant.test.ts` (Development DB):
 - a repeated grant on an existing ADMIN: no-op, session kept; `revoke` still works;
 - a second sign-in method: refused.
 
-Not covered by a test: the sign-in race itself (timing-dependent). The grace-period purge is the mitigation.
+**Known limitation: the grant is not race-free.** A sign-in that verifies the old password just before the grant's transaction commits can still create its session after that transaction's revoke, and the session then acts with the ADMIN role.
+
+- The second revoke after 2 seconds reduces this window. It does not close it: a sign-in that takes longer than the wait, or finishes after the second revoke, is not caught. The 2 seconds is a heuristic, not a measured upper bound.
+- No test exercises concurrent sign-ins, so nothing shows the race is resolved. The tests above cover the sequential cases only.
+- Until it is closed, grant when the address is not in use: preferably with public sign-up closed, or on an account the operator has just created with `account:create`. Afterwards, check `admin:role -- list` and the account's sessions.
+- Closing the race fully needs a change to how sign-in and grant are ordered (for example, a lock or a session-creation check against a credential version). That is not designed or implemented.
 
 ### Rate-limit client IP (2026-11-10)
 
