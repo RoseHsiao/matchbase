@@ -2,6 +2,7 @@ import { MIN_AUTH_SECRET_LENGTH, RATE_LIMIT_SIGN_UP_PER_HOUR, resolveAuthBaseUrl
 import { accountPolicy, UNVERIFIED_SIGN_UP_FLAG } from "@/lib/auth/email-verification"
 import { DEV_LOGIN_FLAG } from "@/lib/auth/dev-login"
 import { readScheduleConfig } from "@/lib/data/sync/schedule-config"
+import { evaluateDatabaseEndpoints } from "@/lib/env/database-identity"
 import { describeDataSourceProvider } from "@/lib/data/sync/providers/registry"
 import { CSP_MODE_VARIABLE, resolveCspMode } from "@/lib/http/csp"
 import { domainOf, EMAIL_VERIFICATION_FLAG, PASSWORD_RESET_FLAG, parseSender, readMailEnv } from "@/lib/mail/mail-env"
@@ -138,6 +139,9 @@ export function evaluateProductionReadiness(env: EnvLike): ReadinessReport {
   else if (label.warning) add({ id: "database-label", status: "warn", detail: label.warning })
   else add({ id: "database-label", status: "pass", detail: `Database label "${label.label}" matches the ${environment} environment.` })
 
+  // Which database the URLs really reach: endpoint allowlist and Production denylist (lib/env/database-identity.ts).
+  for (const check of evaluateDatabaseEndpoints(env)) add(check)
+
   const runtimeDb = describeDatabaseUrl(env.DATABASE_URL)
   const cliDb = describeDatabaseUrl(env.DATABASE_URL_UNPOOLED)
   // A running deployment (Vercel sets VERCEL=1; an operator's `--env production` does not) never reads
@@ -155,8 +159,11 @@ export function evaluateProductionReadiness(env: EnvLike): ReadinessReport {
 
   const migrationIssues = parameterIssues(cliDb.params, MIGRATION_URL_PARAMETERS)
   const migrationStatus = deployed ? "warn" : strict
-  const unusedHere = deployed ? " The deployed application does not use this variable; consider removing it from the deployment." : ""
-  if (!cliDb.present) add({ id: "database-url-unpooled", status: production && platform === "vercel" ? "info" : "warn", detail: "DATABASE_URL_UNPOOLED is not set; migrations and operator commands need the direct connection (on Vercel it is only needed where those commands run)." })
+  // Wording only: the deployed application never connects with this variable, but the build's `prisma generate`
+  // loads prisma.config.ts, whose env("DATABASE_URL_UNPOOLED") needs a non-empty value, so it must not be removed
+  // from a Vercel deployment (docs/deployment/production-deployment.md step 3).
+  const unusedHere = deployed ? " The running application does not connect with this variable, but the build (prisma generate loading prisma.config.ts) needs a non-empty value: keep it set on the deployment and correct the value instead." : ""
+  if (!cliDb.present) add({ id: "database-url-unpooled", status: production && platform === "vercel" ? "info" : "warn", detail: "DATABASE_URL_UNPOOLED is not set; migrations and operator commands need the direct connection, and a Vercel build needs a non-empty value because prisma generate loads prisma.config.ts. The running application never connects with it." })
   else if (!cliDb.parses) add({ id: "database-url-unpooled", status: migrationStatus, detail: `DATABASE_URL_UNPOOLED is not a PostgreSQL connection string with a hostname.${unusedHere}` })
   // Migrations need a session-level connection; Neon's pooler runs in transaction mode.
   else if (cliDb.pooled) add({ id: "database-url-unpooled", status: migrationStatus, detail: `DATABASE_URL_UNPOOLED points at a Neon pooler host (-pooler); migrations need the direct endpoint. Copy it from the Neon console with connection pooling turned off.${unusedHere}` })

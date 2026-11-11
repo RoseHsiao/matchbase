@@ -10,15 +10,16 @@ import { blockingChecks, evaluateProductionReadiness } from "../../lib/env/produ
 
 const SECRET = "Qm9a7x3fKp2LwZ8vN4cR1tY6uH0sJ5eD9gB3nM7kV1a="
 const CRON = "cron-9f8e7d6c5b4a3f2e1d0c"
-const DB = "postgresql://matchbase_app:runtime-pass-word@ep-abc-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=verify-full"
+const DB = "postgresql://matchbase_app:runtime-pass-word@ep-test-fixture-a1b2c3d4-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=verify-full"
 /** The Prisma 7.10 migration-engine form (synthetic, nonfunctional credentials and host). */
-const DB_DIRECT = "postgresql://neondb_owner:owner-pass-word@ep-abc.eu-central-1.aws.neon.tech/neondb?sslmode=require&sslaccept=strict&channel_binding=require"
+const DB_DIRECT = "postgresql://neondb_owner:owner-pass-word@ep-test-fixture-a1b2c3d4.eu-central-1.aws.neon.tech/neondb?sslmode=require&sslaccept=strict&channel_binding=require"
 
 const production = {
   VERCEL: "1",
   VERCEL_ENV: "production",
   VERCEL_PROJECT_PRODUCTION_URL: "matchbase.example",
   MATCHBASE_DATABASE_LABEL: "production",
+  MATCHBASE_DATABASE_ENDPOINT: "ep-test-fixture-a1b2c3d4",
   DATABASE_URL: DB,
   DATABASE_URL_UNPOOLED: DB_DIRECT,
   BETTER_AUTH_SECRET: SECRET,
@@ -113,27 +114,49 @@ describe("migration DATABASE_URL_UNPOOLED TLS policy (Prisma 7.10 migration engi
   })
 
   it("still rejects a pooler host and a missing or invalid hostname", () => {
-    assert.equal(migration(DB_DIRECT.replace("ep-abc.", "ep-abc-pooler."))?.status, "fail")
-    assert.match(migration(DB_DIRECT.replace("ep-abc.", "ep-abc-pooler."))?.detail ?? "", /pooler/)
+    assert.equal(migration(DB_DIRECT.replace("ep-test-fixture-a1b2c3d4.", "ep-test-fixture-a1b2c3d4-pooler."))?.status, "fail")
+    assert.match(migration(DB_DIRECT.replace("ep-test-fixture-a1b2c3d4.", "ep-test-fixture-a1b2c3d4-pooler."))?.detail ?? "", /pooler/)
     for (const value of ["postgresql://neondb_owner:p@/neondb?sslmode=require&sslaccept=strict&channel_binding=require", "postgresql:///neondb?sslmode=require&sslaccept=strict&channel_binding=require", "not a url", DB_DIRECT.replace("postgresql:", "https:")]) {
       assert.equal(migration(value)?.status, "fail", value)
     }
   })
 
-  it("a running deployment only warns: it never reads this variable, so it must not refuse to start (Vercel's value is still verify-full)", () => {
-    for (const value of [`${base}?sslmode=verify-full`, DB_DIRECT.replace("ep-abc.", "ep-abc-pooler."), "not a url"]) {
+  it("a running deployment only warns: it never connects with this variable, so it must not refuse to start (Vercel's value is still verify-full)", () => {
+    for (const value of [`${base}?sslmode=verify-full`, DB_DIRECT.replace("ep-test-fixture-a1b2c3d4.", "ep-test-fixture-a1b2c3d4-pooler."), "not a url"]) {
       const report = evaluateProductionReadiness({ ...production, DATABASE_URL_UNPOOLED: value })
       const check = report.checks.find((c) => c.id === "database-url-unpooled")
       assert.equal(check?.status, "warn", value)
-      assert.match(check?.detail ?? "", /does not use this variable/)
+      assert.match(check?.detail ?? "", /running application does not connect with this variable/)
+      assert.match(check?.detail ?? "", /build \(prisma generate loading prisma\.config\.ts\) needs a non-empty value/)
       assert.ok(!blockingChecks(report).some((c) => c.id === "database-url-unpooled"), "not blocking")
     }
+  })
+
+  it("never advises removing DATABASE_URL_UNPOOLED and reports the correct status for each runtime context", () => {
+    const deployedProblems = [`${base}?sslmode=verify-full`, DB_DIRECT.replace("ep-test-fixture-a1b2c3d4.", "ep-test-fixture-a1b2c3d4-pooler."), "not a url"]
+    const cases: [Record<string, string | undefined>, string][] = [
+      ...deployedProblems.map((value): [Record<string, string | undefined>, string] => [{ ...production, DATABASE_URL_UNPOOLED: value }, "warn"]),
+      // A real Vercel Production deployment (VERCEL=1) without the variable: info.
+      [{ ...production, DATABASE_URL_UNPOOLED: undefined }, "info"],
+      // The operator shell (`production:check --env production`: VERCEL_ENV=production, no VERCEL=1) needs it: warn.
+      [{ ...operator, DATABASE_URL_UNPOOLED: undefined }, "warn"],
+      [{ ...operator, DATABASE_URL_UNPOOLED: DB_DIRECT }, "pass"],
+      [{ ...production, DATABASE_URL_UNPOOLED: DB_DIRECT }, "pass"],
+    ]
+    for (const [env, status] of cases) {
+      const check = evaluateProductionReadiness(env).checks.find((c) => c.id === "database-url-unpooled")
+      assert.equal(check?.status, status, `${env.VERCEL ? "Vercel" : "operator"} with ${env.DATABASE_URL_UNPOOLED === undefined ? "no" : "a"} DATABASE_URL_UNPOOLED`)
+      assert.doesNotMatch(check?.detail ?? "", /remov|omit|only needed where|optional on Vercel/i)
+    }
+    const missing = evaluateProductionReadiness({ ...production, DATABASE_URL_UNPOOLED: undefined }).checks.find((c) => c.id === "database-url-unpooled")
+    assert.match(missing?.detail ?? "", /Vercel build needs a non-empty value because prisma generate loads prisma\.config\.ts/)
+    assert.match(missing?.detail ?? "", /running application never connects with it/)
   })
 
   it("never names a credential, host, endpoint or the value it found", () => {
     const report = evaluateProductionReadiness({ ...operator, DATABASE_URL: `${DB}&sslmode=prefer&weird=x`, DATABASE_URL_UNPOOLED: `${base}?sslmode=verify-full&sslaccept=bogus-value&channel_binding=sideways` })
     const text = JSON.stringify(report)
-    for (const leak of ["owner-pass-word", "runtime-pass-word", "postgresql://", "ep-abc", "neon.tech", "bogus-value", "sideways"]) assert.equal(text.includes(leak), false, leak)
+    for (const leak of ["owner-pass-word", "runtime-pass-word", "postgresql://", "ep-test-fixture-a1b2c3d4", "neon.tech", "bogus-value", "sideways"]) assert.equal(text.includes(leak), false, leak)
   })
 
   it("the policies are separate: the runtime policy is never applied to the migration URL, nor the reverse", () => {
@@ -192,9 +215,11 @@ describe("evaluateProductionReadiness", () => {
     const mail = { MAIL_TRANSPORT: "resend", MAIL_FROM: "noreply@mail.matchbase.example", RESEND_API_KEY: "re_TestKey_0123456789abcdef", AUTH_EMAIL_VERIFICATION_ENABLED: "true" }
     // Identical strings. The two URLs now need different TLS parameters, so identical strings can only satisfy one
     // policy: here the runtime one. In a running deployment the migration URL then warns (it is unused there).
-    const report = evaluateProductionReadiness({ ...production, ...mail, AUTH_ALLOW_SIGN_UP: "true", DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB, CSP_MODE: "report-only" })
+    // Without MATCHBASE_DATABASE_ENDPOINT (Production only warns until it is set); with it, the pooled
+    // DATABASE_URL_UNPOOLED would fail the endpoint check, which "database endpoint" tests below cover.
+    const report = evaluateProductionReadiness({ ...production, ...mail, AUTH_ALLOW_SIGN_UP: "true", DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB, CSP_MODE: "report-only", MATCHBASE_DATABASE_ENDPOINT: undefined })
     assert.deepEqual(ids(report.failures), [])
-    assert.deepEqual(ids(report.warnings), ["csp", "database-roles", "database-url-unpooled", "sign-up"])
+    assert.deepEqual(ids(report.warnings), ["csp", "database-endpoint", "database-roles", "database-url-unpooled", "sign-up"])
     assert.match(report.warnings.find((c) => c.id === "sign-up")?.detail ?? "", /OPEN.*required email verification.*release procedure/)
   })
 
@@ -208,7 +233,7 @@ describe("evaluateProductionReadiness", () => {
   })
 
   describe("dual-flag unverified sign-up (AUTH_ALLOW_SIGN_UP + AUTH_ALLOW_UNVERIFIED_SIGN_UP)", () => {
-    const preview = { VERCEL: "1", VERCEL_ENV: "preview", VERCEL_URL: "matchbase-git-x.vercel.app", MATCHBASE_DATABASE_LABEL: "preview", DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB_DIRECT, BETTER_AUTH_SECRET: SECRET }
+    const preview = { VERCEL: "1", VERCEL_ENV: "preview", VERCEL_URL: "matchbase-git-x.vercel.app", MATCHBASE_DATABASE_LABEL: "preview", MATCHBASE_DATABASE_ENDPOINT: "ep-test-fixture-a1b2c3d4", DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB_DIRECT, BETTER_AUTH_SECRET: SECRET }
     const signUp = (env: Record<string, string | undefined>) => evaluateProductionReadiness(env).checks.find((c) => c.id === "sign-up")
 
     for (const [name, base] of [["Production", production], ["Preview", preview]] as const) {
@@ -256,7 +281,7 @@ describe("evaluateProductionReadiness", () => {
   })
 
   it("Preview blocks only what could reach Production", () => {
-    const preview = { VERCEL: "1", VERCEL_ENV: "preview", VERCEL_URL: "matchbase-git-x.vercel.app", MATCHBASE_DATABASE_LABEL: "preview", DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB_DIRECT, BETTER_AUTH_SECRET: SECRET }
+    const preview = { VERCEL: "1", VERCEL_ENV: "preview", VERCEL_URL: "matchbase-git-x.vercel.app", MATCHBASE_DATABASE_LABEL: "preview", MATCHBASE_DATABASE_ENDPOINT: "ep-test-fixture-a1b2c3d4", DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB_DIRECT, BETTER_AUTH_SECRET: SECRET }
     const clean = evaluateProductionReadiness(preview)
     assert.deepEqual(blockingChecks(clean), [])
     assert.equal(clean.checks.find((c) => c.id === "cron-secret")?.status, "pass", "no cron secret on preview is the intended state")

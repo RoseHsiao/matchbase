@@ -6,9 +6,10 @@ Legend: **R** required, **O** optional, **F** forbidden (the readiness check fai
 
 | Variable | Secret | Purpose | Development (`.env.local`) | Preview | Production |
 |---|---|---|---|---|---|
-| `DATABASE_URL` | yes | runtime connection, pooled host, `sslmode=verify-full`; the least-privilege runtime role in Production | R (dev branch, owner role acceptable) | R (Preview branch) | R (Production project, runtime role) |
-| `DATABASE_URL_UNPOOLED` | yes | direct connection for `prisma migrate deploy` and operator scripts; in Production exactly `sslmode=require&sslaccept=strict&channel_binding=require`, the parameters Prisma's migration engine honours (it ignores `verify-full`) | R | O (only if migrations run from a Preview shell) | shell only (owner role); optional on Vercel |
+| `DATABASE_URL` | yes | runtime connection, pooled host, `sslmode=verify-full`; the least-privilege runtime role in Production and Preview. The only connection the deployed application uses | R (dev branch, owner role acceptable) | R (Preview branch: `matchbase_app` on `<endpoint>-pooler`, database `matchbase_preview`) | R (Production project, runtime role) |
+| `DATABASE_URL_UNPOOLED` | yes in an operator shell; yes in the Vercel Production scope; **no** in the Vercel Preview scope, which holds a placeholder with no user name and no password (no credential) | direct connection for `prisma migrate deploy` and operator scripts; exactly `sslmode=require&sslaccept=strict&channel_binding=require`, the parameters Prisma's migration engine honours (it ignores `verify-full`). `prisma.config.ts` also reads it while `prisma generate` runs in the build, where only a non-empty value is needed | R | **Vercel:** R, but only the **build-only placeholder** below (no user name, no password). **Operator shell:** the real owner direct URL, only in `~/.config/matchbase/preview.env`, used through `preview.sh` | **Operator shell:** the owner direct URL. **Vercel Production:** currently also set, and **required for now** because the build's `prisma generate` needs a non-empty value; its actual value was not verified in the 2026-11-10 audit; do not remove it without option B or an approved Production change ([production-deployment.md](production-deployment.md) step 3). The Preview build-only placeholder policy does **not** apply to Production |
 | `MATCHBASE_DATABASE_LABEL` | no | which database the URLs point at; must equal the environment intent | R `development` | R `preview` | R `production` |
+| `MATCHBASE_DATABASE_ENDPOINT` | no | the Neon endpoint id (`ep-…`) both connection strings must use: `DATABASE_URL` on `<endpoint>-pooler`, `DATABASE_URL_UNPOOLED` on `<endpoint>` (lib/env/database-identity.ts). Independently, any non-Production environment pointing at a Production endpoint fails | O | R (**missing or mismatched blocks the Preview from starting**) | R once set; until then a **warning**, not a failure, so Production is not taken down before the operator sets it; a mismatch fails |
 | `MATCHBASE_OPERATOR_TARGET` | no | per-command confirmation for a production-labelled database | — | — | shell only, `production`, never on Vercel |
 | `BETTER_AUTH_SECRET` | yes | signs session cookies; 32+ random characters, 12+ distinct | R (local value) | R (its own value) | R (its own value, different from Preview and from `CRON_SECRET`) |
 | `BETTER_AUTH_URL` | no | auth base URL; derived from Vercel system variables when unset | O (unset; inferred per request) | O (unset; derived from `VERCEL_URL`) | O (derived from `VERCEL_PROJECT_PRODUCTION_URL`) or R as `https://<custom domain>` when the primary domain differs |
@@ -44,11 +45,28 @@ Legend: **R** required, **O** optional, **F** forbidden (the readiness check fai
 | `MAIL_DAILY_CAP` | no | daily ceiling (UTC day) for reminder emails, enforced by the Phase 11 pipeline, default 100; recovery is governed by the per-IP auth limit instead | O | O | O |
 | `NEON_BRANCH` | no | informational note in `.env.local` (not read by code) | O | — | — |
 
+### Preview `DATABASE_URL_UNPOOLED`: a build-only placeholder (2026-11-10)
+
+The Vercel **Preview** scope holds a PostgreSQL direct URL **without a user name or password**:
+
+```
+postgresql://<preview-endpoint>.<region-domain>/matchbase_preview?sslmode=require&sslaccept=strict&channel_binding=require
+```
+
+- `<preview-endpoint>` is the current Preview Neon endpoint id (on 2026-11-10: `ep-silent-butterfly-b3h7gqoq`, branch `preview-2026-11`). It must be the **direct** host, never `<endpoint>-pooler`, in the same domain as `DATABASE_URL`. The readiness guard checks this against `MATCHBASE_DATABASE_ENDPOINT` and blocks a Preview whose placeholder names another endpoint.
+- The database is `matchbase_preview`, and the TLS parameters are exactly `sslmode=require`, `sslaccept=strict` and `channel_binding=require`. There are no other parameters.
+- It exists only so that `env("DATABASE_URL_UNPOOLED")` in `prisma.config.ts` gets a non-empty string while `prisma generate` runs in the build. Without it, `prisma generate` stops with `PrismaConfigEnvError` and the deployment fails to build.
+- It is **not** a usable connection string for migrations, seed, bootstrap, account or role commands, or anything else, and must never be used as one.
+- The deployed Preview application connects only through `DATABASE_URL`, the pooled `matchbase_app` URL.
+- Database work on the Preview database runs only through `~/.config/matchbase/preview.sh`, with the real connection strings in the local `~/.config/matchbase/preview.env`. Never copy the Vercel placeholder to a local file as a migration URL.
+
+Future build changes that would make the placeholder be used for a real connection attempt, and that therefore need this setup reviewed first, are listed in [production-hardening.md](../security/production-hardening.md#preview-build-only-database_url_unpooled-2026-11-10). They do not justify putting owner credentials in the Vercel Preview scope.
+
 Vercel system variables (`VERCEL`, `VERCEL_ENV`, `VERCEL_URL`, `VERCEL_PROJECT_PRODUCTION_URL`) must be enabled in the project ("Enable access to System Environment Variables"); the environment model and the auth base URL derive from them.
 
 ## Launch invariants the readiness check enforces
 
-- Production: label `production`; `DATABASE_URL` with `sslmode=verify-full`; `DATABASE_URL_UNPOOLED`, where it is checked (the operator shell; a running deployment only warns because it never reads it), with exactly `sslmode=require&sslaccept=strict&channel_binding=require`; auth secret strong and different from the cron secret; https base URL; `CRON_SECRET` present; sign-up closed; no `MATCHBASE_DEV_*`, no `ALLOW_PRODUCTION_SEED`; CSP not off; TheSportsDB configured.
+- Production: label `production`; `DATABASE_URL` with `sslmode=verify-full`; `DATABASE_URL_UNPOOLED`, where it is checked (the operator shell; a running deployment only warns, because the running application never connects with it), with exactly `sslmode=require&sslaccept=strict&channel_binding=require`. The build is different from the runtime: Vercel's build runs `prisma generate`, which loads `prisma.config.ts` and needs a non-empty value, so the variable stays set on Vercel Production (see [production-deployment.md](production-deployment.md) step 3; the Preview placeholder policy does not apply); auth secret strong and different from the cron secret; https base URL; `CRON_SECRET` present; sign-up closed; no `MATCHBASE_DEV_*`, no `ALLOW_PRODUCTION_SEED`; CSP not off; TheSportsDB configured.
 - Mail (Phase 10.5): unconfigured mail passes, because it is a safe state. In Production, any configuration the mail parser refuses fails and blocks startup: dev outbox, capture or unknown transport, `resend.dev` sender, allowlist, malformed key or sender, the recovery flag without a deliverable transport, and a Resend key equal to another secret. DNS and domain verification are reported as **not checked** (info).
-- Preview: label not `production`; no dev-login flag or credentials; no seed flag; no secret reuse (checked as "auth ≠ cron" within the environment; cross-environment reuse is an operator rule that cannot be verified from one environment).
+- Preview: label not `production`; `MATCHBASE_DATABASE_ENDPOINT` set and every database URL on that endpoint (the build-only `DATABASE_URL_UNPOOLED` placeholder included); no Production endpoint anywhere; no dev-login flag or credentials; no seed flag; no secret reuse (checked as "auth ≠ cron" within the environment; cross-environment reuse is an operator rule that cannot be verified from one environment).
 - Development: warnings only.

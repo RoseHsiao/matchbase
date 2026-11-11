@@ -26,6 +26,14 @@ describe("platform", () => {
     assert.equal(resolveRuntimePlatform({ NODE_ENV: "production" }), "self-hosted")
     assert.equal(resolveRuntimePlatform({}), "local")
   })
+
+  it("only VERCEL=1 means Vercel; VERCEL_ENV alone is environment intent, not the platform", () => {
+    assert.equal(resolveRuntimePlatform({ VERCEL: "1" }), "vercel")
+    for (const VERCEL_ENV of ["production", "preview", "development"]) {
+      assert.equal(resolveRuntimePlatform({ VERCEL_ENV }), "local", `VERCEL_ENV=${VERCEL_ENV} alone`)
+    }
+    assert.equal(resolveRuntimePlatform({ NODE_ENV: "production", VERCEL_ENV: "production" }), "self-hosted", "NODE_ENV=production + VERCEL_ENV=production without VERCEL=1")
+  })
 })
 
 describe("database label", () => {

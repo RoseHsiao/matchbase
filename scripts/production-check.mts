@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from "node:fs"
 
+import { evaluateDatabaseMarker, READ_DATABASE_MARKER_SQL } from "../lib/env/database-identity"
 import { evaluateRuntimeTablePrivileges, readRuntimeTablePrivileges } from "../lib/env/db-readiness"
 import { evaluateProductionReadiness, type ReadinessCheck } from "../lib/env/production-config"
 import { resolveRuntimeEnvironment } from "../lib/env/runtime-environment"
@@ -68,6 +69,16 @@ if (withDb) {
                has_schema_privilege(current_user, 'public', 'CREATE') AS create_on_schema,
                (SELECT pg_get_userbyid(datdba) = current_user FROM pg_database WHERE datname = current_database()) AS is_owner`
       console.log(`  PASS db-connect: connected as role "${who.role}".`)
+      // Database identity marker (COMMENT ON DATABASE): read-only, any role may read it; a failed read is a failure.
+      let markerRows: { marker: string | null }[] | null = null
+      try {
+        markerRows = await prisma.$queryRawUnsafe<{ marker: string | null }[]>(READ_DATABASE_MARKER_SQL)
+      } catch {
+        markerRows = null
+      }
+      const marker = evaluateDatabaseMarker({ env, marker: markerRows?.[0]?.marker ?? null, readFailed: markerRows === null })
+      console.log(`  ${({ pass: "PASS", warn: "WARN", fail: "FAIL" } as const)[marker.status]} db-identity: ${marker.detail}`)
+      if (marker.status === "fail") dbFailures++
       if (who.is_owner || who.create_on_schema) {
         console.log(`  WARN db-privileges: the runtime role ${who.is_owner ? "owns the database" : "can CREATE in schema public"}; Production should use the least-privilege runtime role (prisma/sql/runtime-role.sql).`)
       } else {

@@ -25,7 +25,7 @@ Project → Settings → Environment Variables, scope **Production only**:
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | runtime role, pooled host, `sslmode=verify-full` |
-| `DATABASE_URL_UNPOOLED` | may be omitted on Vercel (migrations run from the operator shell), and should be: the deployed app never reads it. If set, the owner role, direct host. A running deployment only warns about its parameters; it does not refuse to start over them |
+| `DATABASE_URL_UNPOOLED` | **must stay set on Vercel Production for now.** The build runs `prisma generate`, which loads `prisma.config.ts`; its `env("DATABASE_URL_UNPOOLED")` throws when the variable is missing or empty, and the deployment then fails to build. The deployed application itself never connects with it (migrations run from the operator shell), and a running deployment only warns about its parameters. The variable is currently present in the Production scope; its actual value was **not** reviewed or verified in the 2026-11-10 audit (it is a sensitive variable), so nothing here confirms what it contains. Do **not** remove it now. Removing it later requires either option B (`prisma.config.ts` no longer needing a URL during generation), implemented and verified first, or a separate Production change plan with explicit approval ([production-hardening.md](../security/production-hardening.md#preview-build-only-database_url_unpooled-2026-11-10)). The Preview build-only placeholder policy does **not** apply to Production |
 | `MATCHBASE_DATABASE_LABEL` | `production` |
 | `BETTER_AUTH_SECRET` | see step 5 |
 | `BETTER_AUTH_URL` | see step 6 |
@@ -63,13 +63,16 @@ Scope **Preview only**, with different values:
 
 | Variable | Value |
 |---|---|
-| `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | the Preview Neon branch (or the Neon integration's branch-per-preview), `sslmode=verify-full` |
+| `DATABASE_URL` | the runtime role `matchbase_app` on the Preview endpoint's **pooled** host (`<preview-endpoint>-pooler`), database `matchbase_preview`, `sslmode=verify-full`. The only connection the Preview application uses |
+| `DATABASE_URL_UNPOOLED` | the **build-only placeholder**, with no user name and no password: `postgresql://<preview-endpoint>.<region-domain>/matchbase_preview?sslmode=require&sslaccept=strict&channel_binding=require`, on the **direct** host. The query string carries **only** these three parameters (`sslmode=require`, `sslaccept=strict`, `channel_binding=require`), with no other parameter. It only lets `prisma generate` load `prisma.config.ts` during the build ([environment-matrix.md](environment-matrix.md#preview-database_url_unpooled-a-build-only-placeholder-2026-11-10)). It must **never** be used for migrations, seed, bootstrap, account or role commands, or any other database operation. Build changes that would make it be used for a real connection (a migration build hook, TypedSQL) need review first: [production-hardening.md](../security/production-hardening.md#preview-build-only-database_url_unpooled-2026-11-10) |
+| `MATCHBASE_DATABASE_ENDPOINT` | the Preview endpoint id (`<preview-endpoint>`); missing or mismatched blocks the Preview from starting |
 | `MATCHBASE_DATABASE_LABEL` | `preview` |
 | `BETTER_AUTH_SECRET` | a different random value |
 | `CRON_SECRET` | unset (the route answers 503 on previews) |
 | `ALLOW_PREVIEW_PROVIDER_SYNC` | unset (provider sync refused) |
 | `AUTH_ALLOW_SIGN_UP`, `AUTH_ALLOW_UNVERIFIED_SIGN_UP` | unset (sign-up closed). The same two-flag rule as Production: both `true` opens unverified sign-up for a test; one alone blocks the Preview from starting |
 
+- Owner credentials never go into the Preview scope. Migrations, seed, bootstrap, the runtime role and the identity marker for the Preview database run from the operator shell through `~/.config/matchbase/preview.sh`, with the real values in `~/.config/matchbase/preview.env`. Never copy the Vercel placeholder into a local file as a migration URL.
 - Check: no Production value is also scoped to Preview. Deployment Protection "Standard Protection" (Vercel Authentication) keeps preview URLs private; production domains stay public.
 
 ## 5. Configure BETTER_AUTH_SECRET

@@ -31,9 +31,16 @@ export function resolveRuntimeEnvironment(env: EnvLike): RuntimeEnvironment {
 
 export type RuntimePlatform = "vercel" | "self-hosted" | "local"
 
-/** Where the process runs; informational, never a security decision on its own. */
+/**
+ * Where the process runs; informational, never a security decision on its own.
+ *
+ * Only `VERCEL=1` means the process runs on Vercel: Vercel injects it at build and run time, next to
+ * `VERCEL_ENV`. `VERCEL_ENV` alone is the deployment environment intent, not the platform: an operator's
+ * `production:check --env production` and the Preview operator wrapper set it on a local machine, and that
+ * shell must not be taken for a Vercel deployment.
+ */
 export function resolveRuntimePlatform(env: EnvLike): RuntimePlatform {
-  if (env.VERCEL === "1" || env.VERCEL_ENV) return "vercel"
+  if (env.VERCEL === "1") return "vercel"
   return env.NODE_ENV === "production" ? "self-hosted" : "local"
 }
 
